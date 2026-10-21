@@ -1,0 +1,162 @@
+# 构建并推送容器镜像到 GitHub Container Registry (GHCR)。
+#
+# 产出两个镜像，多架构（linux/amd64 + linux/arm64）：
+#   ghcr.io/<owner>/proxypanel-panel   —— 控制平面 API（自带 TLS 终止）
+#   ghcr.io/<owner>/proxypanel-agent   —— 节点端 Agent（不打包 Xray）
+#
+# 同时把构建好的前端产物作为 artifact 上传，供 nginx 部署使用。
+#
+# 二进制在 runner 上交叉编译（CGO_ENABLED=0，全部依赖为纯 Go），镜像只做 COPY，
+# 因此镜像内容与 Go 版本、npm 依赖解析都可从本文件复现。
+name: images
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cross-compile panel and agent
+        run: |
+          set -euo pipefail
+          mkdir -p image-context/bin/amd64 image-context/bin/arm64
+          for arch in amd64 arm64; do
+            for cmd in panel agent; do
+              CGO_ENABLED=0 GOOS=linux GOARCH="$arch" \
+                go build -trimpath -buildvcs=false \
+                -o "image-context/bin/$arch/$cmd" "./cmd/$cmd"
+            done
+          done
+          cp -r migrations image-context/migrations
+          # 记录实际编译出的版本，便于事后核对镜像里的 Agent 版本。
+          ./image-context/bin/amd64/agent -version || true
+          ls -l image-context/bin/amd64 image-context/bin/arm64
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Panel image metadata
+        id: meta-panel
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/proxypanel-panel
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push panel
+        uses: docker/build-push-action@v6
+        with:
+          context: image-context
+          file: deploy/Dockerfile.panel
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-panel.outputs.tags }}
+          labels: ${{ steps.meta-panel.outputs.labels }}
+
+      - name: Agent image metadata
+        id: meta-agent
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/proxypanel-agent
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push agent
+        uses: docker/build-push-action@v6
+        with:
+          context: image-context
+          file: deploy/Dockerfile.agent
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-agent.outputs.tags }}
+          labels: ${{ steps.meta-agent.outputs.labels }}
+
+      # 冒烟测试：证明镜像里的二进制真的能在这个运行环境里启动。
+      # 这不是完整功能验收——真实代理链路需要面板、数据库和一个官方核心。
+      - name: Smoke test pushed images
+        run: |
+          set -euo pipefail
+          AGENT="${{ env.REGISTRY }}/${{ github.repository_owner }}/proxypanel-agent:sha-${GITHUB_SHA::7}"
+          PANEL="${{ env.REGISTRY }}/${{ github.repository_owner }}/proxypanel-panel:sha-${GITHUB_SHA::7}"
+          echo "--- agent -version ---"
+          docker run --rm "$AGENT" -version | tee /tmp/agent-version.txt
+          grep -q 'proxypanel-agent' /tmp/agent-version.txt
+          echo "--- panel 拒绝缺失配置（预期非零退出） ---"
+          set +e
+          docker run --rm "$PANEL" > /tmp/panel-out.txt 2>&1
+          rc=$?
+          set -e
+          cat /tmp/panel-out.txt
+          test "$rc" -ne 0
+          grep -q 'PANEL_MASTER_KEY' /tmp/panel-out.txt
+          echo "--- 迁移文件已打进面板镜像 ---"
+          docker run --rm --entrypoint /bin/ls "$PANEL" /app/migrations
+
+  web-artifact:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build web
+        working-directory: web
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run typecheck
+          npm test
+          npm run build
+
+      - name: Upload web dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+          retention-days: 30

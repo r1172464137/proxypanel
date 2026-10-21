@@ -1,0 +1,36 @@
+# 面板（控制平面）运行镜像。
+#
+# 构建上下文由 CI 组装，需包含：
+#   bin/<arch>/panel   —— CGO_ENABLED=0 交叉编译的 linux 二进制
+#   migrations/        —— SQL 迁移（面板启动时按 PANEL_MIGRATIONS_DIR 读取）
+#
+# 面板自身只提供 API，不托管 SPA 静态文件；网页由 nginx 提供服务。
+#
+# 关于监听地址：代码要求 PANEL_TRUST_REVERSE_PROXY=true 时 PANEL_LISTEN 必须是回环地址，
+# 容器里无法对外提供服务。因此本镜像的受支持形态是「面板自己终止 TLS」：
+#   PANEL_LISTEN=0.0.0.0:8443
+#   PANEL_TLS_CERT=/certs/fullchain.pem
+#   PANEL_TLS_KEY=/certs/privkey.pem
+# 纯 HTTP 只用于容器的本地调试，不对应本镜像的对外部署方式。
+FROM alpine:3.23@sha256:85fe1e81d6758c208f3e1eed4338a1997e19d4be002d4dd32d3100c9a8c010a0
+
+# ca-certificates：出站 HTTPS（例如 Telegram 通知）。
+# tzdata：周期按配置时区计算当前周期边界。
+RUN apk add --no-cache ca-certificates tzdata && update-ca-certificates
+
+WORKDIR /app
+
+# TARGETARCH 由 buildx 按 --platform 自动注入，用于挑选对应架构的二进制。
+ARG TARGETARCH
+COPY --chown=65532:65532 bin/${TARGETARCH}/panel /app/panel
+COPY --chown=65532:65532 migrations /app/migrations
+
+RUN chmod 0755 /app/panel
+
+# 非 root 运行；65532 与 Kubernetes 的 nonroot 约定一致，便于挂载卷时对齐属主。
+USER 65532:65532
+
+# 8443 是本镜像的约定端口（直接 HTTPS）。用其他端口时同步调整发布映射。
+EXPOSE 8443
+
+ENTRYPOINT ["/app/panel"]

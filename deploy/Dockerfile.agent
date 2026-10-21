@@ -1,0 +1,32 @@
+# 节点端 Agent 运行镜像。
+#
+# 构建上下文由 CI 组装，需包含：
+#   bin/<arch>/agent  —— CGO_ENABLED=0 交叉编译的 linux 二进制
+#
+# 本镜像**不打包 Xray**。官方核心必须从官方发行下载并核对 SHA256 后由使用者提供，
+# 通过只读挂载加进容器（agent.json 里的 xray_path 指向挂载点）。这样核心版本升级
+# 与镜像解耦，也避免把未经核对的二进制混进镜像。
+#
+# 必备挂载：
+#   /etc/proxypanel/agent.json   配置（只读，属主需能被 65532 读取）
+#   /var/lib/proxypanel-agent    Agent 状态目录（可写，属主 65532）
+#   /opt/xray                    官方 Xray 二进制目录（只读）
+#
+# 状态目录绝对不能在运行时清空：里面有 Agent 身份、计量基线和未上传的用量队列。
+FROM alpine:3.23@sha256:85fe1e81d6758c208f3e1eed4338a1997e19d4be002d4dd32d3100c9a8c010a0
+
+# Agent 通过 HTTPS 访问面板；挂载私有 CA 时用 SSL_CERT_FILE 指定。
+RUN apk add --no-cache ca-certificates && update-ca-certificates
+
+WORKDIR /app
+
+ARG TARGETARCH
+COPY --chown=65532:65532 bin/${TARGETARCH}/agent /app/agent
+RUN chmod 0755 /app/agent
+
+USER 65532:65532
+
+# 非特权端口不需要额外 capability。若节点需要监听 1024 以下端口，
+# 由运行方显式加 --cap-add NET_BIND_SERVICE，镜像不默认提权。
+ENTRYPOINT ["/app/agent"]
+CMD ["-config", "/etc/proxypanel/agent.json"]
