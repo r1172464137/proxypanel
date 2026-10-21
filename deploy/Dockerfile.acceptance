@@ -1,0 +1,7 @@
+# Acceptance-only image. Build context is assembled by Invoke-DockerAcceptance.ps1.
+FROM alpine:3.23@sha256:85fe1e81d6758c208f3e1eed4338a1997e19d4be002d4dd32d3100c9a8c010a0
+WORKDIR /app
+COPY panel agent fixture xray geoip.dat geosite.dat /app/
+COPY migrations /app/migrations
+RUN chmod 0755 /app/panel /app/agent /app/fixture /app/xray
+ENTRYPOINT ["/app/panel"]

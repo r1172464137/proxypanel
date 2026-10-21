@@ -1,0 +1,54 @@
+=== RUN   TestDockerClientMatrix
+    client_matrix_test.go:212: A15 client matrix (real exports, pinned Windows cores, SSH tunnel)
+        target http://target:18080/ payload 69632 bytes
+        rows with a real defect or blocker: 0 of 40
+        xray      Xray 26.3.27 (Xray, Penetrates Everything.) d2758a0 (go1.26.1 windows/amd64)
+        sing-box  sing-box version 1.14.3
+        mihomo    Mihomo Meta v1.19.32 windows amd64 with go1.26.8 Wed Sep 30 17:00:13 UTC 2026
+        v2rayN    not-run
+        
+        client    version          node                       protocol               port   result
+        xray      26.3.27          docker-vless-1             vless/tcp/none         20101  payload 69632B ok
+        sing-box  1.14.3           docker-vless-1             vless/tcp/none         20101  payload 69632B ok
+        mihomo    1.19.32          docker-vless-1             vless/tcp/none         20101  payload 69632B ok
+        v2rayN    not-run          docker-vless-1             vless/tcp/none         20101  not-run: GUI import is the parent step; exported share link verified
+        xray      26.3.27          client-matrix-vmess-1      vmess/tcp/none         20102  payload 69632B ok
+        sing-box  1.14.3           client-matrix-vmess-1      vmess/tcp/none         20102  payload 69632B ok
+        mihomo    1.19.32          client-matrix-vmess-1      vmess/tcp/none         20102  payload 69632B ok
+        v2rayN    not-run          client-matrix-vmess-1      vmess/tcp/none         20102  not-run: GUI import is the parent step; exported share link verified
+        xray      26.3.27          client-matrix-trojan-tls-1 trojan/tcp/tls         20103  payload 69632B ok
+        sing-box  1.14.3           client-matrix-trojan-tls-1 trojan/tcp/tls         20103  payload 69632B ok
+        mihomo    1.19.32          client-matrix-trojan-tls-1 trojan/tcp/tls         20103  payload 69632B ok
+        v2rayN    not-run          client-matrix-trojan-tls-1 trojan/tcp/tls         20103  not-run: GUI import is the parent step; exported share link verified
+        xray      26.3.27          client-matrix-ss-1         shadowsocks/tcp/none   20104  payload 69632B ok
+        sing-box  1.14.3           client-matrix-ss-1         shadowsocks/tcp/none   20104  payload 69632B ok
+        mihomo    1.19.32          client-matrix-ss-1         shadowsocks/tcp/none   20104  payload 69632B ok
+        v2rayN    not-run          client-matrix-ss-1         shadowsocks/tcp/none   20104  not-run: GUI import is the parent step; exported share link verified
+        xray      26.3.27          client-matrix-ss2022-1     shadowsocks/tcp/none   20105  payload 69632B ok
+        sing-box  1.14.3           client-matrix-ss2022-1     shadowsocks/tcp/none   20105  payload 69632B ok
+        mihomo    1.19.32          client-matrix-ss2022-1     shadowsocks/tcp/none   20105  payload 69632B ok
+        v2rayN    not-run          client-matrix-ss2022-1     shadowsocks/tcp/none   20105  not-run: GUI import is the parent step; exported share link verified
+        xray      26.3.27          docker-vless-2             vless/tcp/none         20201  payload 69632B ok
+        sing-box  1.14.3           docker-vless-2             vless/tcp/none         20201  payload 69632B ok
+        mihomo    1.19.32          docker-vless-2             vless/tcp/none         20201  payload 69632B ok
+        v2rayN    not-run          docker-vless-2             vless/tcp/none         20201  not-run: GUI import is the parent step; exported share link verified
+        xray      26.3.27          client-matrix-vmess-2      vmess/tcp/none         20202  payload 69632B ok
+        sing-box  1.14.3           client-matrix-vmess-2      vmess/tcp/none         20202  payload 69632B ok
+        mihomo    1.19.32          client-matrix-vmess-2      vmess/tcp/none         20202  payload 69632B ok
+        v2rayN    not-run          client-matrix-vmess-2      vmess/tcp/none         20202  not-run: GUI import is the parent step; exported share link verified
+        xray      26.3.27          client-matrix-trojan-tls-2 trojan/tcp/tls         20203  payload 69632B ok
+        sing-box  1.14.3           client-matrix-trojan-tls-2 trojan/tcp/tls         20203  payload 69632B ok
+        mihomo    1.19.32          client-matrix-trojan-tls-2 trojan/tcp/tls         20203  payload 69632B ok
+        v2rayN    not-run          client-matrix-trojan-tls-2 trojan/tcp/tls         20203  not-run: GUI import is the parent step; exported share link verified
+        xray      26.3.27          client-matrix-ss-2         shadowsocks/tcp/none   20204  payload 69632B ok
+        sing-box  1.14.3           client-matrix-ss-2         shadowsocks/tcp/none   20204  payload 69632B ok
+        mihomo    1.19.32          client-matrix-ss-2         shadowsocks/tcp/none   20204  payload 69632B ok
+        v2rayN    not-run          client-matrix-ss-2         shadowsocks/tcp/none   20204  not-run: GUI import is the parent step; exported share link verified
+        xray      26.3.27          client-matrix-ss2022-2     shadowsocks/tcp/none   20205  payload 69632B ok
+        sing-box  1.14.3           client-matrix-ss2022-2     shadowsocks/tcp/none   20205  payload 69632B ok
+        mihomo    1.19.32          client-matrix-ss2022-2     shadowsocks/tcp/none   20205  payload 69632B ok
+        v2rayN    not-run          client-matrix-ss2022-2     shadowsocks/tcp/none   20205  not-run: GUI import is the parent step; exported share link verified
+        
+--- PASS: TestDockerClientMatrix (6.57s)
+PASS
+ok  	proxypanel/tests/e2e	6.579s

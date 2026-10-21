@@ -1,0 +1,14 @@
+=== RUN   TestDockerBatchPartialFailure
+    docker_lifecycle_test.go:1102: owned failure: stopping the acceptance container agent2
+    docker_lifecycle_test.go:1107: batch bat_h2wkbem7vekdiozfq63373lpju submitted with one Agent down: map[pending:2]
+    docker_lifecycle_test.go:1110: the reachable node revoked the member in 0.342s
+    docker_lifecycle_test.go:1122: partial dispatch visible in the panel: 1 succeeded, 1 outstanding
+    docker_lifecycle_test.go:1132: batch bat_h2wkbem7vekdiozfq63373lpju state=completed timeout=1 (timeout: no agent receipt)
+    docker_lifecycle_test.go:1138: recovery: starting the acceptance container agent2 again
+    docker_lifecycle_test.go:1150: recovered node and database agree: the member is revoked everywhere, the missed dispatch stays a visible timeout
+    docker_lifecycle_test.go:1162: task tsk_pnuvglipc5bgu2vcyloujhhr3u retried through the panel: state=pending attempts=1
+    docker_lifecycle_test.go:1181: the retired credential of the recovered node is still refused after the task retry
+    docker_lifecycle_test.go:1189: partial failure, visible timeout, real task retry, recovery and node consistency finished
+--- PASS: TestDockerBatchPartialFailure (72.98s)
+PASS
+ok  	proxypanel/tests/e2e	72.993s

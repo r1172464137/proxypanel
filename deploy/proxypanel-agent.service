@@ -1,0 +1,29 @@
+[Unit]
+Description=Proxypanel Xray node agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=proxypanel-agent
+Group=proxypanel-agent
+WorkingDirectory=/opt/proxypanel/current
+ExecStart=/opt/proxypanel/current/agent -config /etc/proxypanel/agent.json
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=75
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+StateDirectory=proxypanel-agent
+StateDirectoryMode=0700
+ReadWritePaths=/var/lib/proxypanel-agent
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+
+[Install]
+WantedBy=multi-user.target

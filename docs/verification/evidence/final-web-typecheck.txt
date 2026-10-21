@@ -1,0 +1,7 @@
+== npm --prefix web run typecheck (vue-tsc --noEmit) ==
+start: 2026-10-21T13:49:50.8324672+08:00
+
+> proxypanel-web@0.1.0 typecheck
+> vue-tsc --noEmit
+
+exit=0 elapsed=2s

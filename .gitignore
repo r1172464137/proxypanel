@@ -1,0 +1,14 @@
+# Local credentials; never commit the supplied SSH private key.
+/私钥.txt
+/.local/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Toolchain outputs
+node_modules/
+dist/
+build/
+coverage/

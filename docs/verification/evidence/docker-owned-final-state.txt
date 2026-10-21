@@ -1,0 +1,40 @@
+OWNED_CONTAINERS
+ppaccept-20261021-panel | Up 5 minutes | ae74b12c7dd2
+ppaccept-20261021-recovery-agent | Exited (0) 13 minutes ago | 140b744da8d1
+ppaccept-20261021-recovery-panel | Exited (0) 13 minutes ago | 563efd9425ef
+ppaccept-20261021-restore | Exited (0) 13 minutes ago | cc977869c0ec
+ppaccept-20261021-agent2 | Up 13 minutes | cbd5d2cb8366
+ppaccept-20261021-agent1 | Up 13 minutes | 4775958cecef
+ppaccept-20261021-redis | Up 2 hours | 1c748fed4232
+ppaccept-20261021-target | Up 3 hours | 54baa1e35072
+ppaccept-20261021-postgres | Up 45 minutes | 1fb9dfa93e7d
+OWNED_VOLUMES
+ppaccept-20261021-agent1
+ppaccept-20261021-agent2
+ppaccept-20261021-pg
+ppaccept-20261021-recovery-agent
+ppaccept-20261021-redis
+ppaccept-20261021-restore
+OWNED_NETWORKS
+ppaccept-20261021-net bridge
+IMAGES_RETAINED
+sha256:4e96ae4a51f01949ab7a7e747d84e5229b4d6589332e3032d185480c564eb76d ["proxypanel-acceptance:20261021"]
+sha256:326d0b9f0f5c3c020807cebc1295c87f822aca95cbb3b1066d52a96613e4acca ["proxypanel-acceptance:20261021-agent010-baseline"]
+OWNED_CONTAINER_BOUNDS
+/ppaccept-20261021-postgres running restarts=0 memory=201326592 cpus=500000000 privileged=false ports={"5432/tcp":[{"HostIp":"127.0.0.1","HostPort":"25432"}]}
+/ppaccept-20261021-redis running restarts=0 memory=201326592 cpus=500000000 privileged=false ports={}
+/ppaccept-20261021-panel running restarts=0 memory=201326592 cpus=500000000 privileged=false ports={"18443/tcp":[{"HostIp":"127.0.0.1","HostPort":"18443"}]}
+/ppaccept-20261021-agent1 running restarts=0 memory=201326592 cpus=500000000 privileged=false ports={"20101/tcp":[{"HostIp":"127.0.0.1","HostPort":"20101"}],"20102/tcp":[{"HostIp":"127.0.0.1","HostPort":"20102"}],"20103/tcp":[{"HostIp":"127.0.0.1","HostPort":"20103"}],"20104/tcp":[{"HostIp":"127.0.0.1","HostPort":"20104"}],"20105/tcp":[{"HostIp":"127.0.0.1","HostPort":"20105"}]}
+/ppaccept-20261021-agent2 running restarts=0 memory=201326592 cpus=500000000 privileged=false ports={"20201/tcp":[{"HostIp":"127.0.0.1","HostPort":"20201"}],"20202/tcp":[{"HostIp":"127.0.0.1","HostPort":"20202"}],"20203/tcp":[{"HostIp":"127.0.0.1","HostPort":"20203"}],"20204/tcp":[{"HostIp":"127.0.0.1","HostPort":"20204"}],"20205/tcp":[{"HostIp":"127.0.0.1","HostPort":"20205"}]}
+/ppaccept-20261021-target running restarts=0 memory=201326592 cpus=500000000 privileged=false ports={}
+/ppaccept-20261021-restore exited restarts=0 memory=201326592 cpus=500000000 privileged=false ports={"5432/tcp":[{"HostIp":"127.0.0.1","HostPort":"25433"}]}
+/ppaccept-20261021-recovery-panel exited memory=201326592 cpus=500000000 privileged=false ports={"18443/tcp":[{"HostIp":"127.0.0.1","HostPort":"18444"}]}
+/ppaccept-20261021-recovery-agent exited memory=201326592 cpus=500000000 privileged=false ports={"20101/tcp":[{"HostIp":"127.0.0.1","HostPort":"20101"}]}
+PROTECTED_RETAINED_EVIDENCE_SIZES
+364K	/opt/proxypanel-acceptance-20261021/backup
+320K	/opt/proxypanel-acceptance-20261021/recovery
+               total        used        free      shared  buff/cache   available
+Mem:            3896        1247         164         191        2942        2648
+Swap:              0           0           0
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda1        37G   12G   25G  34% /

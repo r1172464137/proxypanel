@@ -1,0 +1,30 @@
+== go test ./... -count=1 -timeout 10m ==
+start: 2026-10-21T13:39:03.3695391+08:00
+PANEL_BASH=E:\SDK\Git\bin\bash.exe XRAY_BIN=E:\SDK\Xray\v26.3.27\xray.exe PANEL_DOCKER_TEST='' PANEL_BROWSER_TEST=''
+?   	proxypanel/cmd/agent	[no test files]
+?   	proxypanel/cmd/dbcheck	[no test files]
+?   	proxypanel/cmd/panel	[no test files]
+ok  	proxypanel/internal/agent/config	0.026s
+ok  	proxypanel/internal/agent/control	0.037s
+ok  	proxypanel/internal/agent/reporting	0.159s
+ok  	proxypanel/internal/agent/state	0.204s
+ok  	proxypanel/internal/agent/supervisor	8.664s
+ok  	proxypanel/internal/agent/telemetry	0.009s
+ok  	proxypanel/internal/agent/xray	2.709s
+?   	proxypanel/internal/contracts	[no test files]
+ok  	proxypanel/internal/panel/access	0.009s
+ok  	proxypanel/internal/panel/api	0.039s
+ok  	proxypanel/internal/panel/clientconfig	0.039s
+?   	proxypanel/internal/panel/domain	[no test files]
+?   	proxypanel/internal/panel/ids	[no test files]
+ok  	proxypanel/internal/panel/limit	0.148s
+ok  	proxypanel/internal/panel/maintenance	0.147s
+ok  	proxypanel/internal/panel/period	0.034s
+ok  	proxypanel/internal/panel/protocol	0.036s
+?   	proxypanel/internal/panel/secrets	[no test files]
+ok  	proxypanel/internal/panel/store	0.013s
+ok  	proxypanel/internal/panel/usagecalc	0.011s
+ok  	proxypanel/internal/panel/xrayconf	0.011s
+ok  	proxypanel/tests/e2e	5.899s
+?   	proxypanel/tests/fixture	[no test files]
+exit=0 elapsed=10s

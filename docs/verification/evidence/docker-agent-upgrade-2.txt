@@ -1,0 +1,35 @@
+=== RUN   TestDockerAgentVersionUpgrade
+    docker_lifecycle_test.go:1690: lifecycle node docker-lifecycle-1792559558656898800 created on the owned server srv_cok54qtn5fbgeddvsqnljsbuza, port 20105
+    docker_lifecycle_test.go:1690: node group ng_tzeobm3re6zxzmfnlhi2g6zdzi now serves [nd_ebdqtijtzjss4333udzisufxtm nd_xtuprqc5xyvyagdlrsim5sjvte] (batch bat_ct3b5yzd3xmo7pftigwuead2ta, state=applied)
+    docker_lifecycle_test.go:1690: the archived lifecycle node nd_bxbe2z4frbwpdazggst5d5twry keeps its history; the fixture now uses node nd_ebdqtijtzjss4333udzisufxtm in group ng_tzeobm3re6zxzmfnlhi2g6zdzi with members mbr_uqnwfau53zgbhvezkpcsufn4ki and mbr_dkilpzosouts423sqhyjbiqnu4
+    docker_lifecycle_test.go:1695: staged artifacts: agent-new: OK
+        xray-core: OK
+        staged agent: proxypanel-agent 0.1.1
+        staged core:  Xray 26.3.23 (Xray, Penetrates Everything.) cb7bfeb (go1.26.1 linux/amd64)
+    docker_lifecycle_test.go:1701: image agent=0.1.0 sha256=90ee1d0cdbfb709151a97d39c7c1c6415689811bdf0dac5934614bcbad45112d core=26.3.27 sha256=8255dd939c34cf966cc91517b6324dd3c8d0bcf49ffac8beca049a38c46845ed
+    docker_lifecycle_test.go:1702: staged agent=0.1.1 sha256=a28ca86562686f4b66c856e69253cdc6202461f53f1c2cd1c38358f76fabd66a core=26.3.23 sha256=05205489259d6c74795d98b4f01fcd11f987fc6ff7f65fd2991e9a7164518c98
+    docker_lifecycle_test.go:1713: real revocation of docker-lifecycle-revoked on node 20105 took 0.756s
+    docker_lifecycle_test.go:1725: state before the upgrade (digests only): agent.db size=94208 sha256=3aa03a7e57fadda7e71294b2adf2702e6a9dbedb4222b833e1b8be876e671493
+        agent.db-wal size=350232 sha256=2be014e98874ad95ecf8b2b99f176800a932f779575314f65bae09af0d04548a
+    docker_lifecycle_test.go:1730: outbox drained: 1191581 byte(s) for the member, 209 stored batch(es), accounting window opens at 2026-10-21 05:13:03.271789+00
+    docker_lifecycle_test.go:1730: queue durability: stopping the owned PostgreSQL container so the Agent must retain batches
+    docker_lifecycle_test.go:1730: injected outage: three real probes through each node finished in 0.406s
+    docker_lifecycle_test.go:1730: the switch itself appended no batch: the same 4 batch(es) stayed pending
+    docker_lifecycle_test.go:1730: queued batch b_881094a3712fb91a970e5a3f944f58a7: samples=1 bytes=70093 member_bytes=70093 attempts=0 sha256=80d8a9416faa11baa4d33d4f15e403aa533987fe6c60b3217631307555202992
+    docker_lifecycle_test.go:1730: queued batch b_999277a6d0bdc220586bd5538cb5b905: samples=1 bytes=140186 member_bytes=140186 attempts=0 sha256=826982e7b93b93d99fc8f1c6706584bbdadc3794297602326d5d51a5b8893203
+    docker_lifecycle_test.go:1730: queued batch b_b8c87ab84d3433e56d4365fc6a0899b2: samples=1 bytes=70093 member_bytes=70093 attempts=9 sha256=4d4eafb7ed6d9c0ee05153ac1a287991fdc5f7184fe23e7a85e61dcd505e4be0
+    docker_lifecycle_test.go:1730: queued batch b_ddfe3e783500d1fa26395b34b3157e1a: samples=1 bytes=140186 member_bytes=140186 attempts=0 sha256=a8e20c4cc1ef3088559f38e42f30d096f296014e164035bfb2824678fb141d03
+    docker_lifecycle_test.go:1730: queue durability: restoring the owned PostgreSQL container
+    docker_lifecycle_test.go:1730: batch b_881094a3712fb91a970e5a3f944f58a7 credited exactly once: 1 sample(s), 70093 byte(s) (70093 for the member), sha256=80d8a9416faa11baa4d33d4f15e403aa533987fe6c60b3217631307555202992
+    docker_lifecycle_test.go:1730: batch b_999277a6d0bdc220586bd5538cb5b905 credited exactly once: 1 sample(s), 140186 byte(s) (140186 for the member), sha256=826982e7b93b93d99fc8f1c6706584bbdadc3794297602326d5d51a5b8893203
+    docker_lifecycle_test.go:1730: batch b_b8c87ab84d3433e56d4365fc6a0899b2 credited exactly once: 1 sample(s), 70093 byte(s) (70093 for the member), sha256=4d4eafb7ed6d9c0ee05153ac1a287991fdc5f7184fe23e7a85e61dcd505e4be0
+    docker_lifecycle_test.go:1730: batch b_ddfe3e783500d1fa26395b34b3157e1a credited exactly once: 1 sample(s), 140186 byte(s) (140186 for the member), sha256=a8e20c4cc1ef3088559f38e42f30d096f296014e164035bfb2824678fb141d03
+    docker_lifecycle_test.go:1730: queue durability verified per batch across agent-upgrade: 4 batch(es) / 420558 member byte(s) delivered exactly once, ledger 1191581 -> 1612139
+    docker_lifecycle_test.go:1731: agent upgrade: agent=agt_f3r2mzx6zdz4wy6vygyay3g6mi version=0.1.1 core="26.3.27" applied=131/131
+    docker_lifecycle_test.go:1740: agent rollback: agent=agt_f3r2mzx6zdz4wy6vygyay3g6mi version=0.1.0 core="26.3.27" applied=131/131
+    docker_lifecycle_test.go:1747: agent 0.1.0 -> 0.1.1 -> 0.1.0 verified on the unchanged state volume
+    docker_lifecycle_test.go:1693: lifecycle node nd_ebdqtijtzjss4333udzisufxtm archived through DELETE /api/v1/admin/nodes/nd_ebdqtijtzjss4333udzisufxtm (usage history, audit rows and ledger entries kept)
+    docker_lifecycle_test.go:1693: lifecycle fixture quiesced: node archived, both members inactive, agent1 holds no LISTEN socket on 20105
+--- PASS: TestDockerAgentVersionUpgrade (93.21s)
+PASS
+ok  	proxypanel/tests/e2e	93.225s

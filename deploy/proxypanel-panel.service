@@ -1,0 +1,25 @@
+[Unit]
+Description=Proxypanel control plane
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=proxypanel
+Group=proxypanel
+WorkingDirectory=/opt/proxypanel/current
+EnvironmentFile=/etc/proxypanel/panel.env
+ExecStart=/opt/proxypanel/current/panel
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

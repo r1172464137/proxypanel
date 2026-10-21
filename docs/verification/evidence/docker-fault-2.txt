@@ -1,0 +1,31 @@
+=== RUN   TestDockerFaultAcceptance
+    docker_fault_test.go:592: real run: owned panel, PostgreSQL, Redis, two Agents and Xray traffic
+    docker_fault_test.go:602: fault injection: stopping the owned acceptance PostgreSQL container
+    docker_fault_test.go:602: panel refused the API during the injected outage (readyz=503, authenticated admin read >=500)
+    docker_fault_test.go:602: injected outage: agent1 outbox keeps 1 batch(es) / 1 sample(s) / 210279 byte(s) with 2 failed upload attempt(s), last error "panel returned HTTP 500: INTERNAL: failed to connect to `user=acceptance database=acceptance`: hostname resolving error: lookup postgres on 127.0.0.11:53: server misbehaving"
+    docker_fault_test.go:602: injected outage recovered: 210279 retained byte(s) credited once, outbox empty, ledger 40892487 -> 41102766
+    docker_fault_test.go:603: fault injection: stopping the owned acceptance Redis container
+    docker_fault_test.go:603: injected Redis outage: sessions, ledger and the local rate-limit fallback stayed intact
+    docker_fault_test.go:603: fault injection: removing the owned Redis container and recreating it from the stack definition
+    docker_fault_test.go:603: injected Redis outage recovered: ledger preserved and new usage credited
+    docker_fault_test.go:604: fault injection: moving the owned agent1 state onto a bounded 16 MiB tmpfs
+    docker_fault_test.go:604: bounded capacity filesystem: tmpfs={"/state":"rw,noexec,nosuid,size=16m","/tmp":"rw,noexec,nosuid,size=16m"} total=16384 KiB privileged=false network=ppaccept-20261021-net memory=201326592 cpus=500000000 pids=128 securityopt=["no-new-privileges"] ca=present state_owner=0 agent_uid=0
+    docker_fault_test.go:604: fault injection: filling the bounded state filesystem until the kernel refuses writes
+    docker_fault_test.go:604: capacity filesystem exhausted: enospc=yes
+        fillers=252
+        tmpfs                    16384     16384         0 100% /state
+    docker_fault_test.go:604: ENOSPC handling: the agent kept running, stopped the affected proxy and a fresh heartbeat 2026-10-21T04:01:49.26875Z reports no running instance
+    docker_fault_test.go:604: fault injection: restoring the state filesystem capacity
+    docker_fault_test.go:604: capacity recovery: fresh heartbeat 2026-10-21T04:01:53.268929Z (stop heartbeat 2026-10-21T04:01:49.26875Z) reports 1 running instance(s) and node nd_xtuprqc5xyvyagdlrsim5sjvte state "applied" while real proxy traffic is served
+    docker_fault_test.go:604: bounded capacity injection recovered: proxy stopped under ENOSPC, coordinated back to running, real agent1 restored
+    docker_fault_test.go:606: /ppaccept-20261021-postgres running restarts=0 memory=201326592 cpus=500000000 privileged=false ports={"5432/tcp":[{"HostIp":"127.0.0.1","HostPort":"25432"}]}
+        /ppaccept-20261021-redis running restarts=0 memory=201326592 cpus=500000000 privileged=false ports={}
+        /ppaccept-20261021-panel running restarts=0 memory=201326592 cpus=500000000 privileged=false ports={"18443/tcp":[{"HostIp":"127.0.0.1","HostPort":"18443"}]}
+        /ppaccept-20261021-agent1 running restarts=0 memory=201326592 cpus=500000000 privileged=false ports={"20101/tcp":[{"HostIp":"127.0.0.1","HostPort":"20101"}],"20102/tcp":[{"HostIp":"127.0.0.1","HostPort":"20102"}],"20103/tcp":[{"HostIp":"127.0.0.1","HostPort":"20103"}],"20104/tcp":[{"HostIp":"127.0.0.1","HostPort":"20104"}],"20105/tcp":[{"HostIp":"127.0.0.1","HostPort":"20105"}]}
+        /ppaccept-20261021-agent2 running restarts=0 memory=201326592 cpus=500000000 privileged=false ports={"20201/tcp":[{"HostIp":"127.0.0.1","HostPort":"20201"}],"20202/tcp":[{"HostIp":"127.0.0.1","HostPort":"20202"}],"20203/tcp":[{"HostIp":"127.0.0.1","HostPort":"20203"}],"20204/tcp":[{"HostIp":"127.0.0.1","HostPort":"20204"}],"20205/tcp":[{"HostIp":"127.0.0.1","HostPort":"20205"}]}
+        /ppaccept-20261021-target running restarts=0 memory=201326592 cpus=500000000 privileged=false ports={}
+        
+    docker_fault_test.go:607: bounded fault acceptance finished: injected PostgreSQL outage, injected Redis outage and recreate, injected 16 MiB ENOSPC; no ACK was faked and no host resource was exhausted
+--- PASS: TestDockerFaultAcceptance (37.96s)
+PASS
+ok  	proxypanel/tests/e2e	37.975s

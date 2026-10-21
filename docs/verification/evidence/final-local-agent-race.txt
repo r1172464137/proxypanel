@@ -1,0 +1,12 @@
+== go test -race ./internal/agent/... -count=1 ==
+start: 2026-10-21T13:39:27.7213117+08:00
+CGO_ENABLED=1 CC=E:\SDK\w64devkit\2.10.1\w64devkit\bin\gcc.exe
+gcc: E:\SDK\w64devkit\2.10.1\w64devkit\bin\gcc.exe
+ok  	proxypanel/internal/agent/config	1.049s
+ok  	proxypanel/internal/agent/control	1.074s
+ok  	proxypanel/internal/agent/reporting	1.311s
+ok  	proxypanel/internal/agent/state	1.358s
+ok  	proxypanel/internal/agent/supervisor	9.575s
+ok  	proxypanel/internal/agent/telemetry	1.074s
+ok  	proxypanel/internal/agent/xray	3.840s
+exit=0 elapsed=11s

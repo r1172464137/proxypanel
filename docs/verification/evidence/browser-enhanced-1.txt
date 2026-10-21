@@ -1,0 +1,23 @@
+testing: warning: no tests to run
+PASS
+ok  	proxypanel/internal/panel/api	0.010s [no tests to run]
+testing: warning: no tests to run
+PASS
+ok  	proxypanel/internal/panel/store	0.010s [no tests to run]
+testing: warning: no tests to run
+PASS
+ok  	proxypanel/internal/panel/maintenance	0.010s [no tests to run]
+=== RUN   TestPlatformRealCore
+    platform_test.go:117: owned test schema: ppe2e_eeaa81d13e483b32
+    platform_test.go:166: INJECTED: 503 INJECTED_FAULT on /api/v1/admin/overview (fulfilled, then removed before retry)
+        INJECTED: delay 1400ms on /api/v1/admin/members (route.continue, real response)
+        INJECTED: delay 1400ms on /api/v1/admin/members @390px (route.continue, real response)
+        INJECTED: 503 INJECTED_FAULT on /api/v1/admin/members @390px (fulfilled, then removed before retry)
+        INJECTED: delay 1400ms on /api/v1/me/subscription (route.continue, real response)
+        INJECTED: 503 INJECTED_FAULT on /api/v1/me/status (fulfilled, then removed before retry)
+        REAL (no interception): admin login + 12 admin pages, server creation via UI, runtime Agent/core empty states, members filter empty state, member detail (alice: subscription/verdicts/version) + no-op save (PATCH 200), real 404 error state, 5 member pages (390px), API/router permission denial
+        LAYOUT: 28 overflow checks (desktop 1440px / mobile 390px); 3 local table scroll(s) inside .table-wrap; admin/members @390px: 1 table(s) scroll inside .table-wrap
+        PASS: real admin + member flows with desktop/mobile loading, error and empty states; no unhandled page errors
+--- PASS: TestPlatformRealCore (59.71s)
+PASS
+ok  	proxypanel/tests/e2e	59.725s

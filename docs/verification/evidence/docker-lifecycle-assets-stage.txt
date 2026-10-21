@@ -1,0 +1,14 @@
+agent-new: OK
+xray-core: OK
+geoip.dat: OK
+geosite.dat: OK
+staged agent: proxypanel-agent 0.1.1
+staged core:  Xray 26.3.23 (Xray, Penetrates Everything.) cb7bfeb (go1.26.1 linux/amd64)
+staged assets: geoip.dat=19701033 geosite.dat=10454877 bytes
+installed image: sha256:419cf916edfd37cb7da54109c39ec9a781fa9a2d5889d551b81e867f3add22b3
+image agent:  proxypanel-agent 0.1.0 sha256=90ee1d0cdbfb709151a97d39c7c1c6415689811bdf0dac5934614bcbad45112d
+write /dev/stdout: broken pipe
+image core:   Xray 26.3.27 (Xray, Penetrates Everything.) d2758a0 (go1.26.1 linux/amd64) sha256=8255dd939c34cf966cc91517b6324dd3c8d0bcf49ffac8beca049a38c46845ed
+staged agent: proxypanel-agent 0.1.1 sha256=a28ca86562686f4b66c856e69253cdc6202461f53f1c2cd1c38358f76fabd66a
+staged core:  Xray 26.3.23 (Xray, Penetrates Everything.) cb7bfeb (go1.26.1 linux/amd64) sha256=05205489259d6c74795d98b4f01fcd11f987fc6ff7f65fd2991e9a7164518c98
+a672612c3a79ff0b21ead36cc56dffffa6f17ad230acfff89948f9c697d22f8f  /opt/proxypanel-acceptance-20261021/lifecycle.sh

@@ -1,0 +1,5 @@
+=== RUN   TestDockerRecovery
+    docker_recovery_test.go:540: A14 backup=46722583B retained/replayed=70093B (1 offline batch(es)) ACK-deleted unrecoverable=70093B baselines=124 RPO-window=7.467s exercise-RTO=31.867s; sanitized evidence: E:\Work\proxypanel\.local\docker-acceptance\recovery-evidence.json
+--- PASS: TestDockerRecovery (120.64s)
+PASS
+ok  	proxypanel/tests/e2e	120.651s

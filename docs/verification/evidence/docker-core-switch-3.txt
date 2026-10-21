@@ -1,0 +1,22 @@
+=== RUN   TestDockerCoreVersionSwitch
+    docker_lifecycle_test.go:1875: lifecycle node docker-lifecycle-1792561190113376500 created on the owned server srv_cok54qtn5fbgeddvsqnljsbuza, port 20105
+    docker_lifecycle_test.go:1875: node group ng_tzeobm3re6zxzmfnlhi2g6zdzi now serves [nd_salf2fxaoznt74oukfmcgwjuyu nd_xtuprqc5xyvyagdlrsim5sjvte] (batch bat_rlerfcjem7ewu4lybe36gd4yae, state=applied)
+    docker_lifecycle_test.go:1875: the archived lifecycle node nd_5jepslbz5wwpe7ycksieovxf7i keeps its history; the fixture now uses node nd_salf2fxaoznt74oukfmcgwjuyu in group ng_tzeobm3re6zxzmfnlhi2g6zdzi with members mbr_uqnwfau53zgbhvezkpcsufn4ki and mbr_dkilpzosouts423sqhyjbiqnu4
+    docker_lifecycle_test.go:1880: staged artifacts: agent-new: OK
+        xray-core: OK
+        geoip.dat: OK
+        geosite.dat: OK
+        staged agent: proxypanel-agent 0.1.1
+        staged core:  Xray 26.3.23 (Xray, Penetrates Everything.) cb7bfeb (go1.26.1 linux/amd64)
+        staged assets: geoip.dat=19701033 geosite.dat=10454877 bytes
+    docker_lifecycle_test.go:1892: real revocation of docker-lifecycle-revoked on node 20105 took 0.810s
+    docker_lifecycle_test.go:1906: core 26.3.27 under the new agent: agent=agt_f3r2mzx6zdz4wy6vygyay3g6mi version=0.1.1 core="26.3.27" applied=176/176 heartbeat=2026-10-21T05:40:09.613163Z
+    docker_lifecycle_test.go:1919: core 26.3.23 under the new agent: agent=agt_f3r2mzx6zdz4wy6vygyay3g6mi version=0.1.1 core="26.3.23" applied=176/176 heartbeat=2026-10-21T05:40:17.256975Z
+    docker_lifecycle_test.go:1934: core 26.3.27 again under the new agent: agent=agt_f3r2mzx6zdz4wy6vygyay3g6mi version=0.1.1 core="26.3.27" applied=176/176 heartbeat=2026-10-21T05:40:22.186946Z
+    docker_lifecycle_test.go:1945: shipped agent restored: agent=agt_f3r2mzx6zdz4wy6vygyay3g6mi version=0.1.0 core="26.3.27" applied=176/176 heartbeat=2026-10-21T05:40:28.428472Z
+    docker_lifecycle_test.go:1953: core 26.3.27 -> 26.3.23 -> 26.3.27 verified under agent 0.1.1, then back to the shipped 0.1.0
+    docker_lifecycle_test.go:1878: lifecycle node nd_salf2fxaoznt74oukfmcgwjuyu archived through DELETE /api/v1/admin/nodes/nd_salf2fxaoznt74oukfmcgwjuyu (usage history, audit rows and ledger entries kept)
+    docker_lifecycle_test.go:1878: lifecycle fixture quiesced: node archived, both members inactive, agent1 holds no LISTEN socket on 20105
+--- PASS: TestDockerCoreVersionSwitch (41.81s)
+PASS
+ok  	proxypanel/tests/e2e	41.823s

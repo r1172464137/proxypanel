@@ -1,0 +1,10 @@
+=== RUN   TestAcceptanceInvitationRedeemsOnce
+--- PASS: TestAcceptanceInvitationRedeemsOnce (6.26s)
+=== RUN   TestAcceptanceNodeGroupPropagationAndDedupe
+--- PASS: TestAcceptanceNodeGroupPropagationAndDedupe (24.66s)
+PASS
+ok  	proxypanel/internal/panel/api	30.929s
+=== RUN   TestSimulateUpdateNodeGroupAllowsNewlyAddedNode
+--- PASS: TestSimulateUpdateNodeGroupAllowsNewlyAddedNode (0.00s)
+PASS
+ok  	proxypanel/internal/panel/store	0.010s

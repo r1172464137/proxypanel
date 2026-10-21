@@ -1,0 +1,6 @@
+=== RUN   TestDockerClientMatrix
+    client_matrix_test.go:147: export "xray" returned 422
+--- FAIL: TestDockerClientMatrix (12.33s)
+FAIL
+FAIL	proxypanel/tests/e2e	12.338s
+FAIL

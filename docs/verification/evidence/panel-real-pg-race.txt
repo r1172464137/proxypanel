@@ -1,0 +1,405 @@
+=== RUN   TestDecideAllowsAuthorizedNodesOnly
+--- PASS: TestDecideAllowsAuthorizedNodesOnly (0.00s)
+=== RUN   TestDecideBlockedAccountIgnoresOverrides
+--- PASS: TestDecideBlockedAccountIgnoresOverrides (0.00s)
+=== RUN   TestDecideArchivedAccount
+--- PASS: TestDecideArchivedAccount (0.00s)
+=== RUN   TestDecideProxyPaused
+--- PASS: TestDecideProxyPaused (0.00s)
+=== RUN   TestDecideNoBinding
+--- PASS: TestDecideNoBinding (0.00s)
+=== RUN   TestDecideExpiredBinding
+--- PASS: TestDecideExpiredBinding (0.00s)
+=== RUN   TestDecideSubscriptionPausedAndArchived
+--- PASS: TestDecideSubscriptionPausedAndArchived (0.00s)
+=== RUN   TestDecideOverQuota
+--- PASS: TestDecideOverQuota (0.00s)
+=== RUN   TestDecideUnlimitedQuota
+--- PASS: TestDecideUnlimitedQuota (0.00s)
+=== RUN   TestDecideNoNodesAuthorized
+--- PASS: TestDecideNoNodesAuthorized (0.00s)
+=== RUN   TestDecideStepOrder
+--- PASS: TestDecideStepOrder (0.00s)
+=== RUN   TestEffectiveQuotaSources
+--- PASS: TestEffectiveQuotaSources (0.00s)
+PASS
+ok  	proxypanel/internal/panel/access	4.848s
+=== RUN   TestSubscriptionPatchDistinguishesOmittedNullAndValue
+--- PASS: TestSubscriptionPatchDistinguishesOmittedNullAndValue (0.00s)
+=== RUN   TestSubscriptionPatchRejectsUnknownInvalidsAndKeepsStrictDecoding
+--- PASS: TestSubscriptionPatchRejectsUnknownInvalidsAndKeepsStrictDecoding (0.00s)
+=== RUN   TestSubscriptionAffectsMembersCountsExplicitNull
+--- PASS: TestSubscriptionAffectsMembersCountsExplicitNull (0.00s)
+=== RUN   TestMemberPatchClearsExpiryOverrideAndBinding
+--- PASS: TestMemberPatchClearsExpiryOverrideAndBinding (0.00s)
+=== RUN   TestMemberPatchOmittedFieldsAndValidation
+--- PASS: TestMemberPatchOmittedFieldsAndValidation (0.00s)
+=== RUN   TestServerPatchNullSemantics
+--- PASS: TestServerPatchNullSemantics (0.00s)
+=== RUN   TestUsageWindowParsing
+--- PASS: TestUsageWindowParsing (0.00s)
+=== RUN   TestDecorateMemberSetsFlatDerivedValues
+--- PASS: TestDecorateMemberSetsFlatDerivedValues (0.00s)
+=== RUN   TestValidatePreviewValuesKeepsExplicitNulls
+--- PASS: TestValidatePreviewValuesKeepsExplicitNulls (0.00s)
+=== RUN   TestAcceptanceInvitationRedeemsOnce
+--- PASS: TestAcceptanceInvitationRedeemsOnce (18.21s)
+=== RUN   TestAcceptanceSessionRevocationAndScope
+--- PASS: TestAcceptanceSessionRevocationAndScope (37.31s)
+=== RUN   TestAcceptanceLastAdminProtection
+--- PASS: TestAcceptanceLastAdminProtection (15.69s)
+=== RUN   TestAcceptanceTwoAdminsConcurrentCrossChanges
+=== RUN   TestAcceptanceTwoAdminsConcurrentCrossChanges/demote/demote
+=== RUN   TestAcceptanceTwoAdminsConcurrentCrossChanges/demote/disable
+=== RUN   TestAcceptanceTwoAdminsConcurrentCrossChanges/demote/archive
+=== RUN   TestAcceptanceTwoAdminsConcurrentCrossChanges/demote/batch-disable
+=== RUN   TestAcceptanceTwoAdminsConcurrentCrossChanges/disable/disable
+=== RUN   TestAcceptanceTwoAdminsConcurrentCrossChanges/disable/archive
+=== RUN   TestAcceptanceTwoAdminsConcurrentCrossChanges/disable/batch-disable
+=== RUN   TestAcceptanceTwoAdminsConcurrentCrossChanges/archive/archive
+=== RUN   TestAcceptanceTwoAdminsConcurrentCrossChanges/archive/batch-disable
+=== RUN   TestAcceptanceTwoAdminsConcurrentCrossChanges/batch-disable/batch-disable
+--- PASS: TestAcceptanceTwoAdminsConcurrentCrossChanges (151.04s)
+    --- PASS: TestAcceptanceTwoAdminsConcurrentCrossChanges/demote/demote (13.98s)
+    --- PASS: TestAcceptanceTwoAdminsConcurrentCrossChanges/demote/disable (14.27s)
+    --- PASS: TestAcceptanceTwoAdminsConcurrentCrossChanges/demote/archive (14.03s)
+    --- PASS: TestAcceptanceTwoAdminsConcurrentCrossChanges/demote/batch-disable (16.93s)
+    --- PASS: TestAcceptanceTwoAdminsConcurrentCrossChanges/disable/disable (14.30s)
+    --- PASS: TestAcceptanceTwoAdminsConcurrentCrossChanges/disable/archive (13.78s)
+    --- PASS: TestAcceptanceTwoAdminsConcurrentCrossChanges/disable/batch-disable (16.37s)
+    --- PASS: TestAcceptanceTwoAdminsConcurrentCrossChanges/archive/archive (13.72s)
+    --- PASS: TestAcceptanceTwoAdminsConcurrentCrossChanges/archive/batch-disable (16.57s)
+    --- PASS: TestAcceptanceTwoAdminsConcurrentCrossChanges/batch-disable/batch-disable (17.09s)
+=== RUN   TestAcceptanceInheritanceAndOverrideCannotBypass
+--- PASS: TestAcceptanceInheritanceAndOverrideCannotBypass (36.40s)
+=== RUN   TestAcceptanceSwitchSubscriptionKeepsTokenUsageAndCycle
+--- PASS: TestAcceptanceSwitchSubscriptionKeepsTokenUsageAndCycle (26.46s)
+=== RUN   TestAcceptanceSubscriptionRuleEditKeepsRunningCycle
+--- PASS: TestAcceptanceSubscriptionRuleEditKeepsRunningCycle (23.70s)
+=== RUN   TestAcceptanceBoundarySplitAndQuotaChange
+--- PASS: TestAcceptanceBoundarySplitAndQuotaChange (31.14s)
+=== RUN   TestAcceptanceNodeGroupPropagationAndDedupe
+--- PASS: TestAcceptanceNodeGroupPropagationAndDedupe (31.61s)
+=== RUN   TestPanelFlow
+=== RUN   TestPanelFlow/login_and_csrf
+=== RUN   TestPanelFlow/create_resources
+=== RUN   TestPanelFlow/batch_preview_and_submit
+=== RUN   TestPanelFlow/expired_preview_and_idempotency_conflict
+=== RUN   TestPanelFlow/agent_registration_and_usage
+=== RUN   TestPanelFlow/snapshot_and_receipts
+=== RUN   TestPanelFlow/empty_authorization_snapshot
+=== RUN   TestPanelFlow/recovery_mode_blocks_writes_and_snapshots
+--- PASS: TestPanelFlow (43.16s)
+    --- PASS: TestPanelFlow/login_and_csrf (4.73s)
+    --- PASS: TestPanelFlow/create_resources (7.45s)
+    --- PASS: TestPanelFlow/batch_preview_and_submit (7.73s)
+    --- PASS: TestPanelFlow/expired_preview_and_idempotency_conflict (6.77s)
+    --- PASS: TestPanelFlow/agent_registration_and_usage (2.29s)
+    --- PASS: TestPanelFlow/snapshot_and_receipts (3.48s)
+    --- PASS: TestPanelFlow/empty_authorization_snapshot (4.29s)
+    --- PASS: TestPanelFlow/recovery_mode_blocks_writes_and_snapshots (1.81s)
+PASS
+ok  	proxypanel/internal/panel/api	417.504s
+=== RUN   TestRenderXrayRealityHasNoServerSecret
+--- PASS: TestRenderXrayRealityHasNoServerSecret (0.00s)
+=== RUN   TestRenderXrayEmptyNodesStillValid
+--- PASS: TestRenderXrayEmptyNodesStillValid (0.00s)
+=== RUN   TestRenderSingboxRealityAndWS
+--- PASS: TestRenderSingboxRealityAndWS (0.00s)
+=== RUN   TestRenderMihomo
+--- PASS: TestRenderMihomo (0.00s)
+=== RUN   TestRenderV2rayN
+--- PASS: TestRenderV2rayN (0.00s)
+=== RUN   TestRenderV2rayNBase64Wrapper
+--- PASS: TestRenderV2rayNBase64Wrapper (0.00s)
+=== RUN   TestUnsupportedTransportIsExplicit
+--- PASS: TestUnsupportedTransportIsExplicit (0.00s)
+=== RUN   TestNormalizeFormat
+--- PASS: TestNormalizeFormat (0.00s)
+=== RUN   TestRenderDedupesRemarks
+--- PASS: TestRenderDedupesRemarks (0.00s)
+=== RUN   TestRenderTemplatePreservesGeneratedFields
+=== RUN   TestRenderTemplatePreservesGeneratedFields/xray/nodes=false
+=== RUN   TestRenderTemplatePreservesGeneratedFields/xray/nodes=true
+=== RUN   TestRenderTemplatePreservesGeneratedFields/singbox/nodes=false
+=== RUN   TestRenderTemplatePreservesGeneratedFields/singbox/nodes=true
+=== RUN   TestRenderTemplatePreservesGeneratedFields/mihomo/nodes=false
+=== RUN   TestRenderTemplatePreservesGeneratedFields/mihomo/nodes=true
+--- PASS: TestRenderTemplatePreservesGeneratedFields (0.01s)
+    --- PASS: TestRenderTemplatePreservesGeneratedFields/xray/nodes=false (0.00s)
+    --- PASS: TestRenderTemplatePreservesGeneratedFields/xray/nodes=true (0.00s)
+    --- PASS: TestRenderTemplatePreservesGeneratedFields/singbox/nodes=false (0.00s)
+    --- PASS: TestRenderTemplatePreservesGeneratedFields/singbox/nodes=true (0.00s)
+    --- PASS: TestRenderTemplatePreservesGeneratedFields/mihomo/nodes=false (0.00s)
+    --- PASS: TestRenderTemplatePreservesGeneratedFields/mihomo/nodes=true (0.00s)
+=== RUN   TestXrayTLSReplacesAllowInsecureWithPin
+--- PASS: TestXrayTLSReplacesAllowInsecureWithPin (0.00s)
+=== RUN   TestXrayAllowInsecureWithoutPinIsExplicit
+--- PASS: TestXrayAllowInsecureWithoutPinIsExplicit (0.00s)
+=== RUN   TestExplicitCertificatePinRejectedWhereUnsupported
+--- PASS: TestExplicitCertificatePinRejectedWhereUnsupported (0.00s)
+=== RUN   TestMihomoPlaintextTrojanIsExplicit
+--- PASS: TestMihomoPlaintextTrojanIsExplicit (0.00s)
+=== RUN   TestShadowsocks2022CredentialsCarryServerPSK
+--- PASS: TestShadowsocks2022CredentialsCarryServerPSK (0.00s)
+=== RUN   TestShadowsocks2022WithoutServerPSKIsExplicit
+--- PASS: TestShadowsocks2022WithoutServerPSKIsExplicit (0.00s)
+=== RUN   TestLegacyShadowsocksKeepsMemberSecret
+--- PASS: TestLegacyShadowsocksKeepsMemberSecret (0.00s)
+=== RUN   TestHTTPUpgradeProjectionAndExplicitIncompatibility
+--- PASS: TestHTTPUpgradeProjectionAndExplicitIncompatibility (0.00s)
+PASS
+ok  	proxypanel/internal/panel/clientconfig	2.438s
+?   	proxypanel/internal/panel/domain	[no test files]
+?   	proxypanel/internal/panel/ids	[no test files]
+=== RUN   TestLocalFallbackEnforcesLimit
+--- PASS: TestLocalFallbackEnforcesLimit (0.00s)
+=== RUN   TestLocalWindowExpires
+--- PASS: TestLocalWindowExpires (0.00s)
+=== RUN   TestLocalTableFailsClosed
+--- PASS: TestLocalTableFailsClosed (0.00s)
+=== RUN   TestStatusReportsUnavailableRedisAndDegrades
+--- PASS: TestStatusReportsUnavailableRedisAndDegrades (0.11s)
+=== RUN   TestStatusDisabledWithoutRedis
+--- PASS: TestStatusDisabledWithoutRedis (0.00s)
+PASS
+ok  	proxypanel/internal/panel/limit	2.531s
+=== RUN   TestMaintenanceIntegrationPass
+2026/10/21 12:07:29 maintenance: 5 alert(s) raised, 0 recovered, 8 cleaned up
+--- PASS: TestMaintenanceIntegrationPass (14.28s)
+=== RUN   TestMaintenanceIntegrationSingleExecutor
+2026/10/21 12:07:45 maintenance: 5 alert(s) raised, 0 recovered, 8 cleaned up
+--- PASS: TestMaintenanceIntegrationSingleExecutor (6.01s)
+=== RUN   TestMaintenanceIntegrationDeliveryFailure
+2026/10/21 12:07:50 maintenance: 5 alert(s) raised, 0 recovered, 8 cleaned up
+2026/10/21 12:07:53 maintenance: telegram notification ntf_l42k4gu3joqgd5yau3l75eqcbe (event evt_lfv4etax7y6bighrvevv2eznga) failed on attempt 1: telegram HTTP 429: Too Many Requests
+2026/10/21 12:07:53 maintenance: telegram notification ntf_ldlspbr2f6ojikh624xh5x5mhu (event evt_esqobnbd3gmixq44vuxqp7qc6y) failed on attempt 1: telegram HTTP 429: Too Many Requests
+2026/10/21 12:07:53 maintenance: telegram notification ntf_iqfxpuhsspvurfhrmnqqqzkkii (event evt_oedkwah3bwv462ukabr63xhus4) failed on attempt 1: telegram HTTP 429: Too Many Requests
+2026/10/21 12:07:53 maintenance: telegram notification ntf_tipcfdqr6ku7xztakda36yp6b4 (event evt_u5wyanc6npv4ftdzq7qmy6lode) failed on attempt 1: telegram HTTP 429: Too Many Requests
+2026/10/21 12:07:53 maintenance: telegram notification ntf_vhs4wamtuschfe27wp7gg4pfaq (event evt_q4zijpsperhharayhnhhq7ol2a) failed on attempt 1: telegram HTTP 429: Too Many Requests
+--- PASS: TestMaintenanceIntegrationDeliveryFailure (8.63s)
+=== RUN   TestReconcileRaisesThenAdopts
+--- PASS: TestReconcileRaisesThenAdopts (0.00s)
+=== RUN   TestReconcileRecoversOnlyWhenTheConditionIsGone
+--- PASS: TestReconcileRecoversOnlyWhenTheConditionIsGone (0.00s)
+=== RUN   TestReconcileKeepsAlertsOfTruncatedScans
+--- PASS: TestReconcileKeepsAlertsOfTruncatedScans (0.00s)
+=== RUN   TestReconcileIgnoresForeignKinds
+--- PASS: TestReconcileIgnoresForeignKinds (0.00s)
+=== RUN   TestReconcileAdoptsLedgerOverQuotaEvent
+--- PASS: TestReconcileAdoptsLedgerOverQuotaEvent (0.00s)
+=== RUN   TestDedupeKind
+--- PASS: TestDedupeKind (0.00s)
+=== RUN   TestEndpointIsPinnedToTelegram
+--- PASS: TestEndpointIsPinnedToTelegram (0.00s)
+=== RUN   TestBackoffIsExponentialAndBounded
+--- PASS: TestBackoffIsExponentialAndBounded (0.00s)
+=== RUN   TestSanitizeErrorDropsURLAndToken
+--- PASS: TestSanitizeErrorDropsURLAndToken (0.00s)
+=== RUN   TestSendRequiresHTTP200AndOKTrue
+=== RUN   TestSendRequiresHTTP200AndOKTrue/ok
+=== RUN   TestSendRequiresHTTP200AndOKTrue/ok-false
+=== RUN   TestSendRequiresHTTP200AndOKTrue/rate-limited
+=== RUN   TestSendRequiresHTTP200AndOKTrue/server-error
+=== RUN   TestSendRequiresHTTP200AndOKTrue/garbage
+--- PASS: TestSendRequiresHTTP200AndOKTrue (0.00s)
+    --- PASS: TestSendRequiresHTTP200AndOKTrue/ok (0.00s)
+    --- PASS: TestSendRequiresHTTP200AndOKTrue/ok-false (0.00s)
+    --- PASS: TestSendRequiresHTTP200AndOKTrue/rate-limited (0.00s)
+    --- PASS: TestSendRequiresHTTP200AndOKTrue/server-error (0.00s)
+    --- PASS: TestSendRequiresHTTP200AndOKTrue/garbage (0.00s)
+=== RUN   TestSendBodyCarriesChatAndText
+--- PASS: TestSendBodyCarriesChatAndText (0.00s)
+=== RUN   TestSendRecordsNetworkFailureWithoutLeakingTheURL
+--- PASS: TestSendRecordsNetworkFailureWithoutLeakingTheURL (0.00s)
+=== RUN   TestSendIsBoundedByTheTimeout
+--- PASS: TestSendIsBoundedByTheTimeout (0.10s)
+=== RUN   TestClipBoundsMessagesWithoutBreakingRunes
+--- PASS: TestClipBoundsMessagesWithoutBreakingRunes (0.00s)
+=== RUN   TestRedactRemovesTheToken
+--- PASS: TestRedactRemovesTheToken (0.00s)
+=== RUN   TestRunOnceWithoutStoreFails
+--- PASS: TestRunOnceWithoutStoreFails (0.00s)
+PASS
+ok  	proxypanel/internal/panel/maintenance	31.782s
+=== RUN   TestAnchorInstantAsiaShanghai
+--- PASS: TestAnchorInstantAsiaShanghai (0.00s)
+=== RUN   TestAnchorInstantClipsShortMonths
+--- PASS: TestAnchorInstantClipsShortMonths (0.00s)
+=== RUN   TestContainingAndNextBoundary
+--- PASS: TestContainingAndNextBoundary (0.00s)
+=== RUN   TestNextBoundaryIsStrictlyIncreasing
+--- PASS: TestNextBoundaryIsStrictlyIncreasing (0.00s)
+=== RUN   TestDSTGapTakesFirstValidInstant
+--- PASS: TestDSTGapTakesFirstValidInstant (0.00s)
+=== RUN   TestDSTAmbiguousTakesEarlierInstant
+--- PASS: TestDSTAmbiguousTakesEarlierInstant (0.00s)
+=== RUN   TestAllocateSampleAcrossBoundary
+--- PASS: TestAllocateSampleAcrossBoundary (0.00s)
+=== RUN   TestAllocateSampleSinglePeriodIsExact
+--- PASS: TestAllocateSampleSinglePeriodIsExact (0.00s)
+=== RUN   TestAllocateSampleRemainderGoesToLast
+--- PASS: TestAllocateSampleRemainderGoesToLast (0.00s)
+=== RUN   TestAllocateSampleZeroLengthIsDropped
+--- PASS: TestAllocateSampleZeroLengthIsDropped (0.00s)
+=== RUN   TestLoadTimezoneRejectsEmptyAndUnknown
+--- PASS: TestLoadTimezoneRejectsEmptyAndUnknown (0.14s)
+=== RUN   TestPrevBoundaryAndCandidateWindows
+--- PASS: TestPrevBoundaryAndCandidateWindows (0.00s)
+PASS
+ok  	proxypanel/internal/panel/period	1.173s
+=== RUN   TestValidateRealityVLESS
+--- PASS: TestValidateRealityVLESS (0.00s)
+=== RUN   TestValidateRejectsUnknownProtocolAndTransport
+--- PASS: TestValidateRejectsUnknownProtocolAndTransport (0.00s)
+=== RUN   TestValidateRejectsAdminSuppliedClients
+--- PASS: TestValidateRejectsAdminSuppliedClients (0.00s)
+=== RUN   TestValidateRealityRequirements
+--- PASS: TestValidateRealityRequirements (0.00s)
+=== RUN   TestValidateRejectsLegacyFlow
+--- PASS: TestValidateRejectsLegacyFlow (0.00s)
+=== RUN   TestValidateFlowTransportCombination
+--- PASS: TestValidateFlowTransportCombination (0.00s)
+=== RUN   TestValidateShadowsocks2022
+--- PASS: TestValidateShadowsocks2022 (0.00s)
+=== RUN   TestValidateVMessAndTrojan
+--- PASS: TestValidateVMessAndTrojan (0.00s)
+=== RUN   TestSanitizeMovesSecretsOutOfPersistedSettings
+--- PASS: TestSanitizeMovesSecretsOutOfPersistedSettings (0.00s)
+=== RUN   TestGenerateX25519
+--- PASS: TestGenerateX25519 (0.00s)
+=== RUN   TestEndpointForReality
+--- PASS: TestEndpointForReality (0.00s)
+=== RUN   TestEndpointForTransportParams
+--- PASS: TestEndpointForTransportParams (0.00s)
+=== RUN   TestEndpointMissingRealityParams
+--- PASS: TestEndpointMissingRealityParams (0.00s)
+=== RUN   TestValidateShadowsocksRejectsMultiUserUnsupportedMethod
+--- PASS: TestValidateShadowsocksRejectsMultiUserUnsupportedMethod (0.00s)
+=== RUN   TestEndpointForShadowsocks2022CarriesServerPSK
+--- PASS: TestEndpointForShadowsocks2022CarriesServerPSK (0.00s)
+=== RUN   TestEndpointForTLSDerivesCertificatePin
+--- PASS: TestEndpointForTLSDerivesCertificatePin (0.00s)
+=== RUN   TestEndpointForExplicitCertificatePin
+--- PASS: TestEndpointForExplicitCertificatePin (0.00s)
+=== RUN   TestNormalizeCertSHA256
+--- PASS: TestNormalizeCertSHA256 (0.00s)
+=== RUN   TestVLESSEveryNativeFieldSurvives
+--- PASS: TestVLESSEveryNativeFieldSurvives (0.00s)
+PASS
+ok  	proxypanel/internal/panel/protocol	2.641s
+?   	proxypanel/internal/panel/secrets	[no test files]
+=== RUN   TestNodeMutationPublishesRevisionInSameCommit
+--- PASS: TestNodeMutationPublishesRevisionInSameCommit (5.23s)
+=== RUN   TestMemberAndCredentialChangesPublishRevision
+--- PASS: TestMemberAndCredentialChangesPublishRevision (5.88s)
+=== RUN   TestNodeMoveRevokesOnBothServers
+--- PASS: TestNodeMoveRevokesOnBothServers (3.70s)
+=== RUN   TestEvaluateAccessAdvancesEndedCycle
+--- PASS: TestEvaluateAccessAdvancesEndedCycle (8.81s)
+=== RUN   TestSnapshotAdvancesCycleAndReturnsFreshRevision
+--- PASS: TestSnapshotAdvancesCycleAndReturnsFreshRevision (7.15s)
+=== RUN   TestAdvancePeriodsTick
+--- PASS: TestAdvancePeriodsTick (10.19s)
+=== RUN   TestSubscriptionRuleEditSchedulesImmediatelyForNextBoundary
+--- PASS: TestSubscriptionRuleEditSchedulesImmediatelyForNextBoundary (8.36s)
+=== RUN   TestUsageBatchBooksIntoAdvancedCycle
+--- PASS: TestUsageBatchBooksIntoAdvancedCycle (8.86s)
+=== RUN   TestSnapshotAndEvidenceAreNotTruncatedBeyond200
+--- PASS: TestSnapshotAndEvidenceAreNotTruncatedBeyond200 (6.21s)
+=== RUN   TestSubscriptionRuleRepeatedEditsReplaceAndClearPending
+--- PASS: TestSubscriptionRuleRepeatedEditsReplaceAndClearPending (8.26s)
+=== RUN   TestSimulateUpdateNodeGroupAllowsNewlyAddedNode
+--- PASS: TestSimulateUpdateNodeGroupAllowsNewlyAddedNode (0.00s)
+=== RUN   TestDigestMembersIsOrderInsensitiveAndVersioned
+--- PASS: TestDigestMembersIsOrderInsensitiveAndVersioned (0.00s)
+=== RUN   TestRequestFingerprintBindsPreviewAndConfirmation
+--- PASS: TestRequestFingerprintBindsPreviewAndConfirmation (0.00s)
+=== RUN   TestDiffNodes
+--- PASS: TestDiffNodes (0.00s)
+=== RUN   TestApplySubscriptionPatchObjectValidation
+--- PASS: TestApplySubscriptionPatchObjectValidation (0.00s)
+=== RUN   TestOperationConstantsMatchContract
+--- PASS: TestOperationConstantsMatchContract (0.00s)
+=== RUN   TestNormalizeRetentionDaysEnforcesFloor
+--- PASS: TestNormalizeRetentionDaysEnforcesFloor (0.00s)
+=== RUN   TestNormalizeBoundsIsAlwaysBounded
+--- PASS: TestNormalizeBoundsIsAlwaysBounded (0.00s)
+=== RUN   TestCleanupNeverDeletesProtectedTables
+--- PASS: TestCleanupNeverDeletesProtectedTables (0.00s)
+=== RUN   TestCleanupStatementsAreBoundedAndUseThePolicyArguments
+--- PASS: TestCleanupStatementsAreBoundedAndUseThePolicyArguments (0.00s)
+=== RUN   TestCleanupKeepsOpenAlertsAndUndeliveredNotifications
+--- PASS: TestCleanupKeepsOpenAlertsAndUndeliveredNotifications (0.00s)
+=== RUN   TestAlertDedupeKeyIsKindAndSubject
+--- PASS: TestAlertDedupeKeyIsKindAndSubject (0.00s)
+=== RUN   TestObservationSetCompleteness
+--- PASS: TestObservationSetCompleteness (0.00s)
+=== RUN   TestTruncateMessage
+--- PASS: TestTruncateMessage (0.00s)
+=== RUN   TestShortDurationAndBytes
+--- PASS: TestShortDurationAndBytes (0.00s)
+=== RUN   TestComputeAdvanceKeepsRunningCycle
+--- PASS: TestComputeAdvanceKeepsRunningCycle (0.00s)
+=== RUN   TestComputeAdvanceRollsEndedCycleToContainingWindow
+--- PASS: TestComputeAdvanceRollsEndedCycleToContainingWindow (0.00s)
+=== RUN   TestComputeAdvanceAppliesPendingRuleAtBoundary
+--- PASS: TestComputeAdvanceAppliesPendingRuleAtBoundary (0.00s)
+=== RUN   TestComputeAdvanceLeavesMissingCycleAlone
+--- PASS: TestComputeAdvanceLeavesMissingCycleAlone (0.00s)
+=== RUN   TestComputeAdvanceWithoutBindingOrRuleIsNoop
+--- PASS: TestComputeAdvanceWithoutBindingOrRuleIsNoop (0.00s)
+=== RUN   TestComputeAdvanceClipsShortMonths
+--- PASS: TestComputeAdvanceClipsShortMonths (0.00s)
+=== RUN   TestComputeAdvanceRejectsUnknownTimezone
+--- PASS: TestComputeAdvanceRejectsUnknownTimezone (0.00s)
+=== RUN   TestComputeAdvanceAppliesTimezoneEditAtFirstBoundaryExactly
+--- PASS: TestComputeAdvanceAppliesTimezoneEditAtFirstBoundaryExactly (0.00s)
+=== RUN   TestRecoveryGenerationIsFreshExactJSONInteger
+--- PASS: TestRecoveryGenerationIsFreshExactJSONInteger (0.00s)
+=== RUN   TestRecoveryGenerationTransaction
+--- PASS: TestRecoveryGenerationTransaction (3.08s)
+PASS
+ok  	proxypanel/internal/panel/store	77.762s
+=== RUN   TestValidateAcceptsWellFormedBatch
+--- PASS: TestValidateAcceptsWellFormedBatch (0.00s)
+=== RUN   TestValidateRejectsForeignNode
+--- PASS: TestValidateRejectsForeignNode (0.00s)
+=== RUN   TestValidateRejectsUnknownNode
+--- PASS: TestValidateRejectsUnknownNode (0.00s)
+=== RUN   TestValidateRejectsMissingHistory
+--- PASS: TestValidateRejectsMissingHistory (0.00s)
+=== RUN   TestValidateRejectsNegativeAndInverted
+--- PASS: TestValidateRejectsNegativeAndInverted (0.00s)
+=== RUN   TestValidateClockSkew
+--- PASS: TestValidateClockSkew (0.00s)
+=== RUN   TestValidateSchemaAndSize
+--- PASS: TestValidateSchemaAndSize (0.00s)
+=== RUN   TestPayloadHashIsStableAndContentSensitive
+--- PASS: TestPayloadHashIsStableAndContentSensitive (0.00s)
+=== RUN   TestAllocateCrossesBoundaryAndFlagsCorrection
+--- PASS: TestAllocateCrossesBoundaryAndFlagsCorrection (0.00s)
+=== RUN   TestAllocateBackfillIntoClosedCycleIsCorrection
+--- PASS: TestAllocateBackfillIntoClosedCycleIsCorrection (0.00s)
+=== RUN   TestRejectCodePriority
+--- PASS: TestRejectCodePriority (0.00s)
+=== RUN   TestLargeTrafficIsNotPayloadSize
+--- PASS: TestLargeTrafficIsNotPayloadSize (0.00s)
+PASS
+ok  	proxypanel/internal/panel/usagecalc	1.032s
+=== RUN   TestNativeVLESSFieldsReachTheCoreDocument
+--- PASS: TestNativeVLESSFieldsReachTheCoreDocument (0.00s)
+=== RUN   TestBuildInjectsClientsAndReinjectsPrivateKey
+--- PASS: TestBuildInjectsClientsAndReinjectsPrivateKey (0.00s)
+=== RUN   TestBuildEmptyClientsIsExplicitEmptyArray
+--- PASS: TestBuildEmptyClientsIsExplicitEmptyArray (0.00s)
+=== RUN   TestBuildRejectsAdminClients
+--- PASS: TestBuildRejectsAdminClients (0.00s)
+=== RUN   TestBuildShadowsocks2022
+--- PASS: TestBuildShadowsocks2022 (0.00s)
+=== RUN   TestBuildRequiresUUID
+--- PASS: TestBuildRequiresUUID (0.00s)
+=== RUN   TestBuildShadowsocksClientsCarryMethod
+--- PASS: TestBuildShadowsocksClientsCarryMethod (0.00s)
+PASS
+ok  	proxypanel/internal/panel/xrayconf	1.032s

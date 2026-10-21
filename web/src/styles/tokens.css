@@ -1,0 +1,138 @@
+/*
+ * 设计契约（墨韵后台）——改样式前先读这一段：
+ *
+ * 使命：把真实运维数据放在纸面上，安静、可读、有呼吸感，但不牺牲后台密度。
+ * 色彩：纸白/暖灰底 + 墨灰文字；朱砂(--seal)与苔绿(--ok)只做小面积点缀，
+ *       主按钮用墨色(--accent)，危险操作始终是醒目的红(--danger)。
+ * 排版：中文标题/品牌走本地衬线栈(--font-serif)，正文、表格、数字保持 sans 与
+ *       tabular-nums 清晰；标题与正文形成对比而不是整体放大。
+ * 间距：4px 节奏（--space-1…7）；圆角克制（4/5/8）；投影几乎不可见，
+ *       只用 1px 描边与细分隔线划分层次。
+ * 动效：只表达状态变化——hover/press 90ms，状态过渡 160ms，进场 260ms，
+ *       全部用 --ease-out；prefers-reduced-motion 下关闭。
+ *
+ * Do：纸白底、细描边、小方印、极淡墨层；选中项用淡墨块 + 细朱砂竖线。
+ * Don't：渐变主色、深蓝侧栏、大圆角卡片、重投影、整页 overflow-x 掩盖布局、
+ *        仅 Unicode/emoji 当图标、远程字体或图片。
+ */
+:root {
+  --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+  --font-serif: "Songti SC", "Noto Serif SC", "Source Han Serif SC", "SimSun", "STSong", Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  --radius-sm: 4px;
+  --radius: 5px;
+  --radius-lg: 8px;
+
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 26px;
+
+  --sidebar-width: 232px;
+  --topbar-height: 56px;
+
+  --dur-fast: 90ms;
+  --dur: 160ms;
+  --dur-slow: 260ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* 浅色：纸白暖灰（刻意压低黄色，避免旧纸张的脏黄） */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f5f3ee;
+  --surface: #fdfcf9;
+  --surface-2: #f3f0e9;
+  --surface-3: #eae5db;
+  --border: #e2ddd2;
+  --border-strong: #cbc4b6;
+  --text: #22201d;
+  --text-muted: #5f5951;
+  --text-faint: #877f73;
+  --accent: #2b2721;
+  --accent-hover: #423b32;
+  --accent-weak: #efeae0;
+  --accent-text: #2b2721;
+  --on-accent: #fbf8f2;
+  --seal: #9a4a39;
+  --seal-weak: #f4ebe5;
+  --danger: #ab3327;
+  --danger-weak: #faeeea;
+  --warn: #8a6514;
+  --warn-weak: #f8f2e0;
+  --ok: #44664a;
+  --ok-weak: #edf2ea;
+  --info: #3d5b72;
+  --info-weak: #eceff2;
+  --wash: rgba(43, 39, 33, 0.055);
+  --wash-soft: rgba(43, 39, 33, 0.028);
+  --focus-ring: rgba(154, 74, 57, 0.58);
+
+  --shadow-card: 0 1px 1px rgba(40, 34, 26, 0.03);
+  --shadow-pop: 0 14px 36px rgba(40, 34, 26, 0.12), 0 2px 6px rgba(40, 34, 26, 0.05);
+
+  --sidebar-bg: #f1ede4;
+  --sidebar-elevated: #e8e2d6;
+  --sidebar-text: #3a352e;
+  --sidebar-muted: #857d6f;
+  --sidebar-border: #ded8cb;
+  --sidebar-active-bg: #e4ded1;
+  --sidebar-active-text: #1d1a16;
+  --overlay: rgba(28, 23, 17, 0.42);
+}
+
+/* 深色：墨黑 + 暖灰纸感，不是冷调蓝黑 */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #151310;
+  --surface: #1d1a16;
+  --surface-2: #231f19;
+  --surface-3: #2a251f;
+  --border: #332e26;
+  --border-strong: #4a4338;
+  --text: #ece6dc;
+  --text-muted: #a8a094;
+  --text-faint: #877f72;
+  --overlay: rgba(6, 5, 4, 0.62);
+  --accent: #d8d1c3;
+  --accent-hover: #e9e3d6;
+  --accent-weak: #2a251f;
+  --accent-text: #ded6c7;
+  --on-accent: #1a1713;
+  --seal: #c37c67;
+  --seal-weak: #2b211d;
+  --danger: #e07a6b;
+  --danger-weak: #2c1c18;
+  --warn: #d3a94f;
+  --warn-weak: #2a2317;
+  --ok: #93b696;
+  --ok-weak: #1b241c;
+  --info: #93b3cc;
+  --info-weak: #1a232a;
+  --wash: rgba(236, 230, 220, 0.05);
+  --wash-soft: rgba(236, 230, 220, 0.026);
+  --focus-ring: rgba(195, 124, 103, 0.62);
+
+  --shadow-card: 0 1px 1px rgba(0, 0, 0, 0.35);
+  --shadow-pop: 0 16px 38px rgba(0, 0, 0, 0.5);
+
+  --sidebar-bg: #1a1714;
+  --sidebar-elevated: #241f1a;
+  --sidebar-text: #cfc8ba;
+  --sidebar-muted: #8d8577;
+  --sidebar-border: #2e2a23;
+  --sidebar-active-bg: #2a251f;
+  --sidebar-active-text: #f2ece1;
+}
+

@@ -1,0 +1,14 @@
+=== RUN   TestDockerConfigSafety
+    docker_lifecycle_test.go:1388: lifecycle node docker-lifecycle-1792561311384327600 created on the owned server srv_cok54qtn5fbgeddvsqnljsbuza, port 20105
+    docker_lifecycle_test.go:1388: node group ng_tzeobm3re6zxzmfnlhi2g6zdzi now serves [nd_5wdn4kraqdt477utl57lqdjuxy nd_xtuprqc5xyvyagdlrsim5sjvte] (batch bat_quoyfpz6vxzpjp543vviwj5xrm, state=applied)
+    docker_lifecycle_test.go:1388: the archived lifecycle node nd_salf2fxaoznt74oukfmcgwjuyu keeps its history; the fixture now uses node nd_5wdn4kraqdt477utl57lqdjuxy in group ng_tzeobm3re6zxzmfnlhi2g6zdzi with members mbr_uqnwfau53zgbhvezkpcsufn4ki and mbr_dkilpzosouts423sqhyjbiqnu4
+    docker_lifecycle_test.go:1402: real revocation of docker-lifecycle-revoked on node 20105 took 1.054s
+    docker_lifecycle_test.go:1411: invalid Xray document dispatched for the lifecycle node; the real core must reject it
+    docker_lifecycle_test.go:1440: invalid document rejected by the real core; other node unaffected; rollback did not restore revoked access
+    docker_lifecycle_test.go:1450: the panel document was restored without protocol_settings.fallbacks
+    docker_lifecycle_test.go:1475: valid document applied again; both nodes serve; ledger intact
+    docker_lifecycle_test.go:1394: lifecycle node nd_5wdn4kraqdt477utl57lqdjuxy archived through DELETE /api/v1/admin/nodes/nd_5wdn4kraqdt477utl57lqdjuxy (usage history, audit rows and ledger entries kept)
+    docker_lifecycle_test.go:1394: lifecycle fixture quiesced: node archived, both members inactive, agent1 holds no LISTEN socket on 20105
+--- PASS: TestDockerConfigSafety (19.87s)
+PASS
+ok  	proxypanel/tests/e2e	19.885s

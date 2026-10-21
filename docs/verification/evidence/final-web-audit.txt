@@ -1,0 +1,5 @@
+== npm --prefix web audit --audit-level=moderate ==
+start: 2026-10-21T13:50:03.0998285+08:00
+npm=11.19.1
+found 0 vulnerabilities
+exit=0 elapsed=1s

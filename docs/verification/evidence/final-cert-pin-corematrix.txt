@@ -1,0 +1,26 @@
+== go test -tags corematrix ./internal/panel/clientconfig -run TestLocalCore -count=1 -timeout 10m -v ==
+start: 2026-10-21T13:55:59.5732347+08:00
+XRAY_BIN=E:\SDK\Xray\v26.3.27\xray.exe SING_BOX_BIN=E:\SDK\sing-box\1.14.3\sing-box-1.14.3-windows-amd64\sing-box.exe MIHOMO_BIN=E:\SDK\mihomo\1.19.32\mihomo-windows-amd64.exe
+=== RUN   TestLocalCoreClientMatrix
+=== RUN   TestLocalCoreClientMatrix/vless-tcp-none
+=== RUN   TestLocalCoreClientMatrix/vmess-tcp-none
+=== RUN   TestLocalCoreClientMatrix/trojan-tcp-tls
+=== RUN   TestLocalCoreClientMatrix/trojan-tcp-none
+=== RUN   TestLocalCoreClientMatrix/ss-aes-128-gcm
+=== RUN   TestLocalCoreClientMatrix/ss2022-blake3-aes-128-gcm
+--- PASS: TestLocalCoreClientMatrix (3.10s)
+    --- PASS: TestLocalCoreClientMatrix/vless-tcp-none (0.53s)
+    --- PASS: TestLocalCoreClientMatrix/vmess-tcp-none (0.53s)
+    --- PASS: TestLocalCoreClientMatrix/trojan-tcp-tls (0.53s)
+    --- PASS: TestLocalCoreClientMatrix/trojan-tcp-none (0.39s)
+    --- PASS: TestLocalCoreClientMatrix/ss-aes-128-gcm (0.52s)
+    --- PASS: TestLocalCoreClientMatrix/ss2022-blake3-aes-128-gcm (0.53s)
+=== RUN   TestLocalCoreCredentialGuards
+=== RUN   TestLocalCoreCredentialGuards/xray-pin-is-enforced
+=== RUN   TestLocalCoreCredentialGuards/ss2022-user-psk-only-fails
+--- PASS: TestLocalCoreCredentialGuards (11.77s)
+    --- PASS: TestLocalCoreCredentialGuards/xray-pin-is-enforced (1.35s)
+    --- PASS: TestLocalCoreCredentialGuards/ss2022-user-psk-only-fails (10.34s)
+PASS
+ok  	proxypanel/internal/panel/clientconfig	14.876s
+exit=0 elapsed=15s

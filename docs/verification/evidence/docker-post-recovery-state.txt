@@ -1,0 +1,23 @@
+/ppaccept-20261021-recovery-agent running=false memory=201326592 privileged=false
+/ppaccept-20261021-recovery-panel running=false memory=201326592 privileged=false
+/ppaccept-20261021-restore running=false memory=201326592 privileged=false
+/ppaccept-20261021-postgres running restarts=0 memory=201326592 cpus=500000000 privileged=false ports={"5432/tcp":[{"HostIp":"127.0.0.1","HostPort":"25432"}]}
+/ppaccept-20261021-redis running restarts=0 memory=201326592 cpus=500000000 privileged=false ports={}
+/ppaccept-20261021-panel running restarts=0 memory=201326592 cpus=500000000 privileged=false ports={"18443/tcp":[{"HostIp":"127.0.0.1","HostPort":"18443"}]}
+/ppaccept-20261021-agent1 running restarts=0 memory=201326592 cpus=500000000 privileged=false ports={"20101/tcp":[{"HostIp":"127.0.0.1","HostPort":"20101"}],"20102/tcp":[{"HostIp":"127.0.0.1","HostPort":"20102"}],"20103/tcp":[{"HostIp":"127.0.0.1","HostPort":"20103"}],"20104/tcp":[{"HostIp":"127.0.0.1","HostPort":"20104"}],"20105/tcp":[{"HostIp":"127.0.0.1","HostPort":"20105"}]}
+/ppaccept-20261021-agent2 running restarts=0 memory=201326592 cpus=500000000 privileged=false ports={"20201/tcp":[{"HostIp":"127.0.0.1","HostPort":"20201"}],"20202/tcp":[{"HostIp":"127.0.0.1","HostPort":"20202"}],"20203/tcp":[{"HostIp":"127.0.0.1","HostPort":"20203"}],"20204/tcp":[{"HostIp":"127.0.0.1","HostPort":"20204"}],"20205/tcp":[{"HostIp":"127.0.0.1","HostPort":"20205"}]}
+/ppaccept-20261021-target running restarts=0 memory=201326592 cpus=500000000 privileged=false ports={}
+/ppaccept-20261021-restore exited restarts=0 memory=201326592 cpus=500000000 privileged=false ports={"5432/tcp":[{"HostIp":"127.0.0.1","HostPort":"25433"}]}
+ORIGINAL_CONTAINERS
+/axonhub-axonhub-1 id=00b04373d79b6c2fcdcf194eddd7a764c19cb93c69179e6985536bb957925e25 started=2026-10-21T02:19:33.925549914Z restarts=1 status=running
+/axonhub-postgres-1 id=c44814f5a6a8e9f96f27287a78fd5c5839f79809486adcb5757035dc9db4b6bc started=2026-10-21T02:19:29.688408792Z restarts=0 status=running
+/axonhub-redis-1 id=bab19de4eaea4d9cb4ebb7c9168ce405938fc5acf9a0ec75f7e07be3704d255d started=2026-10-21T02:19:29.654075166Z restarts=0 status=running
+/workbuddy2api id=2c880f150a82a18a95727ab02f27cfb7e8b951beea76b70af2f200e59c04f634 started=2026-10-21T02:19:29.702736352Z restarts=0 status=running
+/1Panel-openresty-vV88 id=caf05a77b25e296e13adb243143fba24969c0b83e2b81638f582d9b8d7f96cde started=2026-10-21T02:19:29.682427181Z restarts=0 status=running
+/proxypanel-test-postgres id=b0e83085cf16e3696225871e1f83124121abfcb66fbf876e1fd15bb41e9ec77e started=2026-10-21T02:19:29.699423111Z restarts=0 status=running
+/proxypanel-test-redis id=82b6a26e13d0de609a990d91f11bf3dde776269de2093ab311769dceea6a3250 started=2026-10-21T02:19:29.672076972Z restarts=0 status=running
+               total        used        free      shared  buff/cache   available
+Mem:            3896        1239         153         191        2961        2657
+Swap:              0           0           0
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda1        37G   12G   25G  33% /

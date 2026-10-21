@@ -1,0 +1,6 @@
+=== RUN   TestDockerACKLossAcceptance
+    docker_ack_test.go:585: injected ACK loss: panel committed batch b_07af889b4dbd21d5a9c8cdf7d9d546fb (1 batch row / 1 ledger row / 12288 bytes) and the agent kept it after "POST /api/v1/agent/usage: Post \"https://127.0.0.1:54053/api/v1/agent/usage\": EOF"
+    docker_ack_test.go:642: ACK loss end-to-end: batch b_07af889b4dbd21d5a9c8cdf7d9d546fb committed once ({Batches:1 Entries:1 Bytes:12288}), re-sent once answered "duplicate", mismatched payload refused (BATCH_PAYLOAD_MISMATCH); member ledger 12288 bytes unchanged
+--- PASS: TestDockerACKLossAcceptance (2.20s)
+PASS
+ok  	proxypanel/tests/e2e	2.216s

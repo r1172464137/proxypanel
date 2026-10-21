@@ -1,0 +1,56 @@
+panel.next: OK
+agent: OK
+xray: OK
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 401B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/alpine:3.23@sha256:85fe1e81d6758c208f3e1eed4338a1997e19d4be002d4dd32d3100c9a8c010a0
+#2 DONE 0.0s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [1/5] FROM docker.io/library/alpine:3.23@sha256:85fe1e81d6758c208f3e1eed4338a1997e19d4be002d4dd32d3100c9a8c010a0
+#4 resolve docker.io/library/alpine:3.23@sha256:85fe1e81d6758c208f3e1eed4338a1997e19d4be002d4dd32d3100c9a8c010a0 0.0s done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 19.91MB 0.3s done
+#5 DONE 0.3s
+
+#6 [2/5] WORKDIR /app
+#6 CACHED
+
+#7 [3/5] COPY panel agent fixture xray geoip.dat geosite.dat /app/
+#7 DONE 0.9s
+
+#8 [4/5] COPY migrations /app/migrations
+#8 DONE 0.1s
+
+#9 [5/5] RUN chmod 0755 /app/panel /app/agent /app/fixture /app/xray
+#9 DONE 0.7s
+
+#10 exporting to image
+#10 exporting layers
+#10 exporting layers 6.8s done
+#10 exporting manifest sha256:cbd35286df0c9790c28132b9d7494d7eb310607cdca1eb42373d571d4702e568 0.0s done
+#10 exporting config sha256:7a36944c4ff33d208f4f2d594965d36c890eb879656dba16dde8e9081bda1d5e 0.0s done
+#10 exporting attestation manifest sha256:4211de9c78e3661df91829314b83a6b08e99dc2f5db84a639380f802221f39f1
+#10 exporting attestation manifest sha256:4211de9c78e3661df91829314b83a6b08e99dc2f5db84a639380f802221f39f1 0.0s done
+#10 exporting manifest list sha256:4e96ae4a51f01949ab7a7e747d84e5229b4d6589332e3032d185480c564eb76d 0.1s done
+#10 naming to docker.io/library/proxypanel-acceptance:20261021 done
+#10 unpacking to docker.io/library/proxypanel-acceptance:20261021
+#10 unpacking to docker.io/library/proxypanel-acceptance:20261021 2.0s done
+#10 DONE 9.0s
+remove completed for owned panel
+already exists: postgres
+already exists: redis
+already exists: target
+Acceptance stack created with loopback-only mappings and bounded resources.
+059539071ba945bed6d7222607cd2d237b4bef1ab9b3f16c4412794bc9575bda  /app/panel
+current-image=sha256:4e96ae4a51f01949ab7a7e747d84e5229b4d6589332e3032d185480c564eb76d
+PANEL_PIN_FIX_DEPLOYED

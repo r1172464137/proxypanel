@@ -1,0 +1,23 @@
+=== RUN   TestDockerAcceptance
+    docker_test.go:325: Docker TLS panel + two Agents + tunneled Xray traffic and actual ledger verified
+    docker_test.go:326: Docker Xray UDP echo verified: 20 bytes
+    docker_test.go:335: Docker existing TCP terminated in 1.830s
+    docker_test.go:339: existing UDP association terminated within 1.830s after batch revocation
+    docker_test.go:350: Agent restart preserved revocation
+    docker_test.go:365: Container crash restart recovers Agent identity and forwarding
+    docker_test.go:377: Uninstall/recreate preserving named state volume retained both Agent identities
+    docker_test.go:384: Docker Xray UDP echo verified: 20 bytes
+    docker_test.go:444: Offline expiry: PG server_now=2026-10-21T05:42:54.643604Z delivered_expiry=2026-10-21T05:43:07.827256Z remaining=13.184s local_monotonic_elapsed=1.939s (local UTC not used)
+    docker_test.go:449: Offline new connection rejected: PG observed_at=2026-10-21T05:43:08.560215Z after_expiry=0.733s local_monotonic_elapsed=15.797s read_error=<nil>
+    docker_test.go:449: Offline existing UDP association terminated: PG observed_at=2026-10-21T05:43:08.765518Z after_expiry=0.938s local_monotonic_elapsed=15.823s read_error=EOF
+    docker_test.go:449: Offline existing TCP stream terminated: PG observed_at=2026-10-21T05:43:09.423264Z after_expiry=1.596s local_monotonic_elapsed=16.686s read_error=unexpected EOF
+    docker_test.go:523: /ppaccept-20261021-postgres running restarts=0 memory=201326592 cpus=500000000 privileged=false ports={"5432/tcp":[{"HostIp":"127.0.0.1","HostPort":"25432"}]}
+        /ppaccept-20261021-redis running restarts=0 memory=201326592 cpus=500000000 privileged=false ports={}
+        /ppaccept-20261021-panel running restarts=0 memory=201326592 cpus=500000000 privileged=false ports={"18443/tcp":[{"HostIp":"127.0.0.1","HostPort":"18443"}]}
+        /ppaccept-20261021-agent1 running restarts=1 memory=201326592 cpus=500000000 privileged=false ports={"20101/tcp":[{"HostIp":"127.0.0.1","HostPort":"20101"}],"20102/tcp":[{"HostIp":"127.0.0.1","HostPort":"20102"}],"20103/tcp":[{"HostIp":"127.0.0.1","HostPort":"20103"}],"20104/tcp":[{"HostIp":"127.0.0.1","HostPort":"20104"}],"20105/tcp":[{"HostIp":"127.0.0.1","HostPort":"20105"}]}
+        /ppaccept-20261021-agent2 running restarts=0 memory=201326592 cpus=500000000 privileged=false ports={"20201/tcp":[{"HostIp":"127.0.0.1","HostPort":"20201"}],"20202/tcp":[{"HostIp":"127.0.0.1","HostPort":"20202"}],"20203/tcp":[{"HostIp":"127.0.0.1","HostPort":"20203"}],"20204/tcp":[{"HostIp":"127.0.0.1","HostPort":"20204"}],"20205/tcp":[{"HostIp":"127.0.0.1","HostPort":"20205"}]}
+        /ppaccept-20261021-target running restarts=0 memory=201326592 cpus=500000000 privileged=false ports={}
+        
+--- PASS: TestDockerAcceptance (57.29s)
+PASS
+ok  	proxypanel/tests/e2e	57.297s

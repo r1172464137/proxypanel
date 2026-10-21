@@ -1,0 +1,8 @@
+== go test -race ./internal/panel/protocol ./internal/panel/clientconfig ./internal/panel/access ./internal/panel/xrayconf -count=1 ==
+start: 2026-10-21T13:55:52.7124793+08:00
+CGO_ENABLED=1 CC=E:\SDK\w64devkit\2.10.1\w64devkit\bin\gcc.exe gcc=E:\SDK\w64devkit\2.10.1\w64devkit\bin\gcc.exe
+ok  	proxypanel/internal/panel/protocol	1.054s
+ok  	proxypanel/internal/panel/clientconfig	1.093s
+ok  	proxypanel/internal/panel/access	1.045s
+ok  	proxypanel/internal/panel/xrayconf	1.062s
+exit=0 elapsed=2s

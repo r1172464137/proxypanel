@@ -1,0 +1,8 @@
+=== RUN   TestRetryTaskReopensDispatchAndPublishesCurrentRevision
+--- PASS: TestRetryTaskReopensDispatchAndPublishesCurrentRevision (15.94s)
+=== RUN   TestRetryTaskRefusals
+--- PASS: TestRetryTaskRefusals (25.00s)
+=== RUN   TestRetryTaskIsAtomicOnFailure
+--- PASS: TestRetryTaskIsAtomicOnFailure (13.38s)
+PASS
+ok  	proxypanel/internal/panel/store	55.382s

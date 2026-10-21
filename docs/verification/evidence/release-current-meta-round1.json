@@ -1,0 +1,39 @@
+{
+  "round": 1,
+  "capturedAt": "2026-10-21T13:59:27.4965221+08:00",
+  "platforms": {
+    "windows-amd64": {
+      "path": "E:\\Work\\proxypanel\\build\\windows-amd64",
+      "totalFiles": 72,
+      "manifestEntries": 71,
+      "manifestSha256": "4c317d0a60f9d01c1c5449bc4dd89d06974f5b237ae7d58db776f25eda1afd8b",
+      "manifestBytes": 7485,
+      "panelSha256": "8a49359854d38add8b6f50745fe16e3d9fc12a2d8dc541fb3f11a09999175fec",
+      "agentSha256": "d78748f355c5f14d5560a1339dd9edf941635e0789d8a6eecf2ccdfd7812328a",
+      "panelBytes": 20171264,
+      "agentBytes": 17048064
+    },
+    "linux-amd64": {
+      "path": "E:\\Work\\proxypanel\\build\\linux-amd64",
+      "totalFiles": 72,
+      "manifestEntries": 71,
+      "manifestSha256": "a611e9276bb7b942ad28797fb2eb7c5f742985e56bccd4551d427383d5e4c762",
+      "manifestBytes": 7477,
+      "panelSha256": "5f0b3ced051735072f40eeb80e2d627b8e27df57766fbb4052a55ecb52cc8ef6",
+      "agentSha256": "fd5e41f7ea48044ef0e08d5ffe83b137098ab2684d62528272c83c632f35e500",
+      "panelBytes": 19901480,
+      "agentBytes": 16614482
+    },
+    "linux-arm64": {
+      "path": "E:\\Work\\proxypanel\\build\\linux-arm64",
+      "totalFiles": 72,
+      "manifestEntries": 71,
+      "manifestSha256": "9efff679b8afb2db9fa8b1270a7243018af1c9a93947bf58a47bc29688dbf0a6",
+      "manifestBytes": 7477,
+      "panelSha256": "e649d7df6021c6cb7a0156ce59c06bf185430c01e1cd01797eb3f3ece17246fd",
+      "agentSha256": "82dd963ef54a40d34f36c2da9d796bcd285b4a42a51912b587b73ae0fa1ab8bc",
+      "panelBytes": 18666387,
+      "agentBytes": 15618095
+    }
+  }
+}

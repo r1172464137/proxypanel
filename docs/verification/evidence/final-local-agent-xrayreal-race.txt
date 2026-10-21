@@ -1,0 +1,6 @@
+== go test -race -tags xrayreal ./internal/agent/xray ./internal/agent/supervisor -count=1 -timeout 5m ==
+start: 2026-10-21T13:39:42.9959929+08:00
+CGO_ENABLED=1 CC=E:\SDK\w64devkit\2.10.1\w64devkit\bin\gcc.exe XRAY_BIN=E:\SDK\Xray\v26.3.27\xray.exe
+ok  	proxypanel/internal/agent/xray	6.208s
+ok  	proxypanel/internal/agent/supervisor	24.811s
+exit=0 elapsed=26s

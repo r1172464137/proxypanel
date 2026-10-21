@@ -1,0 +1,10 @@
+{
+  "panel_url": "https://panel.example.invalid",
+  "registration_code": "REPLACE_WITH_SINGLE_USE_CODE",
+  "xray_path": "/opt/proxypanel/xray/26.3.27/xray",
+  "state_dir": "/var/lib/proxypanel-agent",
+  "poll_interval_seconds": 5,
+  "stats_interval_seconds": 5,
+  "heartbeat_interval_seconds": 15,
+  "allow_loopback_http": false
+}

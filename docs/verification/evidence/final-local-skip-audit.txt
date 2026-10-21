@@ -1,0 +1,28 @@
+== t.Skip / build tags in test sources (excluding .local) ==
+test files: 52
+secure_unix_test.go:1: //go:build !windows
+secure_windows_test.go:1: //go:build windows
+real_xray_test.go:1: //go:build xrayreal
+real_xray_test.go:37: t.Skipf("real Xray binary not available (%s): %v", path, err)
+real_xray_test.go:374: if testing.Short() {
+real_xray_test.go:375: t.Skip("skipping the real core test in short mode")
+real_xray_test.go:527: if testing.Short() {
+real_xray_test.go:528: t.Skip("skipping the real core test in short mode")
+real_xray_test.go:626: if testing.Short() {
+real_xray_test.go:627: t.Skip("skipping the real core test in short mode")
+telemetry_test.go:14: t.Skip("no host metrics are available on this platform")
+pidfile_test.go:209: t.Skip("could not find an unused pid on this host")
+real_usage_test.go:1: //go:build xrayreal
+real_xray_test.go:1: //go:build xrayreal
+real_xray_test.go:27: t.Skipf("real Xray binary not available (%s): %v", path, err)
+acceptance_test.go:1123: t.Skipf("cycle boundary %s is too recent for a past straddling sample", boundary)
+integration_test.go:38: t.Skip("PANEL_TEST_DATABASE_URL is not set; skipping PostgreSQL integration tests")
+realcore_test.go:1: //go:build corematrix
+realcore_test.go:81: t.Skipf("%s is not available (%s): %v", env, path, err)
+maintenance_integration_test.go:32: t.Skip("PANEL_TEST_DATABASE_URL is not set; skipping PostgreSQL integration test")
+authoritative_regression_test.go:40: t.Skip("PANEL_TEST_DATABASE_URL is not set; skipping store PostgreSQL regression tests")
+docker_lifecycle_test.go:2085: t.Skip("no POSIX shell found (set PANEL_BASH or put bash/sh on PATH); the lifecycle stub regression is skipped, not failed")
+docker_recovery_test.go:40: t.Skip("explicit one-shot isolated recovery acceptance required")
+docker_test.go:46: t.Skip("explicit isolated Docker acceptance environment required")
+platform_test.go:93: t.Skip("PANEL_TEST_DATABASE_URL, PANEL_TEST_REDIS_URL and XRAY_BIN required")
+xray_test.go:31: t.Skip("XRAY_BIN is required for real-core verification")

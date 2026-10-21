@@ -1,0 +1,5 @@
+== scripts/Test-Release.ps1 (round 2, default targets) ==
+start: 2026-10-21T13:59:45.1672405+08:00
+Verified windows-amd64 : 72 files, 71 SHA256 entries, source assets and binary architecture match.
+Verified linux-amd64 : 72 files, 71 SHA256 entries, source assets and binary architecture match.
+Verified linux-arm64 : 72 files, 71 SHA256 entries, source assets and binary architecture match.

@@ -1,0 +1,10 @@
+Final original-container comparison: PASS, 7/7 exact matches (5 original business containers + 2 original isolated DB test containers).
+Compared: full ID, running status, StartedAt, RestartCount.
+ObservedUTC=2026-10-21T05:59:37.0322908Z
+00b04373d79b6c2fcdcf194eddd7a764c19cb93c69179e6985536bb957925e25 /axonhub-axonhub-1 running 2026-10-21T02:19:33.925549914Z 1
+2c880f150a82a18a95727ab02f27cfb7e8b951beea76b70af2f200e59c04f634 /workbuddy2api running 2026-10-21T02:19:29.702736352Z 0
+82b6a26e13d0de609a990d91f11bf3dde776269de2093ab311769dceea6a3250 /proxypanel-test-redis running 2026-10-21T02:19:29.672076972Z 0
+b0e83085cf16e3696225871e1f83124121abfcb66fbf876e1fd15bb41e9ec77e /proxypanel-test-postgres running 2026-10-21T02:19:29.699423111Z 0
+bab19de4eaea4d9cb4ebb7c9168ce405938fc5acf9a0ec75f7e07be3704d255d /axonhub-redis-1 running 2026-10-21T02:19:29.654075166Z 0
+c44814f5a6a8e9f96f27287a78fd5c5839f79809486adcb5757035dc9db4b6bc /axonhub-postgres-1 running 2026-10-21T02:19:29.688408792Z 0
+caf05a77b25e296e13adb243143fba24969c0b83e2b81638f582d9b8d7f96cde /1Panel-openresty-vV88 running 2026-10-21T02:19:29.682427181Z 0

@@ -1,0 +1,85 @@
+=== RUN   TestDockerClientMatrix
+    client_matrix_test.go:169: xray outbound for node "docker-vless-1" (vless/tcp/none) was not exercised: 
+    client_matrix_test.go:184: sing-box outbound for node "docker-vless-1" (vless/tcp/none) was not exercised: 
+    client_matrix_test.go:199: mihomo proxy for node "docker-vless-1" (vless/tcp/none) was not exercised: 
+    client_matrix_test.go:169: xray outbound for node "client-matrix-vmess-1" (vmess/tcp/none) was not exercised: 
+    client_matrix_test.go:184: sing-box outbound for node "client-matrix-vmess-1" (vmess/tcp/none) was not exercised: 
+    client_matrix_test.go:199: mihomo proxy for node "client-matrix-vmess-1" (vmess/tcp/none) was not exercised: 
+    client_matrix_test.go:169: xray outbound for node "client-matrix-trojan-tls-1" (trojan/tcp/tls) was not exercised: 
+    client_matrix_test.go:184: sing-box outbound for node "client-matrix-trojan-tls-1" (trojan/tcp/tls) was not exercised: 
+    client_matrix_test.go:199: mihomo proxy for node "client-matrix-trojan-tls-1" (trojan/tcp/tls) was not exercised: 
+    client_matrix_test.go:169: xray outbound for node "client-matrix-ss-1" (shadowsocks/tcp/none) was not exercised: 
+    client_matrix_test.go:184: sing-box outbound for node "client-matrix-ss-1" (shadowsocks/tcp/none) was not exercised: 
+    client_matrix_test.go:199: mihomo proxy for node "client-matrix-ss-1" (shadowsocks/tcp/none) was not exercised: 
+    client_matrix_test.go:169: xray outbound for node "client-matrix-ss2022-1" (shadowsocks/tcp/none) was not exercised: 
+    client_matrix_test.go:184: sing-box outbound for node "client-matrix-ss2022-1" (shadowsocks/tcp/none) was not exercised: 
+    client_matrix_test.go:199: mihomo proxy for node "client-matrix-ss2022-1" (shadowsocks/tcp/none) was not exercised: 
+    client_matrix_test.go:169: xray outbound for node "docker-vless-2" (vless/tcp/none) was not exercised: 
+    client_matrix_test.go:184: sing-box outbound for node "docker-vless-2" (vless/tcp/none) was not exercised: 
+    client_matrix_test.go:199: mihomo proxy for node "docker-vless-2" (vless/tcp/none) was not exercised: 
+    client_matrix_test.go:169: xray outbound for node "client-matrix-vmess-2" (vmess/tcp/none) was not exercised: 
+    client_matrix_test.go:184: sing-box outbound for node "client-matrix-vmess-2" (vmess/tcp/none) was not exercised: 
+    client_matrix_test.go:199: mihomo proxy for node "client-matrix-vmess-2" (vmess/tcp/none) was not exercised: 
+    client_matrix_test.go:169: xray outbound for node "client-matrix-trojan-tls-2" (trojan/tcp/tls) was not exercised: 
+    client_matrix_test.go:184: sing-box outbound for node "client-matrix-trojan-tls-2" (trojan/tcp/tls) was not exercised: 
+    client_matrix_test.go:199: mihomo proxy for node "client-matrix-trojan-tls-2" (trojan/tcp/tls) was not exercised: 
+    client_matrix_test.go:169: xray outbound for node "client-matrix-ss-2" (shadowsocks/tcp/none) was not exercised: 
+    client_matrix_test.go:184: sing-box outbound for node "client-matrix-ss-2" (shadowsocks/tcp/none) was not exercised: 
+    client_matrix_test.go:199: mihomo proxy for node "client-matrix-ss-2" (shadowsocks/tcp/none) was not exercised: 
+    client_matrix_test.go:169: xray outbound for node "client-matrix-ss2022-2" (shadowsocks/tcp/none) was not exercised: 
+    client_matrix_test.go:184: sing-box outbound for node "client-matrix-ss2022-2" (shadowsocks/tcp/none) was not exercised: 
+    client_matrix_test.go:199: mihomo proxy for node "client-matrix-ss2022-2" (shadowsocks/tcp/none) was not exercised: 
+    client_matrix_test.go:212: A15 client matrix (real exports, pinned Windows cores, SSH tunnel)
+        target http://target:18080/ payload 69632 bytes
+        rows with a real defect or blocker: 30 of 40
+        xray      Xray 26.3.27 (Xray, Penetrates Everything.) d2758a0 (go1.26.1 windows/amd64)
+        sing-box  sing-box version 1.14.3
+        mihomo    Mihomo Meta v1.19.32 windows amd64 with go1.26.8 Wed Sep 30 17:00:13 UTC 2026
+        v2rayN    not-run
+        
+        client    version          node                       protocol               port   result
+        xray      26.3.27          docker-vless-1             vless/tcp/none         20101  blocked: 
+        sing-box  1.14.3           docker-vless-1             vless/tcp/none         20101  blocked: 
+        mihomo    1.19.32          docker-vless-1             vless/tcp/none         20101  blocked: 
+        v2rayN    not-run          docker-vless-1             vless/tcp/none         20101  not-run: GUI import is the parent step; exported share link verified
+        xray      26.3.27          client-matrix-vmess-1      vmess/tcp/none         20102  blocked: 
+        sing-box  1.14.3           client-matrix-vmess-1      vmess/tcp/none         20102  blocked: 
+        mihomo    1.19.32          client-matrix-vmess-1      vmess/tcp/none         20102  blocked: 
+        v2rayN    not-run          client-matrix-vmess-1      vmess/tcp/none         20102  not-run: GUI import is the parent step; exported share link verified
+        xray      26.3.27          client-matrix-trojan-tls-1 trojan/tcp/tls         20103  blocked: 
+        sing-box  1.14.3           client-matrix-trojan-tls-1 trojan/tcp/tls         20103  blocked: 
+        mihomo    1.19.32          client-matrix-trojan-tls-1 trojan/tcp/tls         20103  blocked: 
+        v2rayN    not-run          client-matrix-trojan-tls-1 trojan/tcp/tls         20103  not-run: GUI import is the parent step; exported share link verified
+        xray      26.3.27          client-matrix-ss-1         shadowsocks/tcp/none   20104  blocked: 
+        sing-box  1.14.3           client-matrix-ss-1         shadowsocks/tcp/none   20104  blocked: 
+        mihomo    1.19.32          client-matrix-ss-1         shadowsocks/tcp/none   20104  blocked: 
+        v2rayN    not-run          client-matrix-ss-1         shadowsocks/tcp/none   20104  not-run: GUI import is the parent step; exported share link verified
+        xray      26.3.27          client-matrix-ss2022-1     shadowsocks/tcp/none   20105  blocked: 
+        sing-box  1.14.3           client-matrix-ss2022-1     shadowsocks/tcp/none   20105  blocked: 
+        mihomo    1.19.32          client-matrix-ss2022-1     shadowsocks/tcp/none   20105  blocked: 
+        v2rayN    not-run          client-matrix-ss2022-1     shadowsocks/tcp/none   20105  not-run: GUI import is the parent step; exported share link verified
+        xray      26.3.27          docker-vless-2             vless/tcp/none         20201  blocked: 
+        sing-box  1.14.3           docker-vless-2             vless/tcp/none         20201  blocked: 
+        mihomo    1.19.32          docker-vless-2             vless/tcp/none         20201  blocked: 
+        v2rayN    not-run          docker-vless-2             vless/tcp/none         20201  not-run: GUI import is the parent step; exported share link verified
+        xray      26.3.27          client-matrix-vmess-2      vmess/tcp/none         20202  blocked: 
+        sing-box  1.14.3           client-matrix-vmess-2      vmess/tcp/none         20202  blocked: 
+        mihomo    1.19.32          client-matrix-vmess-2      vmess/tcp/none         20202  blocked: 
+        v2rayN    not-run          client-matrix-vmess-2      vmess/tcp/none         20202  not-run: GUI import is the parent step; exported share link verified
+        xray      26.3.27          client-matrix-trojan-tls-2 trojan/tcp/tls         20203  blocked: 
+        sing-box  1.14.3           client-matrix-trojan-tls-2 trojan/tcp/tls         20203  blocked: 
+        mihomo    1.19.32          client-matrix-trojan-tls-2 trojan/tcp/tls         20203  blocked: 
+        v2rayN    not-run          client-matrix-trojan-tls-2 trojan/tcp/tls         20203  not-run: GUI import is the parent step; exported share link verified
+        xray      26.3.27          client-matrix-ss-2         shadowsocks/tcp/none   20204  blocked: 
+        sing-box  1.14.3           client-matrix-ss-2         shadowsocks/tcp/none   20204  blocked: 
+        mihomo    1.19.32          client-matrix-ss-2         shadowsocks/tcp/none   20204  blocked: 
+        v2rayN    not-run          client-matrix-ss-2         shadowsocks/tcp/none   20204  not-run: GUI import is the parent step; exported share link verified
+        xray      26.3.27          client-matrix-ss2022-2     shadowsocks/tcp/none   20205  blocked: 
+        sing-box  1.14.3           client-matrix-ss2022-2     shadowsocks/tcp/none   20205  blocked: 
+        mihomo    1.19.32          client-matrix-ss2022-2     shadowsocks/tcp/none   20205  blocked: 
+        v2rayN    not-run          client-matrix-ss2022-2     shadowsocks/tcp/none   20205  not-run: GUI import is the parent step; exported share link verified
+        
+--- FAIL: TestDockerClientMatrix (2.16s)
+FAIL
+FAIL	proxypanel/tests/e2e	2.171s
+FAIL
