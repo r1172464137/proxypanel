@@ -154,7 +154,11 @@ detect_arch() {
     aarch64|arm64) ARCH="aarch64" ;;
     *) die "不支持的架构：$machine（已支持 x86_64 / aarch64）" ;;
   esac
-  [ "$ARCH" = "aarch64" ] && warn "aarch64 未做过运行时验收，只在构建层面验证过。"
+  # 不能写成 `[ ... ] && warn ...`：条件不成立时该语句返回 1，而它是函数最后一句，
+  # 在 set -e 下会让整个脚本以 1 退出（真机上就是这么被拦住的）。
+  if [ "$ARCH" = "aarch64" ]; then
+    warn "aarch64 未做过运行时验收，只在构建层面验证过。"
+  fi
 }
 
 require_systemd() {
@@ -265,7 +269,9 @@ collect_inputs() {
     ARG_STATE_DIR="$STATE_DIR"
   fi
 
-  if [ -z "$ARG_PANEL_CA" ] && confirm "面板是否使用私有 CA 证书？（公共证书选 N）"; then
+  # 非交互模式（-y）下不再提问可选值：没有 --panel-ca 就按"不用私有 CA"处理，
+  # 否则 read 在无 tty 的环境里会立即 EOF 并把部署判定为失败。
+  if [ -z "$ARG_PANEL_CA" ] && [ -z "$ASSUME_YES" ] && confirm "面板是否使用私有 CA 证书？（公共证书选 N）"; then
     ask ARG_PANEL_CA "CA 证书文件路径"
   fi
 
