@@ -1,0 +1,7 @@
+# Shell 脚本和容器/CI 定义必须是 LF：CRLF 会让 Linux 上的 bash 报
+# "\r: command not found"，也会破坏清单类文件的逐行比对。
+*.sh          text eol=lf
+Dockerfile    text eol=lf
+Dockerfile.*  text eol=lf
+*.yml         text eol=lf
+*.yaml        text eol=lf
