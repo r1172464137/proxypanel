@@ -52,9 +52,25 @@ jobs:
             done
           done
           cp -r migrations image-context/migrations
+          # 面板镜像在构建阶段自己跑 npm ci + npm run build，所以要把前端源码
+          # 和它引用的部署文件一起放进上下文。
+          mkdir -p image-context/web image-context/deploy
+          # Copy the whole web tree: vite/tsc resolve files from the project root,
+          # so cherry-picking entries is fragile. node_modules and dist are
+          # excluded by image-context/.dockerignore, not here.
+          cp -r web/. image-context/web/
+          cp deploy/nginx.container.conf deploy/panel-entrypoint.sh image-context/deploy/
           # 记录实际编译出的版本，便于事后核对镜像里的 Agent 版本。
           ./image-context/bin/amd64/agent -version || true
           ls -l image-context/bin/amd64 image-context/bin/arm64
+          # node_modules / dist 很大且必须由镜像内重新安装与构建。
+          cat > image-context/.dockerignore <<'DOCKERIGNORE'
+web/node_modules
+web/dist
+web/tests
+DOCKERIGNORE
+          test -f image-context/web/package-lock.json
+          test -f image-context/deploy/nginx.container.conf
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
