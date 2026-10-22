@@ -64,11 +64,9 @@ jobs:
           ./image-context/bin/amd64/agent -version || true
           ls -l image-context/bin/amd64 image-context/bin/arm64
           # node_modules / dist 很大且必须由镜像内重新安装与构建。
-          cat > image-context/.dockerignore <<'DOCKERIGNORE'
-web/node_modules
-web/dist
-web/tests
-DOCKERIGNORE
+          # 用 printf 而不是 heredoc：heredoc 的内容必须顶格，会破坏 run: | 的
+          # YAML 缩进，整个 workflow 变成无效文件（表现为 0 秒失败且没有 job）。
+          printf '%s\n' web/node_modules web/dist web/tests > image-context/.dockerignore
           test -f image-context/web/package-lock.json
           test -f image-context/deploy/nginx.container.conf
 
