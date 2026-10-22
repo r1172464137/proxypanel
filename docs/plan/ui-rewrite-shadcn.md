@@ -2,6 +2,15 @@
 
 > 决策已定：一次重写完整，shadcn 默认风格（Neutral），Tailwind 可接受，测试由我负责改到全绿。
 
+## 已确认的决策
+
+| 决策 | 结论 |
+|---|---|
+| 视觉 | shadcn 默认 Neutral；主按钮用黑/白；**珊瑚橙 `#d97757` 仅作 `--chart-1` 与强调色** |
+| 节奏 | 一次性重写，不分批交付，但内部按 9 个阶段推进（每阶段必须可编译可测试） |
+| 分支 | 在 **`ui-shadcn`** 分支上开发；全部通过后才合并 `main` |
+| 测试 | 完整三层：单元/组件（Vitest）+ 前后端联调（真实 API）+ 真实浏览器与真实节点流量（Playwright + 真 Xray） |
+
 ---
 
 ## 一、技术栈变更
@@ -330,19 +339,121 @@ form sonner
 
 ---
 
-## 七、测试策略
+## 七、测试策略：三层完整验证
 
-| 类别 | 处理 |
+用户要求"一定要完整测试"，因此分三层，每层都有明确的执行方式与验收线。
+**任何一层不通过都不算完成。**
+
+---
+
+### 第 1 层 · 单元与组件测试（Vitest + jsdom）
+
+| 范围 | 文件 | 处理 |
+|---|---|---|
+| 纯逻辑 | `lib/*.spec.ts`（9 文件 71 用例） | **零改动**。accessReasons / nodeDraft / nodeTemplates / batch / format / json / memberDraft / subscriptionDraft 都与 UI 无关 |
+| API 契约 | `api/*.spec.ts`（2 文件 20 用例） | 小改：`credentials` 断言改为按 `VITE_API_BASE` 动态判断 |
+| 组件 | `components/*.spec.ts`（3 文件 13 用例） | 重写：改用 `getByRole` / `getByLabelText` / `getByText` |
+| 视图 | `views/*.spec.ts`（5 文件 22 用例） | 重写：同上 |
+| **新增** | shadcn 组件交互、CORS 配置解析、跨域模式 | ≥ 20 用例 |
+
+**原则**：新测试**禁止断言 CSS 类名**（`.card`、`.banner--danger` 这类）。全部用语义查询。
+这样以后再换 UI 库，测试不会全废。
+
+**验收线**：`npm run typecheck` 通过、`npm test` ≥ 130 用例全绿、`npm run build` 成功。
+
+---
+
+### 第 2 层 · 前后端联调（真实 API，`scripts/integration-test.py`）
+
+复用现有脚本（64 项），并针对重写与新增功能扩展。
+
+**现有 64 项覆盖**：
+
+| 组 | 项数 | 内容 |
+|---|---|---|
+| 认证与会话 | 4 | 登录、会话、匿名 401 |
+| 资源 CRUD | 20 | 服务器/组/订阅/成员的完整生命周期、配额覆盖开关与回退 |
+| 批量操作 | 5 | 预览 → 提交 → 同 Idempotency-Key 幂等重放 |
+| 批量列表 | 4 | `GET /admin/batches` 与详情一致性 |
+| 运维接口 | 13 | 总览/Agent/实例/任务/事件/审计/用量/模板/设置/恢复模式；`from/to` 筛选 |
+| 成员端 | 11 | 5 个 me 接口 + admin 403 + 四格式导出 |
+| CSRF 与校验 | 5 | 缺/错 token、空 body、缺幂等键、未知对象 |
+| 清理 | 4 | 数据全删 |
+
+**重写后新增项**：
+
+| 新增 | 说明 |
 |---|---|
-| `lib/*.spec.ts`（9 文件 71 用例） | **零改动**，纯逻辑不依赖 UI |
-| `api/*.spec.ts`（2 文件 20 用例） | 小改：`credentials` 断言从 `same-origin` 改为动态 |
-| `components/*.spec.ts`（3 文件 13 用例） | 重写：断言从自造 class 改为 `role`/`aria`/文本 |
-| `views/*.spec.ts`（5 文件 22 用例） | 重写：改用 `getByRole` / `getByText`，不用 class 选择器 |
-| Playwright 实测 | 复用现有 `tests/*.mjs`，选择器改为语义化 |
+| CORS 预检 | `OPTIONS /api/v1/admin/members` 返回 204 且带正确 CORS 头 |
+| 白名单不匹配 | 非白名单 Origin 不返回任何 `Access-Control-*` 头 |
+| 同源模式回归 | 不设 `PANEL_ALLOWED_ORIGINS` 时**完全无 CORS 头**（行为不变） |
+| Cookie 配置校验 | `SameSite=none` + `Secure=false` 时进程启动失败并给出明确错误 |
+| 跨域登录闭环 | 前端域名 Origin 下登录 → 会话 Cookie 带 `SameSite=None` → 后续请求成功 |
 
-**原则**：新测试一律用 `getByRole` / `getByLabelText` / `getByText`，**不再断言 CSS 类名**。这样以后再换 UI 库测试不会全废。
+**验收线**：≥ 70 项全绿，0 失败。
 
-**数量目标**：最终 ≥ 130 个用例（现 128，新增 CORS/跨域/组件交互后应更多）。
+---
+
+### 第 3 层 · 真实浏览器 + 真实节点流量
+
+这一层不能靠 mock，必须打真实链路。
+
+#### 3.1 真实 Web（Playwright，真实面板容器）
+
+复用并扩展 `web/tests/*.mjs`。
+
+| 检查 | 内容 |
+|---|---|
+| 逐页遍历 | 27 个页面全部访问，断言 HTTP 200 + 标题正确 + 主内容非空 |
+| 控制台 | 每页 0 console error、0 pageerror、0 失败请求 |
+| 溢出 | 1440×900 与 390×844 双分辨率，`scrollWidth ≤ clientWidth` |
+| 主题 | 明暗切换后所有页面无不可读文本（对比 `getComputedStyle` 的前景/背景） |
+| 交互 | 真实点击：新建服务器 → 出现在列表；新建节点（5 种模板）；批量预览 → 提交；改设置 → 重载仍生效；改密码 → 旧密码失效 |
+| 表单校验 | 非法输入触发字段级错误且输入框标红 |
+| 无障碍 | Tab 顺序可达、`focus-visible` 可见、Esc 关闭 Dialog/Sheet |
+| 空/加载/错误态 | 空列表、骨架屏、真实 4xx 与注入的 503 错误态 |
+
+#### 3.2 真实节点（Agent + Xray，跨机）
+
+拓扑：面板在 203 容器，Agent 在 WSL，真实 Xray 26.3.27 进程。
+
+| 检查 | 内容 | 期望 |
+|---|---|---|
+| 模板可用性 | 用界面创建 5 种节点（REALITY / WS+TLS / VMess+WS / Trojan / SS2022），保存后 Agent 真的起 core | 5 个端口监听 |
+| **五协议真实流量** | 用 **Xray / sing-box / mihomo** 三个客户端各自连五个节点，拉取 69,632 字节并逐字节比对 SHA-256 | **15/15 PASS** |
+| 撤销时延 | 开长连接 → 停用成员 → 测新连接被拒与长连接断开时间 | 均 < 60s（历史实测 3.6–8.1s） |
+| 离线到期 | 断隧道 → Agent 本地到期 → 恢复后队列回放 | 队列排空，`n acknowledged 0 retained` |
+| 账本一致性 | 打 20 次请求，比对账本增量与应用层字节 | 比值 ≤ 1.5，无重复记账 |
+| 采样可见性 | 制造采样失败 → 检查 heartbeat metrics | `sampling_errors > 0` 且恢复后归零 |
+| 处理分离模式 | 跨域配置下 Agent 仍连统一入口 | 注册成功、`applied == desired` |
+
+**复用脚本**：`scripts/refresh-clients.sh`、`scripts/run-client-matrix.sh`、`scripts/run-revocation.sh`、`scripts/run-offline.sh`、`scripts/check-ledger.sh`。
+
+#### 3.3 已知缺陷回归
+
+重写不修后端，但必须确认这些已登记缺陷**没有恶化**：
+
+| 编号 | 缺陷 | 检查方式 |
+|---|---|---|
+| D6 | 批量停用会永久关闭 `proxy_enabled`，重新启用不还原 | 联调脚本显式验证并记录现状 |
+| — | `DELETE /subscriptions` 实为归档，仍占节点组引用 | 清理顺序验证 |
+
+---
+
+### 测试执行顺序
+
+```
+阶段 0-6  每阶段结束：npm run typecheck + npm test + npm run build
+阶段 7    CORS 单测 + 联调脚本（含新增 6 项）
+阶段 8    ① 第 1 层全量
+          ② 第 2 层全量（70+ 项）
+          ③ 第 3.1 真实 Web（含 1440/390 明暗）
+          ④ 第 3.2 真实节点（三客户端 × 五协议）
+          ⑤ 第 3.3 缺陷回归
+          ⑥ 汇总报告
+```
+
+**任一层失败 → 修到通过 → 重跑该层及之后的层。**
 
 ---
 

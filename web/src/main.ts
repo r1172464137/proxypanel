@@ -4,8 +4,8 @@ import { router } from './router'
 import { initTheme } from './stores/theme'
 import { clearSession } from './stores/session'
 import { onUnauthorized } from './api/http'
-import './styles/tokens.css'
-import './styles/base.css'
+import '@fontsource-variable/inter'
+import './assets/index.css'
 
 onUnauthorized(() => {
   clearSession()
