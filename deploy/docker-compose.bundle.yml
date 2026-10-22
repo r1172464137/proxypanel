@@ -85,6 +85,15 @@ services:
       # 必须与浏览器实际访问的地址一致：它决定 CSRF 与订阅链接里的主机名。
       PANEL_PUBLIC_URL: "${PANEL_PUBLIC_URL:?set PANEL_PUBLIC_URL in .env}"
       PANEL_MIGRATIONS_DIR: "/app/migrations"
+      # --- 前后端分离部署（可选）---
+      # 默认全部留空 = 同源部署，行为与之前一致。
+      # 填了 PANEL_ALLOWED_ORIGINS 才启用 CORS。
+      PANEL_ALLOWED_ORIGINS: "${PANEL_ALLOWED_ORIGINS:-}"
+      # strict（默认）| lax | none。同主域子域用 lax，完全不同域名用 none。
+      # none 要求 Secure，且不能与 PANEL_DEV=true 同时使用（启动会报错）。
+      PANEL_COOKIE_SAMESITE: "${PANEL_COOKIE_SAMESITE:-strict}"
+      # 同主域子域共享会话时设 .example.com；默认空。
+      PANEL_COOKIE_DOMAIN: "${PANEL_COOKIE_DOMAIN:-}"
       # 仅在用户表为空时创建管理员；首次登录成功后可以从 .env 删掉这两个值。
       PANEL_ADMIN_USER: "${PANEL_ADMIN_USER:-admin}"
       PANEL_ADMIN_PASSWORD: "${PANEL_ADMIN_PASSWORD:-}"
