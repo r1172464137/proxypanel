@@ -255,8 +255,11 @@ const cipherValue = computed({
           </div>
           <label class="checkbox" style="align-self: end; padding-bottom: 8px">
             <input v-model="draft.enabled" type="checkbox" />
-            启用该节点（禁用会硬撤权并停止实例）
+            启用该节点
           </label>
+          <p class="field__help">
+            关掉后这条线路停止提供服务，正在使用的连接会断开。重新开启并保存后会重新上线。
+          </p>
         </div>
       </section>
 

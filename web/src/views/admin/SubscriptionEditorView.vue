@@ -206,7 +206,7 @@ async function save(): Promise<void> {
             <p class="field__help">每月该日 00:00 起算；月末自动裁剪（31 日在 2 月落到 28/29 日）。</p>
           </div>
           <div class="field">
-            <label for="sub-tz">业务时区（IANA）</label>
+            <label for="sub-tz">时区</label>
             <input id="sub-tz" v-model="draft.timezone" class="input mono" list="tz-list" />
             <datalist id="tz-list">
               <option v-for="zone in zoneSuggestions" :key="zone" :value="zone" />
@@ -225,8 +225,11 @@ async function save(): Promise<void> {
           </label>
           <label class="checkbox">
             <input v-model="draft.access_enabled" type="checkbox" />
-            允许现有成员访问（关闭将硬撤权，立即中断连接）
+            允许现有成员访问
           </label>
+          <p class="field__help">
+            关掉后，绑定了这个订阅的人立刻失去代理权限，正在用的连接会断开。
+          </p>
           <label class="checkbox">
             <input v-model="draft.archived" type="checkbox" />
             归档订阅（不可再绑定；仍有绑定成员时需先迁移或解除）

@@ -713,17 +713,22 @@ th.num {
  *     建立层叠上下文，所以扫边只落在 2px 描边区里：不遮文字/图标、不溢出边框盒。
  */
 /* 表格操作列：多个按钮必须有可见间距，否则「编辑 / 删除」会粘在一起，
-   误点风险很高。这个类此前被 markup 大量引用但从未定义。 */
+   误点风险很高。这个类此前被 markup 大量引用但从未定义。
+ *
+ * 注意不能直接给 td 设 display:flex —— td 的 display 改成 flex 后就不再是
+ * 表格单元格，列宽与垂直对齐都会失效，而且实测 gap 不生效（第二个按钮会
+ * 压到第一个上面）。用 inline-flex 容器 + margin 保证间距，同时保留 td
+ * 的表格语义。 */
 .actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
   white-space: nowrap;
 }
 
 .actions > .btn {
-  flex: 0 0 auto;
+  vertical-align: middle;
+}
+
+.actions > .btn + .btn {
+  margin-left: var(--space-2);
 }
 
 .btn {
