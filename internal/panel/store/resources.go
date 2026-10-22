@@ -193,7 +193,11 @@ func (s *Store) DeleteTemplate(ctx context.Context, id string) error {
 const nodeGroupCols = `id, name, description, version, created_at, updated_at`
 
 func (s *Store) nodeGroupNodeIDs(ctx context.Context, groupID string) ([]string, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT node_id FROM node_group_members WHERE group_id=$1 ORDER BY position, node_id`, groupID)
+	// 只返回仍存在的节点：历史脏数据（归档节点未摘除）不应出现在组的 node_ids 里。
+	rows, err := s.DB.QueryContext(ctx, `SELECT gm.node_id FROM node_group_members gm
+		JOIN nodes n ON n.id = gm.node_id
+		WHERE gm.group_id = $1 AND NOT n.archived
+		ORDER BY gm.position, gm.node_id`, groupID)
 	if err != nil {
 		return nil, dbErr(err)
 	}
@@ -573,12 +577,25 @@ func (s *Store) UpdateNode(ctx context.Context, id string, expectedVersion int64
 }
 
 // DeleteNode archives a node, keeping usage history and revocation mappings.
+//
+// 归档后必须同时摘掉 node_group_members 里的关联：否则已删除的节点会作为
+// "幽灵节点"留在各个组的 node_ids 里，编辑组时就会看到一个已经不存在、
+// 点开必 404 的节点。
 func (s *Store) DeleteNode(ctx context.Context, id string) (*domain.Node, error) {
-	return s.UpdateNode(ctx, id, 0, func(n *domain.Node) error {
+	node, err := s.UpdateNode(ctx, id, 0, func(n *domain.Node) error {
 		n.Archived = true
 		n.Enabled = false
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	// 关联清理单独一个事务：即便这里失败，节点本身已归档，不会出现
+	// "还能被授权"的半状态；残留关联由 nodeGroupNodeIDs 的 archived 过滤兜底。
+	if _, err := s.DB.ExecContext(ctx, `DELETE FROM node_group_members WHERE node_id=$1`, id); err != nil {
+		return node, dbErr(err)
+	}
+	return node, nil
 }
 
 // ─── subscriptions ─────────────────────────────────────────────────────────

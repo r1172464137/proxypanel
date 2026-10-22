@@ -165,3 +165,19 @@ func (s *Server) syncCredentials(r *http.Request, memberID string) error {
 	}
 	return s.Store.SyncCredentials(r.Context(), memberID, res.Evidence.Nodes, res.Decision.AllowedNodeIDs)
 }
+
+// requireVersion 强制 PATCH/PUT 携带 version。
+//
+// store 层用 `expectedVersion != 0` 表示"跳过乐观并发检查"，这个内部约定
+// 泄漏到了 API 面：客户端只要省略 version（或传 0），并发两次 PATCH 就都能
+// 成功、后写覆盖先写。实测两个并发请求返回 [200,200]，notes 被静默覆盖。
+//
+// 所以对外接口必须要求 version > 0；需要"跳过"的只有服务端内部调用
+// （DELETE 归档、批量 apply），它们不经过这里。
+func requireVersion(version int64) error {
+	if version <= 0 {
+		return domain.Validation("version is required for this request (send the current version to avoid overwriting concurrent changes)").
+			WithFieldErrors(map[string]string{"version": "required"})
+	}
+	return nil
+}

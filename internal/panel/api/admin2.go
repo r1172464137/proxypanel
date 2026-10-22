@@ -66,6 +66,10 @@ func (s *Server) handlePatchNodeGroup(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, err)
 		return
 	}
+	if err := requireVersion(in.Version); err != nil {
+		s.writeError(w, r, err)
+		return
+	}
 	if in.NodeIDs != nil {
 		used, err := s.Store.NodeGroupUsage(r.Context(), r.PathValue("id"))
 		if err != nil {
@@ -264,6 +268,10 @@ func (s *Server) handleGetSubscription(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePatchSubscription(w http.ResponseWriter, r *http.Request) {
 	var in subscriptionInput
 	if err := decodeJSON(r, &in); err != nil {
+		s.writeError(w, r, err)
+		return
+	}
+	if err := requireVersion(in.Version); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -536,6 +544,10 @@ func (s *Server) handlePatchMember(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, err)
 		return
 	}
+	if err := requireVersion(in.Version); err != nil {
+		s.writeError(w, r, err)
+		return
+	}
 	id := r.PathValue("id")
 	// Binding to a concrete subscription is validated up front; explicit null
 	// unbinds instead (see applyMemberPatch).
@@ -717,6 +729,10 @@ func (s *Server) handlePatchTemplate(w http.ResponseWriter, r *http.Request) {
 		Description *string       `json:"description"`
 	}
 	if err := decodeJSON(r, &in); err != nil {
+		s.writeError(w, r, err)
+		return
+	}
+	if err := requireVersion(in.Version); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -928,6 +944,10 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		TemplateDefaults domain.Object `json:"template_defaults"`
 	}
 	if err := decodeJSON(r, &in); err != nil {
+		s.writeError(w, r, err)
+		return
+	}
+	if err := requireVersion(in.Version); err != nil {
 		s.writeError(w, r, err)
 		return
 	}

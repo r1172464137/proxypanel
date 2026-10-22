@@ -94,8 +94,53 @@ func (e *env) mustCall(t *testing.T, s *acceptSession, method, path string, body
 	return e.mustCallWith(t, s, method, path, body, nil)
 }
 
+// withVersion 给 PATCH/PUT 的 body 补上资源当前的 version。
+//
+// 服务端现在强制 PATCH/PUT 必须带 version（否则并发两次 PATCH 都能成功、
+// 后写静默覆盖先写）。这些验收用例关心的是业务语义（权限、撤权、并发互斥），
+// 不是版本协商本身，所以在这里统一补上；专门验证"缺 version 必须 400"的用例
+// 不经过这个路径。
+func (e *env) withVersion(t *testing.T, s *acceptSession, path string, body any) any {
+	t.Helper()
+	m, ok := body.(map[string]any)
+	if !ok {
+		return body
+	}
+	if _, has := m["version"]; has {
+		return body
+	}
+	get := e.mustCall(t, s, "GET", path, nil)
+	if get.status != http.StatusOK {
+		return body
+	}
+	data, _ := get.body["data"].(map[string]any)
+	version := int64(0)
+	if v, ok := data["version"].(float64); ok {
+		version = int64(v)
+	} else {
+		// 成员详情返回 {member, access}，版本在 member 里
+		if inner, ok := data["member"].(map[string]any); ok {
+			if v, ok := inner["version"].(float64); ok {
+				version = int64(v)
+			}
+		}
+	}
+	if version <= 0 {
+		return body
+	}
+	next := make(map[string]any, len(m)+1)
+	for k, v := range m {
+		next[k] = v
+	}
+	next["version"] = version
+	return next
+}
+
 func (e *env) mustCallWith(t *testing.T, s *acceptSession, method, path string, body any, header map[string]string) *acceptResponse {
 	t.Helper()
+	if method == "PATCH" || method == "PUT" {
+		body = e.withVersion(t, s, path, body)
+	}
 	res, err := e.call(s, method, path, body, header)
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, path, err)
@@ -607,6 +652,9 @@ func TestAcceptanceLastAdminProtection(t *testing.T) {
 	}
 
 	const attempts = 20
+	// PATCH 现在强制带 version。这些尝试**全部会被 LAST_ADMIN 拒绝**、不写库，
+	// 所以 version 不会变；给所有 goroutine 同一个初始 version 即可。
+	adminVersion := e.memberVersion(t, admin, adminID)
 	statuses := make([]int, attempts)
 	codes := make([]string, attempts)
 	raws := make([]string, attempts)
@@ -619,9 +667,9 @@ func TestAcceptanceLastAdminProtection(t *testing.T) {
 			var body any
 			switch i % 3 {
 			case 0:
-				method, path, body = "PATCH", "/api/v1/admin/members/"+adminID, map[string]any{"role": "member"}
+				method, path, body = "PATCH", "/api/v1/admin/members/"+adminID, map[string]any{"role": "member", "version": adminVersion}
 			case 1:
-				method, path, body = "PATCH", "/api/v1/admin/members/"+adminID, map[string]any{"active": false}
+				method, path, body = "PATCH", "/api/v1/admin/members/"+adminID, map[string]any{"active": false, "version": adminVersion}
 			default:
 				method, path = "DELETE", "/api/v1/admin/members/"+adminID
 			}
@@ -692,9 +740,10 @@ func TestAcceptanceTwoAdminsConcurrentCrossChanges(t *testing.T) {
 					c := change{session: session, method: "PATCH", path: "/api/v1/admin/members/" + target}
 					switch op {
 					case "demote":
-						c.body = map[string]any{"role": "member"}
+						// PATCH 强制带 version；该变更被 LAST_ADMIN 拒绝时不写库，version 不变。
+						c.body = map[string]any{"role": "member", "version": e.memberVersion(t, session, target)}
 					case "disable":
-						c.body = map[string]any{"active": false}
+						c.body = map[string]any{"active": false, "version": e.memberVersion(t, session, target)}
 					case "archive":
 						c.method = "DELETE"
 					case "batch-disable":
@@ -1395,4 +1444,20 @@ func TestAcceptanceNodeGroupPropagationAndDedupe(t *testing.T) {
 	if status != http.StatusOK || raw != beforeTemplate {
 		t.Fatalf("clearing the template did not immediately restore the generated config (status %d)", status)
 	}
+}
+
+// memberVersion 取成员的当前 version（PATCH 强制要求）。
+func (e *env) memberVersion(t *testing.T, s *acceptSession, id string) int64 {
+	t.Helper()
+	res := e.mustCall(t, s, "GET", "/api/v1/admin/members/"+id, nil)
+	data, _ := res.body["data"].(map[string]any)
+	if inner, ok := data["member"].(map[string]any); ok {
+		if v, ok := inner["version"].(float64); ok {
+			return int64(v)
+		}
+	}
+	if v, ok := data["version"].(float64); ok {
+		return int64(v)
+	}
+	return 1
 }

@@ -81,11 +81,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/me/nodes", s.requireUser(s.handleMeNodes))
 	mux.HandleFunc("GET /api/v1/me/usage", s.requireUser(s.handleMeUsage))
 	mux.HandleFunc("GET /api/v1/me/subscription", s.requireUser(s.handleMeSubscription))
-	mux.HandleFunc("POST /api/v1/me/subscription/token/rotations", s.requireUser(s.requireCSRF(s.handleMeTokenRotation)))
-	mux.HandleFunc("POST /api/v1/me/credentials/rotations", s.requireUser(s.requireCSRF(s.handleMeCredentialRotation)))
+	// 成员自助的写接口同样受恢复协调模式约束。
+	//
+	// 之前 requireWritable 只挂在管理员写路由上，恢复期间成员仍能轮换订阅
+	// token / 轮换代理凭据 / 删除会话 —— 这些都会改授权相关状态并写库，
+	// 与"恢复期间暂停普通变更、核对后再推送权限"的语义冲突。
+	// （只保留修改自己的密码放行：那是自救路径，不改授权。）
+	mux.HandleFunc("POST /api/v1/me/subscription/token/rotations", s.requireUser(s.requireCSRF(s.requireWritable(s.handleMeTokenRotation))))
+	mux.HandleFunc("POST /api/v1/me/credentials/rotations", s.requireUser(s.requireCSRF(s.requireWritable(s.handleMeCredentialRotation))))
 	mux.HandleFunc("POST /api/v1/me/password", s.requireUser(s.requireCSRF(s.handleMePassword)))
 	mux.HandleFunc("GET /api/v1/me/sessions", s.requireUser(s.handleMeSessions))
-	mux.HandleFunc("DELETE /api/v1/me/sessions/{id}", s.requireUser(s.requireCSRF(s.handleMeSessionDelete)))
+	mux.HandleFunc("DELETE /api/v1/me/sessions/{id}", s.requireUser(s.requireCSRF(s.requireWritable(s.handleMeSessionDelete))))
 
 	// agent scope
 	mux.HandleFunc("POST /api/v1/agent/register", s.handleAgentRegister)

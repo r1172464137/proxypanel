@@ -149,6 +149,10 @@ func (s *Server) handlePatchServer(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, err)
 		return
 	}
+	if err := requireVersion(in.Version); err != nil {
+		s.writeError(w, r, err)
+		return
+	}
 	v, err := s.Store.UpdateServer(r.Context(), r.PathValue("id"), in.Version, func(v *domain.Server) error {
 		return applyServerPatch(v, &in)
 	})
@@ -299,6 +303,10 @@ func (s *Server) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 		SortOrder        *int          `json:"sort_order"`
 	}
 	if err := decodeJSON(r, &in); err != nil {
+		s.writeError(w, r, err)
+		return
+	}
+	if err := requireVersion(in.Version); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
