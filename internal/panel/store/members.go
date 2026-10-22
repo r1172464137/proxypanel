@@ -93,10 +93,18 @@ func (s *Store) GetMemberByUsername(ctx context.Context, username string) (*doma
 	return m, nil
 }
 
-// ListMembers returns active and archived members ordered by username.
-func (s *Store) ListMembers(ctx context.Context, limit int, subscriptionID string) ([]domain.Member, error) {
+// ListMembers returns members ordered by username.
+//
+// 默认只返回未归档成员，与 ListServers/ListNodes 保持一致。归档成员是"已删除但
+// 为审计与账本保留的记录"，把它们混进常规列表会让真实成员被淹没
+// （实测一次全量测试后 85 条里 83 条是归档的）。需要查看归档记录时显式传
+// includeArchived。
+func (s *Store) ListMembers(ctx context.Context, limit int, subscriptionID string, includeArchived bool) ([]domain.Member, error) {
 	q := `SELECT ` + memberCols + ` FROM members WHERE true`
 	args := []any{}
+	if !includeArchived {
+		q += ` AND NOT archived`
+	}
 	if subscriptionID != "" {
 		args = append(args, subscriptionID)
 		q += ` AND subscription_id = $` + itoa(len(args))

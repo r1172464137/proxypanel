@@ -317,7 +317,9 @@ func (s *Server) handleDeleteSubscription(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
-	items, err := s.Store.ListMembers(r.Context(), 200, r.URL.Query().Get("subscription_id"))
+	// include_archived=true 时才把归档成员一并返回（默认只给未归档的）。
+	includeArchived := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("include_archived")), "true")
+	items, err := s.Store.ListMembers(r.Context(), 200, r.URL.Query().Get("subscription_id"), includeArchived)
 	if err != nil {
 		s.writeError(w, r, err)
 		return

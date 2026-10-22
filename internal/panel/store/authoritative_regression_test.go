@@ -812,7 +812,7 @@ func TestSnapshotAndEvidenceAreNotTruncatedBeyond200(t *testing.T) {
 	if len(publicNodes) != 200 {
 		t.Fatalf("public node page = %d, want the 200 cap", len(publicNodes))
 	}
-	publicMembers, err := st.ListMembers(ctx, 200, "")
+	publicMembers, err := st.ListMembers(ctx, 200, "", true)
 	if err != nil {
 		t.Fatalf("list members: %v", err)
 	}
