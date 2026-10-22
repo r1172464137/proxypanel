@@ -174,9 +174,11 @@ func TestValidateShadowsocks2022(t *testing.T) {
 }
 
 func TestValidateVMessAndTrojan(t *testing.T) {
+	// TLS 入站必须带证书材料（否则核心启动失败），所以这里给一组证书文件路径。
 	v := Node{
 		Protocol: VMess, Cipher: "auto", Host: "n.example.invalid", Port: 443, Listen: "0.0.0.0",
-		StreamSettings:   obj(t, `{"network":"ws","security":"tls","wsSettings":{"path":"/ws"},"tlsSettings":{"serverName":"n.example.invalid"}}`),
+		StreamSettings: obj(t, `{"network":"ws","security":"tls","wsSettings":{"path":"/ws"},`+
+			`"tlsSettings":{"serverName":"n.example.invalid","certificateFile":"/etc/xray/fullchain.pem","keyFile":"/etc/xray/privkey.pem"}}`),
 		ProtocolSettings: domain.NewObject(),
 		ClientSettings:   domain.NewObject(),
 	}
@@ -189,7 +191,8 @@ func TestValidateVMessAndTrojan(t *testing.T) {
 	}
 	tr := Node{
 		Protocol: Trojan, Host: "n.example.invalid", Port: 443, Listen: "0.0.0.0",
-		StreamSettings:   obj(t, `{"network":"grpc","security":"tls","grpcSettings":{"serviceName":"g"},"tlsSettings":{"serverName":"n.example.invalid"}}`),
+		StreamSettings: obj(t, `{"network":"grpc","security":"tls","grpcSettings":{"serviceName":"g"},`+
+			`"tlsSettings":{"serverName":"n.example.invalid","certificateFile":"/etc/xray/fullchain.pem","keyFile":"/etc/xray/privkey.pem"}}`),
 		ProtocolSettings: domain.NewObject(),
 		ClientSettings:   domain.NewObject(),
 	}

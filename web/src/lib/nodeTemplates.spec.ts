@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   NODE_TEMPLATES,
+  TLS_PLACEHOLDER_DOMAIN,
   findTemplate,
   newBase64Key,
   newShortId,
   newUUID,
   newRealityKeyPair,
 } from './nodeTemplates'
-import { emptyNodeDraft, type NodeDraft } from './nodeDraft'
+import { clientView, emptyNodeDraft, type NodeDraft } from './nodeDraft'
 
 // 模板的价值在于"选完就能跑"：它必须给出协议/传输/安全/密钥四个层面都自洽的
 // 配置。这些测试锁住最小契约——少一个字段，用户建出来的节点就是坏的。
@@ -63,6 +64,43 @@ describe('节点模板', () => {
     expect(Array.isArray(rs.shortIds) && rs.shortIds.length > 0).toBe(true)
   })
 
+  // 缺陷：模板只填了服务端配置，client_settings 是空对象，点模板直接保存会
+  // 因为缺少客户端参数被后端拒绝（或成员配置不可用）。这里锁住“客户端侧也齐全”。
+  it('TLS / REALITY 模板都填了 client_settings，且能被表单正确读出', () => {
+    for (const id of ['vless-reality', 'vless-ws-tls', 'vmess-ws-tls', 'trojan-tls']) {
+      const patch = findTemplate(id)!.build('n')
+      const client = (patch.client_settings ?? {}) as Record<string, unknown>
+      expect(Object.keys(client).length, `${id} 的 client_settings 为空`).toBeGreaterThan(0)
+      // 表单「客户端参数」读的是 camelCase（新模板必须用这套键）。
+      const view = clientView(client)
+      expect(view.serverName, `${id} 缺 client serverName`).toBeTruthy()
+      // snake_case 会被表单当成未知键原样保留，用户一改域名就会出现两份冲突值。
+      expect(client, `${id} 不应使用 snake_case server_name`).not.toHaveProperty('server_name')
+    }
+  })
+
+  it('REALITY 模板的客户端 serverName / shortId 与服务端配置一致', () => {
+    const patch = findTemplate('vless-reality')!.build('n')
+    const rs = (patch.stream_settings as Record<string, any>).realitySettings
+    const client = (patch.client_settings ?? {}) as Record<string, any>
+    expect(client.serverName).toBe(rs.serverNames[0])
+    // 客户端 shortId 必须命中服务端 shortIds，否则 REALITY 握手失败。
+    expect(rs.shortIds).toContain(client.shortId)
+    expect(clientView(client).shortId).toBe(rs.shortIds[0])
+  })
+
+  it('TLS 模板明确标出占位域名，并要求用户替换', () => {
+    for (const id of ['vless-ws-tls', 'vmess-ws-tls', 'trojan-tls']) {
+      const tpl = findTemplate(id)!
+      const patch = tpl.build('n')
+      const serverName = clientView((patch.client_settings ?? {}) as Record<string, unknown>).serverName
+      expect(serverName, `${id} 的占位域名`).toBe(TLS_PLACEHOLDER_DOMAIN)
+      // 服务端 tlsSettings.serverName 也用同一个占位符，表单「证书域名」不会是空的。
+      expect((patch.stream_settings as Record<string, any>).tlsSettings.serverName).toBe(TLS_PLACEHOLDER_DOMAIN)
+      expect(tpl.needs, `${id} 的提示没有说明要替换域名`).toContain(TLS_PLACEHOLDER_DOMAIN)
+    }
+  })
+
   it('SS2022 模板自动生成服务端密钥与密码，且长度符合 2022 规范', () => {
     const patch = findTemplate('ss2022')!.build('n')
     expect(patch.cipher).toBe('2022-blake3-aes-128-gcm')
@@ -81,6 +119,7 @@ describe('节点模板', () => {
       expect(merged.port).toBeTruthy()
       expect(merged.stream_settings).toBeTruthy()
       expect(merged.protocol_settings).toBeTruthy()
+      expect(merged.client_settings).toBeTruthy()
     }
   })
 

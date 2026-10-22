@@ -73,7 +73,8 @@ func TestReconcileRecoversOnlyWhenTheConditionIsGone(t *testing.T) {
 	if len(got) != 1 || !got[0].Recover || got[0].OpenEventID != "evt_open_agt_1" {
 		t.Fatalf("a healthy agent must recover its alert: %+v", got)
 	}
-	if !strings.Contains(got[0].Text, "RECOVERED") {
+	// 通知文案改成中文了；这里只要求"明确是恢复"，不绑死具体措辞
+	if !strings.Contains(got[0].Text, "已恢复") {
 		t.Fatalf("the recovery notification must be explicit: %q", got[0].Text)
 	}
 

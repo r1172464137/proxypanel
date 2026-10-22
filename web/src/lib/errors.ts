@@ -95,6 +95,32 @@ export function describeError(value: unknown): ErrorView {
   }
 }
 
+/**
+ * 从 ApiError.details 里取出字段级错误。键是后端字段名，值是消息。
+ *
+ * 后端在 `VALIDATION_FAILED` 上用 `details.field_errors` 返回字段级原因
+ * （例如 `client_settings.server_name`）。这里只做形状收敛：非字符串值转成
+ * 字符串保留（宁可显示得粗糙，也不静默丢掉服务端给出的字段），非对象返回空表。
+ */
+export function fieldErrorsOf(error: unknown): Record<string, string> {
+  if (!(error instanceof ApiError)) return {}
+  const details = error.details
+  if (typeof details !== 'object' || details === null || Array.isArray(details)) return {}
+  const raw = (details as Record<string, unknown>).field_errors
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {}
+  const fields: Record<string, string> = {}
+  for (const [field, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === 'string') {
+      if (value.trim()) fields[field] = value
+      continue
+    }
+    if (value === null || value === undefined) continue
+    const text = String(value)
+    if (text.trim()) fields[field] = text
+  }
+  return fields
+}
+
 /** 是否需要请求预览（409 PREVIEW_REQUIRED 或 details.preview_required）。 */
 export function isPreviewRequired(value: unknown): boolean {
   if (!(value instanceof ApiError)) return false

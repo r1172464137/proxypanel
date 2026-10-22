@@ -8,6 +8,7 @@ import (
 	"crypto/ecdh"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -304,14 +305,34 @@ func Validate(n Node) []Issue {
 			add("stream_settings.network", "REALITY is not available for transport %q", network)
 		}
 	case "tls":
-		if _, ok := n.StreamSettings.Sub("tlsSettings"); !ok {
+		ts, ok := n.StreamSettings.Sub("tlsSettings")
+		if !ok {
 			add("stream_settings.tlsSettings", "TLS requires tlsSettings")
+			ts = domain.NewObject()
 		}
-		ts, _ := n.StreamSettings.Sub("tlsSettings")
-		if !ts.Has("certificates") {
-			if _, ok := clientServerName(n); !ok {
-				add("client_settings.server_name", "TLS requires a certificate on the inbound or a client server name")
+		// TLS 入站必须有证书材料，否则核心启动时直接失败（"no certificates configured"）。
+		//
+		// 之前只要求"证书或客户端域名二选一"，于是「TLS + 只填客户端域名」也能通过
+		// 校验并落库 —— 节点在列表里看起来正常，实际核心永远起不来，只在下发到
+		// Agent 时才报错。客户端域名是给成员配置用的，替代不了服务端证书。
+		//
+		// 证书材料可以是：内联 certificates 数组，或 certificateFile + keyFile 路径。
+		hasInline := false
+		if raw, ok := ts.Get("certificates"); ok && len(raw) > 0 {
+			var list []any
+			if err := json.Unmarshal(raw, &list); err == nil && len(list) > 0 {
+				hasInline = true
 			}
+		}
+		certFile, _ := ts.String("certificateFile")
+		keyFile, _ := ts.String("keyFile")
+		hasFiles := strings.TrimSpace(certFile) != "" && strings.TrimSpace(keyFile) != ""
+		if !hasInline && !hasFiles {
+			add("stream_settings.tlsSettings.certificates",
+				"TLS 入站必须配置证书：内联 certificates，或同时填 certificateFile 与 keyFile")
+		}
+		if _, ok := clientServerName(n); !ok {
+			add("client_settings.server_name", "TLS 需要客户端域名（成员配置里的 serverName）")
 		}
 	}
 

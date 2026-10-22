@@ -4,7 +4,7 @@ import { Loader2 } from 'lucide-vue-next'
 import { adminApi } from '@/api/endpoints'
 import type { BatchOperation, MemberRecord, NodeRecord, SubscriptionRecord, TokenRotationResult } from '@/api/types'
 import { usePagedList } from '@/lib/paged'
-import { errorText } from '@/lib/errors'
+import { errorText, fieldErrorsOf } from '@/lib/errors'
 import { formatBytes, formatDateTime, formatQuota, fromLocalInput, utcLabel } from '@/lib/format'
 import { buildMemberWrite, draftFromMember, emptyMemberDraft, quotaSource, type MemberDraft } from '@/lib/memberDraft'
 import { pushToast } from '@/lib/toast'
@@ -117,6 +117,52 @@ const formError = ref('')
 const formErrors = ref<string[]>([])
 const formWarnings = ref<string[]>([])
 
+/**
+ * 后端字段名 → 成员表单元素 id。
+ *
+ * 键来自 internal/panel/api/admin2.go / handlers.go 的 `WithFieldErrors`。
+ * 映射不到的后端字段不会丢：统一在表单顶部错误区按后端字段名列出。
+ */
+const MEMBER_FIELD_TO_FORM_ID: Record<string, string> = {
+  username: 'member-username',
+  password: 'member-password',
+  role: 'member-role',
+  subscription_id: 'member-sub',
+  expires_at: 'member-expires',
+  quota_override_bytes: 'member-override',
+  active: 'member-active',
+  proxy_enabled: 'member-proxy',
+}
+
+// 最近一次保存时后端返回的字段级错误（details.field_errors）；
+// 本地校验仍然先跑，后端错误是补充（同一字段优先后端消息）。
+const backendFieldErrors = ref<Record<string, string>>({})
+
+const backendFieldErrorItems = computed(() =>
+  Object.entries(backendFieldErrors.value).map(([field, message]) => ({
+    field,
+    message,
+    formId: MEMBER_FIELD_TO_FORM_ID[field],
+  })),
+)
+
+const backendErrorsById = computed<Record<string, string>>(() => {
+  const map: Record<string, string> = {}
+  for (const item of backendFieldErrorItems.value) {
+    if (!item.formId) continue
+    if (!map[item.formId]) map[item.formId] = item.message
+  }
+  return map
+})
+
+function memberErrorFor(field: string): string {
+  return backendErrorsById.value[field] ?? ''
+}
+
+function clearBackendFieldErrors(): void {
+  backendFieldErrors.value = {}
+}
+
 const formTitle = computed(() => (editing.value ? `编辑成员 · ${editing.value.username}` : '新建成员'))
 
 function openCreate(): void {
@@ -125,6 +171,7 @@ function openCreate(): void {
   formError.value = ''
   formErrors.value = []
   formWarnings.value = []
+  clearBackendFieldErrors()
   formOpen.value = true
 }
 
@@ -134,11 +181,14 @@ function openEdit(member: MemberRecord): void {
   formError.value = ''
   formErrors.value = []
   formWarnings.value = []
+  clearBackendFieldErrors()
   formOpen.value = true
 }
 
 async function saveMember(): Promise<void> {
   formError.value = ''
+  // 每次提交都从干净状态开始：旧的字段级错误不对应当前这次请求。
+  clearBackendFieldErrors()
   const mode = editing.value ? 'update' : 'create'
   const built = buildMemberWrite(form, mode)
   formErrors.value = built.errors
@@ -157,6 +207,9 @@ async function saveMember(): Promise<void> {
     await list.refresh()
   } catch (caught) {
     formError.value = errorText(caught)
+    // 后端返回的字段级错误（username / password / quota_override_bytes…）：
+    // 能映射的显示在输入框下，映射不到的列在顶部错误区。
+    backendFieldErrors.value = fieldErrorsOf(caught)
   } finally {
     saving.value = false
   }
@@ -463,7 +516,21 @@ const columns = [
       <div class="space-y-4">
         <Alert v-if="formError" variant="destructive" role="alert">
           <AlertTitle>保存失败</AlertTitle>
-          <AlertDescription class="break-all">{{ formError }}</AlertDescription>
+          <AlertDescription>
+            <p class="break-all">{{ formError }}</p>
+            <!-- 后端字段级错误：能映射到输入框的已在下面就地标注，映射不到的
+                 在这里按后端字段名全部列出，不丢信息。 -->
+            <div v-if="backendFieldErrorItems.length" class="mt-2 space-y-1">
+              <p class="text-xs font-medium">服务端指出了这些字段：</p>
+              <ul class="list-disc space-y-1 pl-4 text-xs">
+                <li v-for="item in backendFieldErrorItems" :key="item.field">
+                  <span class="font-mono">{{ item.field }}</span>：{{ item.message }}
+                  <span v-if="item.formId" class="text-muted-foreground">（对应表单控件 #{{ item.formId }}）</span>
+                  <span v-else class="text-muted-foreground">（表单没有对应控件）</span>
+                </li>
+              </ul>
+            </div>
+          </AlertDescription>
         </Alert>
         <Alert v-for="error in formErrors" :key="error" variant="destructive" role="alert">
           <AlertDescription>{{ error }}</AlertDescription>
@@ -472,30 +539,62 @@ const columns = [
         <div class="grid gap-4 sm:grid-cols-2">
           <div class="space-y-1.5">
             <Label for="member-username">用户名</Label>
-            <Input id="member-username" v-model="form.username" autocomplete="off" />
+            <Input
+              id="member-username"
+              v-model="form.username"
+              autocomplete="off"
+              :aria-invalid="Boolean(memberErrorFor('member-username'))"
+              :class="memberErrorFor('member-username') ? 'border-destructive focus-visible:ring-destructive' : ''"
+            />
+            <p v-if="memberErrorFor('member-username')" class="text-xs text-destructive">{{ memberErrorFor('member-username') }}</p>
           </div>
           <div class="space-y-1.5">
             <Label for="member-password">{{ editing ? '重置密码（留空不修改）' : '初始密码' }}</Label>
-            <Input id="member-password" v-model="form.password" type="password" autocomplete="new-password" />
+            <Input
+              id="member-password"
+              v-model="form.password"
+              type="password"
+              autocomplete="new-password"
+              :aria-invalid="Boolean(memberErrorFor('member-password'))"
+              :class="memberErrorFor('member-password') ? 'border-destructive focus-visible:ring-destructive' : ''"
+            />
+            <p v-if="memberErrorFor('member-password')" class="text-xs text-destructive">{{ memberErrorFor('member-password') }}</p>
             <p class="text-xs text-muted-foreground">至少 10 位；成员输出永不包含密码或哈希</p>
           </div>
           <div class="space-y-1.5">
             <Label for="member-role">角色</Label>
-            <select id="member-role" v-model="form.role" :class="selectClass">
+            <select
+              id="member-role"
+              v-model="form.role"
+              :class="[selectClass, memberErrorFor('member-role') ? 'border-destructive' : '']"
+            >
               <option value="member">成员</option>
               <option value="admin">管理员</option>
             </select>
+            <p v-if="memberErrorFor('member-role')" class="text-xs text-destructive">{{ memberErrorFor('member-role') }}</p>
           </div>
           <div class="space-y-1.5">
             <Label for="member-sub">订阅</Label>
-            <select id="member-sub" v-model="form.subscription_id" :class="selectClass">
+            <select
+              id="member-sub"
+              v-model="form.subscription_id"
+              :class="[selectClass, memberErrorFor('member-sub') ? 'border-destructive' : '']"
+            >
               <option value="">不绑定</option>
               <option v-for="sub in bindableSubscriptions" :key="sub.id" :value="sub.id">{{ sub.name }}</option>
             </select>
+            <p v-if="memberErrorFor('member-sub')" class="text-xs text-destructive">{{ memberErrorFor('member-sub') }}</p>
           </div>
           <div class="space-y-1.5">
             <Label for="member-expires">到期时间</Label>
-            <Input id="member-expires" v-model="form.expires_at_local" type="datetime-local" />
+            <Input
+              id="member-expires"
+              v-model="form.expires_at_local"
+              type="datetime-local"
+              :aria-invalid="Boolean(memberErrorFor('member-expires'))"
+              :class="memberErrorFor('member-expires') ? 'border-destructive focus-visible:ring-destructive' : ''"
+            />
+            <p v-if="memberErrorFor('member-expires')" class="text-xs text-destructive">{{ memberErrorFor('member-expires') }}</p>
             <p class="text-xs text-muted-foreground">留空表示跟随订阅默认有效期</p>
           </div>
           <div class="space-y-2">
@@ -515,15 +614,20 @@ const columns = [
                 <Label for="member-quota-override" class="font-normal leading-snug">单独给这个人设置</Label>
               </div>
             </RadioGroup>
-            <div v-if="form.quota_override_enabled" class="flex items-center gap-2">
-              <Input
-                id="member-override"
-                v-model="form.quota_override_gib"
-                inputmode="decimal"
-                placeholder="留空表示不限量"
-                aria-label="单独设置的流量额度（GiB）"
-              />
-              <span class="text-sm text-muted-foreground">GiB</span>
+            <div v-if="form.quota_override_enabled" class="space-y-1">
+              <div class="flex items-center gap-2">
+                <Input
+                  id="member-override"
+                  v-model="form.quota_override_gib"
+                  inputmode="decimal"
+                  placeholder="留空表示不限量"
+                  aria-label="单独设置的流量额度（GiB）"
+                  :aria-invalid="Boolean(memberErrorFor('member-override'))"
+                  :class="memberErrorFor('member-override') ? 'border-destructive focus-visible:ring-destructive' : ''"
+                />
+                <span class="text-sm text-muted-foreground">GiB</span>
+              </div>
+              <p v-if="memberErrorFor('member-override')" class="text-xs text-destructive">{{ memberErrorFor('member-override') }}</p>
             </div>
             <p class="text-xs text-muted-foreground">
               跟随订阅时，这个人的额度等于订阅里设的每人配额；
@@ -535,6 +639,7 @@ const columns = [
         <div class="space-y-1">
           <div class="flex cursor-pointer items-start gap-2" @click="form.active = !form.active">
             <Checkbox
+              id="member-active"
               class="mt-0.5"
               :model-value="form.active"
               aria-label="允许登录"
@@ -543,6 +648,7 @@ const columns = [
             />
             <span class="text-sm font-medium leading-none">允许登录</span>
           </div>
+          <p v-if="memberErrorFor('member-active')" class="text-xs text-destructive">{{ memberErrorFor('member-active') }}</p>
           <p class="text-xs text-muted-foreground">
             关掉后这个人立刻无法登录，正在使用的会话失效。重新开启即可恢复，但他需要重新登录。
           </p>
@@ -551,6 +657,7 @@ const columns = [
         <div class="space-y-1">
           <div class="flex cursor-pointer items-start gap-2" @click="form.proxy_enabled = !form.proxy_enabled">
             <Checkbox
+              id="member-proxy"
               class="mt-0.5"
               :model-value="form.proxy_enabled"
               aria-label="允许使用代理"
@@ -559,6 +666,7 @@ const columns = [
             />
             <span class="text-sm font-medium leading-none">允许使用代理</span>
           </div>
+          <p v-if="memberErrorFor('member-proxy')" class="text-xs text-destructive">{{ memberErrorFor('member-proxy') }}</p>
           <p class="text-xs text-muted-foreground">
             关掉后他所有代理连接立即断开，客户端连不上。重新开启后需要重新拉取订阅。
           </p>

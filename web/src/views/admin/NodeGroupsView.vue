@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { Loader2 } from 'lucide-vue-next'
 import { adminApi } from '@/api/endpoints'
 import type { BatchOperation, NodeGroupRecord, NodeRecord } from '@/api/types'
 import { usePagedList } from '@/lib/paged'
 import { errorText, isPreviewRequired } from '@/lib/errors'
+import { pushToast } from '@/lib/toast'
 import PageHeader from '@/components/PageHeader.vue'
 import DataTable from '@/components/DataTable.vue'
 import ErrorState from '@/components/ErrorState.vue'
@@ -133,7 +134,121 @@ async function confirmDelete(): Promise<void> {
   }
 }
 
+/* ---------- 行选择 ---------- */
+// 跨页选择保存记录本身：批量删除时要带上各自的 version 发起真实 DELETE。
+const selected = reactive(new Map<string, NodeGroupRecord>())
+
+const selectedOnCurrentPage = computed(() => list.items.value.filter((group) => selected.has(group.id)))
+const selectedOnOtherPages = computed(() => Math.max(0, selected.size - selectedOnCurrentPage.value.length))
+const allVisibleSelected = computed(
+  () => list.items.value.length > 0 && list.items.value.every((group) => selected.has(group.id)),
+)
+
+const countLabel = computed(() => {
+  const base = `本页 ${list.items.value.length} 个节点组`
+  if (!selectedOnOtherPages.value) return base
+  return `${base} · 已选择 ${selected.size} 个（含其它页 ${selectedOnOtherPages.value} 个）`
+})
+
+function toggleSelect(group: NodeGroupRecord): void {
+  if (selected.has(group.id)) selected.delete(group.id)
+  else selected.set(group.id, group)
+}
+
+function toggleSelectAll(): void {
+  const rows = list.items.value
+  const allSelected = rows.length > 0 && rows.every((group) => selected.has(group.id))
+  for (const group of rows) {
+    if (allSelected) selected.delete(group.id)
+    else selected.set(group.id, group)
+  }
+}
+
+/* ---------- 批量删除（逐条执行、失败不中断、最后汇总） ---------- */
+interface NodeGroupBatchTarget {
+  id: string
+  name: string
+  version: number
+}
+
+interface BatchFailure {
+  id: string
+  name: string
+  reason: string
+}
+
+const batch = reactive({
+  open: false,
+  phase: 'confirm' as 'confirm' | 'running' | 'done',
+  targets: [] as NodeGroupBatchTarget[],
+  total: 0,
+  current: 0,
+  currentName: '',
+  successes: [] as string[],
+  failures: [] as BatchFailure[],
+})
+
+function openBatch(): void {
+  if (!selected.size) return
+  // 当前页记录可能已被其它请求更新；打开批量时用列表最新 version/name 覆盖选择集。
+  const current = new Map(list.items.value.map((group) => [group.id, group]))
+  for (const id of [...selected.keys()]) {
+    const fresh = current.get(id)
+    if (fresh) selected.set(id, fresh)
+  }
+  batch.phase = 'confirm'
+  batch.targets = [...selected.values()].map((group) => ({ id: group.id, name: group.name, version: group.version }))
+  batch.total = batch.targets.length
+  batch.current = 0
+  batch.currentName = ''
+  batch.successes = []
+  batch.failures = []
+  batch.open = true
+}
+
+function closeBatch(): void {
+  if (batch.phase === 'running') return
+  batch.open = false
+}
+
+async function runBatch(): Promise<void> {
+  const targets = [...batch.targets]
+  batch.phase = 'running'
+  batch.total = targets.length
+  batch.current = 0
+  batch.currentName = ''
+  batch.successes = []
+  batch.failures = []
+
+  for (let index = 0; index < targets.length; index += 1) {
+    const target = targets[index]!
+    batch.current = index + 1
+    batch.currentName = target.name
+    await nextTick()
+    try {
+      await adminApi.nodeGroups.remove(target.id, target.version)
+      batch.successes.push(target.name)
+      selected.delete(target.id)
+    } catch (caught) {
+      batch.failures.push({ id: target.id, name: target.name, reason: errorText(caught) })
+    }
+  }
+
+  batch.phase = 'done'
+  await list.refresh()
+  if (batch.failures.length) {
+    pushToast(
+      'error',
+      `批量删除完成：成功 ${batch.successes.length} / 失败 ${batch.failures.length}`,
+      '失败项已保留选择，可按原因处理后重试。',
+    )
+  } else {
+    pushToast('success', '批量删除完成', `成功 ${batch.successes.length} 个，列表已刷新。`)
+  }
+}
+
 const columns = [
+  { label: '选择', width: 'w-12' },
   { label: '名称', width: 'w-56' },
   { label: '节点' },
   { label: '说明', hideOnMobile: true },
@@ -150,29 +265,56 @@ const columns = [
 
     <ErrorState v-if="nodesError" :error="nodesError" @retry="list.refresh()" />
 
+    <!-- 批量入口始终可见：没有数据时按钮禁用，但选择语义不变。 -->
+    <div class="flex flex-wrap items-center gap-3">
+      <span class="text-sm text-muted-foreground">勾选行后可批量删除；逐条执行，失败不会中断其余对象。</span>
+      <div class="flex-1" />
+      <div class="flex items-center gap-2">
+        <Checkbox
+          id="node-groups-select-all"
+          :model-value="allVisibleSelected"
+          :disabled="!list.items.value.length"
+          aria-label="选择当前页全部节点组"
+          @update:model-value="toggleSelectAll"
+        />
+        <Label for="node-groups-select-all" class="text-sm font-normal text-muted-foreground">全选本页</Label>
+      </div>
+      <Button variant="outline" :disabled="!selected.size" @click="openBatch">
+        批量操作（已选 {{ selected.size }}）
+      </Button>
+      <Button v-if="selected.size" variant="ghost" @click="selected.clear()">清空选择</Button>
+    </div>
+
     <DataTable
       :list="list"
       :columns="columns"
       empty-title="还没有节点组"
       empty-description="把相关节点组合成组，再在订阅中引用；同一成员的多组节点会按节点去重输出。"
       loading-label="正在读取节点组"
-      :count-label="`本页 ${list.items.value.length} 个节点组`"
+      :count-label="countLabel"
     >
       <template #row="{ item, columnIndex }">
         <template v-if="columnIndex === 0">
+          <Checkbox
+            :model-value="selected.has(item.id)"
+            :aria-label="`选择 ${item.name}`"
+            @update:model-value="toggleSelect(item)"
+          />
+        </template>
+        <template v-else-if="columnIndex === 1">
           <span class="font-medium">{{ item.name }}</span>
           <span class="mt-0.5 block font-mono text-xs text-muted-foreground">{{ item.id }}</span>
         </template>
-        <template v-else-if="columnIndex === 1">
+        <template v-else-if="columnIndex === 2">
           {{ item.node_ids.length }} 个
           <span class="mt-0.5 block text-xs text-muted-foreground">
             {{ item.node_ids.map((id) => nodeNames.get(id) ?? id).join('、') }}
           </span>
         </template>
-        <template v-else-if="columnIndex === 2">
+        <template v-else-if="columnIndex === 3">
           <span class="text-sm">{{ item.description || '—' }}</span>
         </template>
-        <template v-else-if="columnIndex === 3">{{ item.version }}</template>
+        <template v-else-if="columnIndex === 4">{{ item.version }}</template>
         <template v-else>
           <div class="flex flex-wrap items-center gap-1.5">
             <Button size="sm" variant="outline" @click="openEdit(item)">编辑</Button>
@@ -261,5 +403,76 @@ const columns = [
       description="该节点组成员变化影响已有授权，服务端要求预览确认后再提交。"
       @close="impact.open = false"
     />
+
+    <!-- 批量：确认对象清单 → 逐条执行 → 汇总结果 -->
+    <AppModal
+      :open="batch.open"
+      :title="batch.phase === 'done' ? '批量操作结果' : '批量删除节点组（逐条执行）'"
+      size="md"
+      @close="closeBatch"
+    >
+      <div class="space-y-4">
+        <template v-if="batch.phase === 'confirm'">
+          <p class="text-sm text-muted-foreground">
+            已选择 {{ selected.size }} 个节点组<template v-if="selectedOnOtherPages">（含其它页 {{ selectedOnOtherPages }} 个）</template>。
+            前端会按顺序逐条调用单个 DELETE；某条失败不会中断后续，全部结束后汇总「成功 / 失败」并刷新列表。
+          </p>
+          <div class="space-y-1.5">
+            <span class="text-sm font-medium">将对以下 {{ batch.targets.length }} 个节点组执行批量删除：</span>
+            <ul
+              aria-label="批量操作对象"
+              class="max-h-56 space-y-1 overflow-y-auto rounded-md border border-border p-3 text-sm"
+            >
+              <li v-for="target in batch.targets" :key="target.id">
+                {{ target.name }}
+                <span class="font-mono text-xs text-muted-foreground">{{ target.id }}</span>
+              </li>
+            </ul>
+          </div>
+          <p class="text-sm text-destructive">
+            删除不可撤销；仍被订阅引用的节点组会被服务端拒绝，并计入失败明细。删除不会删除节点本身。
+          </p>
+        </template>
+
+        <template v-else-if="batch.phase === 'running'">
+          <p role="status" class="text-sm">
+            正在处理 {{ batch.current }}/{{ batch.total }}：<strong>{{ batch.currentName }}</strong>
+          </p>
+          <p class="text-sm text-muted-foreground">
+            已完成 {{ batch.successes.length }} 条，失败 {{ batch.failures.length }} 条。
+          </p>
+        </template>
+
+        <template v-else>
+          <Alert :variant="batch.failures.length ? 'destructive' : 'default'">
+            <AlertDescription>
+              批量删除完成：成功 {{ batch.successes.length }} / 失败 {{ batch.failures.length }}
+              （共 {{ batch.total }} 个）。列表已刷新。
+            </AlertDescription>
+          </Alert>
+          <div v-if="batch.failures.length" class="space-y-1.5">
+            <span class="text-sm font-medium">失败对象与原因</span>
+            <ul aria-label="失败明细" class="max-h-56 space-y-1 overflow-y-auto rounded-md border border-border p-3 text-sm">
+              <li v-for="failure in batch.failures" :key="failure.id">
+                <strong>{{ failure.name }}</strong>：<span class="break-all">{{ failure.reason }}</span>
+              </li>
+            </ul>
+          </div>
+        </template>
+      </div>
+
+      <template #footer>
+        <template v-if="batch.phase === 'confirm'">
+          <Button variant="outline" @click="closeBatch">取消</Button>
+          <Button variant="destructive" :disabled="!batch.targets.length" @click="runBatch">确认删除</Button>
+        </template>
+        <template v-else-if="batch.phase === 'running'">
+          <Button disabled>处理中…</Button>
+        </template>
+        <template v-else>
+          <Button @click="closeBatch">关闭</Button>
+        </template>
+      </template>
+    </AppModal>
   </div>
 </template>

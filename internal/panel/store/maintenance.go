@@ -270,10 +270,10 @@ func (m *MaintenanceTx) observeAgents(ctx context.Context, now time.Time, set *O
 	for _, c := range cands {
 		var msg string
 		if c.never {
-			msg = fmt.Sprintf("agent %q has not sent a heartbeat since registration %s",
+			msg = fmt.Sprintf("Agent「%s」注册后一直没有心跳（注册时间 %s）",
 				c.name, c.lastSeen.Format(time.RFC3339))
 		} else {
-			msg = fmt.Sprintf("agent %q has been offline for %s (last heartbeat %s)",
+			msg = fmt.Sprintf("Agent「%s」已离线 %s（最后心跳 %s）",
 				c.name, shortDuration(now.Sub(c.lastSeen)), c.lastSeen.Format(time.RFC3339))
 		}
 		set.Alerts = append(set.Alerts, AlertObservation{
@@ -318,7 +318,7 @@ func (m *MaintenanceTx) observeCoreInstances(ctx context.Context, set *Observati
 		cands = cands[:m.bounds.AlertScan]
 	}
 	for _, c := range cands {
-		msg := fmt.Sprintf("core instance for node %q is in state failed", c.nodeName)
+		msg := fmt.Sprintf("节点「%s」的核心实例启动失败", c.nodeName)
 		if detail := strings.TrimSpace(c.lastError); detail != "" {
 			msg += ": " + truncateMessage(detail, 200)
 		}
@@ -416,7 +416,7 @@ func (m *MaintenanceTx) observeExpiredMembers(ctx context.Context, now time.Time
 			SubjectType: "member",
 			SubjectID:   c.id,
 			SubjectName: c.username,
-			Message: fmt.Sprintf("member %q binding expired at %s",
+			Message: fmt.Sprintf("成员「%s」的订阅已于 %s 到期",
 				c.username, c.expiresAt.Format(time.RFC3339)),
 			DedupeKey: alertKey(AlertMemberExpired, c.id),
 		})
@@ -480,7 +480,7 @@ func (m *MaintenanceTx) observeOverQuotaMembers(ctx context.Context, now time.Ti
 			SubjectType: "member",
 			SubjectID:   c.id,
 			SubjectName: c.username,
-			Message: fmt.Sprintf("member %q reached the effective quota (%s of %s)",
+			Message: fmt.Sprintf("成员「%s」已用满本期额度（%s / %s）",
 				c.username, humanBytes(decision.UsedBytes), quotaText(decision.EffectiveQuotaBytes)),
 			DedupeKey: alertKey(AlertMemberOverQuota, c.id),
 		})
@@ -525,7 +525,7 @@ func (m *MaintenanceTx) observeExpiringServers(ctx context.Context, now time.Tim
 				c.name, shortDuration(c.expiresAt.Sub(now)), c.expiresAt.Format(time.RFC3339))
 		} else {
 			severity = "error"
-			msg = fmt.Sprintf("server %q expired %s ago (at %s)",
+			msg = fmt.Sprintf("服务器「%s」已于 %s 到期（到期时间 %s）",
 				c.name, shortDuration(now.Sub(c.expiresAt)), c.expiresAt.Format(time.RFC3339))
 		}
 		set.Alerts = append(set.Alerts, AlertObservation{

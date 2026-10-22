@@ -348,7 +348,7 @@ func TestMaintenanceIntegrationPass(t *testing.T) {
 	if got := scalarInt(t, st, `SELECT count(*) FROM events WHERE dedupe_key='agent_offline:agt_off' AND state='open'`); got != 0 {
 		t.Fatal("the recovered alert must no longer be open")
 	}
-	if got := scalarInt(t, st, `SELECT count(*) FROM events WHERE kind='agent_offline' AND state='recovered' AND message LIKE '%RECOVERED%'`); got < 1 {
+	if got := scalarInt(t, st, `SELECT count(*) FROM events WHERE kind='agent_offline' AND state='recovered' AND message LIKE '%已恢复%'`); got < 1 {
 		t.Fatal("a recovery event must be recorded")
 	}
 	if got := scalarInt(t, st, `SELECT count(*) FROM notification_outbox o JOIN events e ON e.id=o.event_id

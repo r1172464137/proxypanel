@@ -27,10 +27,10 @@ import {
   type ProtocolView,
   type StreamView,
 } from '@/lib/nodeDraft'
-import { unknownKeys, type JsonObject } from '@/lib/json'
-import { errorText } from '@/lib/errors'
+import { unknownKeys, getPath, isRecord, type JsonObject } from '@/lib/json'
+import { errorText, fieldErrorsOf } from '@/lib/errors'
 import { formatDateTime } from '@/lib/format'
-import { NODE_TEMPLATES, newRealityKeyPair, newShortId, type NodeTemplate } from '@/lib/nodeTemplates'
+import { NODE_TEMPLATES, TLS_PLACEHOLDER_DOMAIN, newRealityKeyPair, newShortId, type NodeTemplate } from '@/lib/nodeTemplates'
 import { pushToast } from '@/lib/toast'
 import PageHeader from '@/components/PageHeader.vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
@@ -74,6 +74,72 @@ const advancedAllowed = ref(false)
 const appliedTemplate = ref('')
 const templateNote = ref('')
 
+/**
+ * 后端字段名 → 表单元素 id。
+ *
+ * 键来自后端 `protocol.Issue.Field` / `WithFieldErrors`（见
+ * internal/panel/protocol/protocol.go、internal/panel/api/admin2.go）。
+ * 映射不到的字段不会丢：统一在表单顶部的保存错误区按后端字段名列出。
+ */
+const BACKEND_FIELD_TO_FORM_ID: Record<string, string> = {
+  name: 'node-name',
+  host: 'node-host',
+  port: 'node-port',
+  listen: 'node-listen',
+  sort_order: 'node-sort',
+  protocol: 'node-protocol',
+  flow: 'vless-flow',
+  cipher: 'ss-method',
+  server_key: 'node-server-key',
+  'stream_settings.network': 'stream-network',
+  'stream_settings.security': 'stream-security',
+  'stream_settings.realitySettings': 'reality-dest',
+  'stream_settings.realitySettings.dest': 'reality-dest',
+  'stream_settings.realitySettings.serverNames': 'reality-server-names',
+  'stream_settings.realitySettings.privateKey': 'reality-private-key',
+  'stream_settings.realitySettings.shortId': 'reality-short-ids',
+  'stream_settings.realitySettings.shortIds': 'reality-short-ids',
+  'stream_settings.tlsSettings': 'tls-cert-file',
+  'stream_settings.tlsSettings.certificateFile': 'tls-cert-file',
+  'stream_settings.tlsSettings.keyFile': 'tls-key',
+  'stream_settings.tlsSettings.certificates': 'tls-cert-file',
+  'protocol_settings.decryption': 'protocol-decryption',
+  'protocol_settings.password': 'ss-password',
+  'client_settings.server_name': 'client-sni',
+  'client_settings.public_key': 'client-public-key',
+  'client_settings.short_id': 'client-short-id',
+  'client_settings.fingerprint': 'client-fingerprint',
+  'client_settings.alpn': 'client-alpn',
+  'client_settings.allow_insecure': 'client-insecure',
+}
+
+// 最近一次保存时后端返回的字段级错误（
+// details.field_errors）。作为本地校验的补充：同一个字段优先后端消息。
+const backendFieldErrors = ref<Record<string, string>>({})
+
+interface BackendFieldErrorItem {
+  field: string
+  message: string
+  formId?: string
+}
+
+const backendFieldErrorItems = computed<BackendFieldErrorItem[]>(() =>
+  Object.entries(backendFieldErrors.value).map(([field, message]) => ({
+    field,
+    message,
+    formId: BACKEND_FIELD_TO_FORM_ID[field],
+  })),
+)
+
+const backendErrorsById = computed<Record<string, string>>(() => {
+  const map: Record<string, string> = {}
+  for (const item of backendFieldErrorItems.value) {
+    if (!item.formId) continue
+    if (!map[item.formId]) map[item.formId] = item.message
+  }
+  return map
+})
+
 // 套用模板：直接覆盖协议/传输/密钥相关的字段，保留名称与服务器选择。
 // REALITY 的密钥对需要 WebCrypto，异步生成；其他模板同步完成。
 // 生成一对 REALITY 密钥（私钥 + 公钥一起填），省掉用户去命令行跑 xray x25519。
@@ -83,8 +149,11 @@ async function generateRealityKeys(): Promise<void> {
     streamState.realityPrivateKey = pair.privateKey
     streamState.realityPublicKey = pair.publicKey
     if (!streamState.realityFingerprint) streamState.realityFingerprint = 'chrome'
+    // 成员配置读的是 client_settings.publicKey；只填服务端一侧会让成员拿到空公钥。
+    clientState.publicKey = pair.publicKey
     templateNote.value = '已生成 REALITY 密钥对。'
     draft.stream_settings = applyStreamView(draft.stream_settings, streamState)
+    draft.client_settings = applyClientView(draft.client_settings, clientState)
   } catch (err) {
     saveError.value = `密钥生成失败：${err instanceof Error ? err.message : String(err)}`
   }
@@ -94,6 +163,8 @@ async function applyTemplate(tpl: NodeTemplate): Promise<void> {
   const patch = tpl.build(draft.name || '')
   appliedTemplate.value = tpl.id
   templateNote.value = ''
+  // 换模板是一次新的尝试：旧的字段级错误不再适用于新的表单内容。
+  backendFieldErrors.value = {}
 
   if (patch.protocol) draft.protocol = patch.protocol
   if (patch.port) draft.port = patch.port
@@ -108,22 +179,31 @@ async function applyTemplate(tpl: NodeTemplate): Promise<void> {
   if (tpl.id === 'vless-reality') {
     try {
       const pair = await newRealityKeyPair()
+      const realitySettings = ((draft.stream_settings as Record<string, unknown>).realitySettings ?? {}) as Record<string, unknown>
       draft.stream_settings = {
         ...(draft.stream_settings as Record<string, unknown>),
         realitySettings: {
-          ...((draft.stream_settings as Record<string, unknown>).realitySettings as Record<string, unknown>),
+          ...realitySettings,
           privateKey: pair.privateKey,
           settings: { publicKey: pair.publicKey, fingerprint: 'chrome', spiderX: '/' },
         },
       }
-      templateNote.value = '已生成 REALITY 密钥对。下一步：把「回落目标」和「允许的域名」改成你想伪装的站点，再改端口保存。'
+      // 公钥必须与刚生成的私钥配对：模板只带 shortId/serverName，
+      // 公钥只能异步补进 client_settings（成员配置从这里取）。
+      draft.client_settings = {
+        ...(draft.client_settings as JsonObject),
+        publicKey: pair.publicKey,
+      }
+      const shortId = Array.isArray(realitySettings.shortIds) ? String(realitySettings.shortIds[0] ?? '') : ''
+      templateNote.value = `已生成 REALITY 密钥对和 shortId${shortId ? `（${shortId}）` : ''}。下一步：把「回落目标」和「允许的域名」改成你想伪装的站点，就可以直接保存。`
     } catch (err) {
-      templateNote.value = `REALITY 密钥生成失败（${err instanceof Error ? err.message : String(err)}），请手动填写私钥与公钥。`
+      templateNote.value = `REALITY 密钥生成失败（${err instanceof Error ? err.message : String(err)}）。请点「生成一对」或手动填写私钥与公钥，否则保存会被拒绝。`
     }
   } else if (tpl.id === 'ss2022') {
     templateNote.value = '已生成服务端密钥与密码。保存后即可使用，不需要域名或证书。'
   } else {
-    templateNote.value = '已填好协议与传输。下一步：填「证书域名」并选择证书文件（或在高级模式里贴自签证书）。'
+    templateNote.value =
+      `已填好协议、传输和占位域名 ${TLS_PLACEHOLDER_DOMAIN}（「证书域名」和「客户端参数 → 域名」）。下一步：把这两处改成你自己的域名，并填「证书文件路径」/「私钥文件路径」；没有证书无法保存。`
   }
 
   // 注意方向：模板写的是 draft，这里必须把 draft 反向灌进各 view。
@@ -153,11 +233,42 @@ const previewDraft = computed<NodeDraft>(() => ({
 
 const validation = computed(() => validateNodeDraft(previewDraft.value))
 
+// 本地校验看不见的硬阻塞：TLS 节点没有证书材料时，面板会接受保存但核心无法
+// 启动（下发到 Agent 才失败）。模板只能给占位域名，所以这里把“证书未配置”
+// 明确成阻断错误，而不是只给一条容易被忽略的警告。
+// 已内联证书（tlsSettings.certificates[0].certificate/key）或已填文件路径的节点不受影响。
+const TLS_CERT_MISSING_MESSAGE =
+  `TLS 证书文件未配置：请填写「证书文件路径」和「私钥文件路径」（Agent 受控目录下的真实文件），并把证书域名从占位值 ${TLS_PLACEHOLDER_DOMAIN} 改掉。`
+
+const tlsCertMissing = computed(() => {
+  if (streamState.security !== 'tls') return false
+  const tlsSettings = getPath(previewDraft.value.stream_settings, 'tlsSettings')
+  if (!isRecord(tlsSettings)) return true
+  if (String(tlsSettings.certificateFile ?? '').trim() || String(tlsSettings.keyFile ?? '').trim()) return false
+  const certificates = tlsSettings.certificates
+  if (Array.isArray(certificates) && certificates.length > 0) return false
+  return true
+})
+
+const extraErrorItems = computed<{ field?: string; message: string }[]>(() =>
+  tlsCertMissing.value ? [{ field: 'tls-cert-file', message: TLS_CERT_MISSING_MESSAGE }] : [],
+)
+
+const allErrorItems = computed(() => [...validation.value.errorItems, ...extraErrorItems.value])
+const allErrors = computed(() => allErrorItems.value.map((item) => item.message))
+// 证书缺失已经升级为阻断错误，不再重复保留同一条警告。
+const allWarnings = computed(() =>
+  validation.value.warningItems
+    .filter((item) => !(tlsCertMissing.value && item.field === 'tls-cert-file'))
+    .map((item) => item.message),
+)
+
 // 字段级错误：把校验结果按表单元素 id 分组，让错误直接显示在对应输入框下面，
 // 而不是只在页面底部汇总一次（用户得自己去找是哪一项）。
+// 后端返回的字段级错误优先于本地推断（服务端才是权威）。
 const fieldErrors = computed(() => {
   const map: Record<string, string> = {}
-  for (const item of validation.value.errorItems) {
+  for (const item of allErrorItems.value) {
     if (!item.field) continue
     // 同一个字段只显示第一条，避免叠一堆
     if (!map[item.field]) map[item.field] = item.message
@@ -166,10 +277,10 @@ const fieldErrors = computed(() => {
 })
 
 function errorFor(field: string): string {
-  return fieldErrors.value[field] ?? ''
+  return backendErrorsById.value[field] ?? fieldErrors.value[field] ?? ''
 }
 const showFallbacks = computed(() => draft.protocol === 'vless' || draft.protocol === 'trojan')
-const security = computed(() => String(draft.stream_settings.security ?? streamState.security ?? 'none'))
+const security = computed(() => String(streamState.security || 'none'))
 
 function syncDraft(): void {
   draft.stream_settings = applyStreamView(draft.stream_settings, streamState)
@@ -233,6 +344,8 @@ onMounted(() => void load())
 
 async function save(): Promise<void> {
   saveError.value = ''
+  // 每次提交都从干净状态开始：旧的字段级错误不对应当前这次请求。
+  backendFieldErrors.value = {}
   if (jsonErrors.stream || jsonErrors.protocol || jsonErrors.client) {
     saveError.value = '高级 JSON 存在解析错误，已阻止提交以免丢失参数'
     tab.value = 'advanced'
@@ -240,8 +353,8 @@ async function save(): Promise<void> {
   }
   syncDraft()
   const result = buildNodeWrite(draft, { omitServerKey: isEdit.value && keepServerKey.value })
-  if (!result.payload) {
-    saveError.value = result.errors.join('；')
+  if (!result.payload || extraErrorItems.value.length) {
+    saveError.value = [...result.errors, ...extraErrorItems.value.map((item) => item.message)].join('；')
     return
   }
   saving.value = true
@@ -255,6 +368,9 @@ async function save(): Promise<void> {
     await router.push('/admin/nodes')
   } catch (caught) {
     saveError.value = errorText(caught)
+    // 后端会指出具体是哪个字段（details.field_errors），映射到对应输入框下方；
+    // 映射不到的也会在顶部错误区按后端字段名列出。
+    backendFieldErrors.value = fieldErrorsOf(caught)
   } finally {
     saving.value = false
   }
@@ -306,7 +422,21 @@ const cipherValue = computed({
     <div v-else class="space-y-4">
       <Alert v-if="saveError" variant="destructive">
         <AlertTitle>保存失败</AlertTitle>
-        <AlertDescription class="break-all">{{ saveError }}</AlertDescription>
+        <AlertDescription>
+          <p class="whitespace-pre-wrap break-all">{{ saveError }}</p>
+          <!-- 后端字段级错误：能映射到输入框的已在下面就地标注，映射不到的（或
+               表单当前没展示的字段）在这里按后端字段名全部列出，不丢信息。 -->
+          <div v-if="backendFieldErrorItems.length" class="mt-2 space-y-1">
+            <p class="text-xs font-medium">服务端指出了这些字段：</p>
+            <ul class="list-disc space-y-1 pl-4 text-xs">
+              <li v-for="item in backendFieldErrorItems" :key="item.field">
+                <span class="font-mono">{{ item.field }}</span>：{{ item.message }}
+                <span v-if="item.formId" class="text-muted-foreground">（对应表单控件 #{{ item.formId }}）</span>
+                <span v-else class="text-muted-foreground">（表单没有对应控件）</span>
+              </li>
+            </ul>
+          </div>
+        </AlertDescription>
       </Alert>
       <ErrorState v-if="serversError" :error="serversError" @retry="load" show-retry />
       <Alert v-if="!servers.length">
@@ -666,9 +796,9 @@ const cipherValue = computed({
                   <Input id="tls-alpn" v-model="streamState.tlsAlpn" class="font-mono" placeholder="h2, http/1.1" />
                 </div>
                 <div class="space-y-1.5">
-                  <Label for="tls-cert">证书文件路径</Label>
+                  <Label for="tls-cert-file">证书文件路径</Label>
                   <Input
-                    id="tls-cert"
+                    id="tls-cert-file"
                     v-model="streamState.tlsCertFile"
                     class="font-mono"
                     :aria-invalid="Boolean(errorFor('tls-cert-file'))"
@@ -678,7 +808,14 @@ const cipherValue = computed({
                 </div>
                 <div class="space-y-1.5">
                   <Label for="tls-key">私钥文件路径</Label>
-                  <Input id="tls-key" v-model="streamState.tlsKeyFile" class="font-mono" />
+                  <Input
+                    id="tls-key"
+                    v-model="streamState.tlsKeyFile"
+                    class="font-mono"
+                    :aria-invalid="Boolean(errorFor('tls-key'))"
+                    :class="errorFor('tls-key') ? 'border-destructive focus-visible:ring-destructive' : ''"
+                  />
+                  <p v-if="errorFor('tls-key')" class="text-xs text-destructive">{{ errorFor('tls-key') }}</p>
                   <p class="text-xs text-muted-foreground">路径必须位于 Agent 受控目录；不接受任意路径注入。</p>
                 </div>
               </div>
@@ -794,7 +931,15 @@ const cipherValue = computed({
             <div class="grid gap-4 sm:grid-cols-2">
               <div class="space-y-1.5">
                 <Label for="client-sni">域名</Label>
-                <Input id="client-sni" v-model="clientState.serverName" class="font-mono" />
+                <Input
+                  id="client-sni"
+                  v-model="clientState.serverName"
+                  class="font-mono"
+                  :aria-invalid="Boolean(errorFor('client-sni'))"
+                  :class="errorFor('client-sni') ? 'border-destructive focus-visible:ring-destructive' : ''"
+                />
+                <p v-if="errorFor('client-sni')" class="text-xs text-destructive">{{ errorFor('client-sni') }}</p>
+                <p class="text-xs text-muted-foreground">TLS / REALITY 必须填：成员客户端用这个域名握手（REALITY 通常与「允许的域名」一致）。</p>
               </div>
               <div class="space-y-1.5">
                 <Label for="client-public-key">公钥</Label>
@@ -809,7 +954,14 @@ const cipherValue = computed({
               </div>
               <div class="space-y-1.5">
                 <Label for="client-short-id">短 ID</Label>
-                <Input id="client-short-id" v-model="clientState.shortId" class="font-mono" />
+                <Input
+                  id="client-short-id"
+                  v-model="clientState.shortId"
+                  class="font-mono"
+                  :aria-invalid="Boolean(errorFor('client-short-id'))"
+                  :class="errorFor('client-short-id') ? 'border-destructive focus-visible:ring-destructive' : ''"
+                />
+                <p v-if="errorFor('client-short-id')" class="text-xs text-destructive">{{ errorFor('client-short-id') }}</p>
               </div>
               <div class="space-y-1.5">
                 <Label for="client-fingerprint">指纹</Label>
@@ -912,24 +1064,24 @@ const cipherValue = computed({
         </Card>
       </template>
 
-      <Card v-if="validation.errors.length || validation.warnings.length">
+      <Card v-if="allErrors.length || allWarnings.length">
         <CardHeader>
           <CardTitle class="text-base">校验结果</CardTitle>
         </CardHeader>
         <CardContent class="space-y-3">
-          <Alert v-if="validation.errors.length" variant="destructive">
+          <Alert v-if="allErrors.length" variant="destructive">
             <AlertTitle>阻止保存</AlertTitle>
             <AlertDescription>
               <ul class="list-disc space-y-1 pl-4">
-                <li v-for="error in validation.errors" :key="error">{{ error }}</li>
+                <li v-for="error in allErrors" :key="error">{{ error }}</li>
               </ul>
             </AlertDescription>
           </Alert>
-          <Alert v-if="validation.warnings.length">
+          <Alert v-if="allWarnings.length">
             <AlertTitle>保存前请确认</AlertTitle>
             <AlertDescription>
               <ul class="list-disc space-y-1 pl-4">
-                <li v-for="warning in validation.warnings" :key="warning">{{ warning }}</li>
+                <li v-for="warning in allWarnings" :key="warning">{{ warning }}</li>
               </ul>
             </AlertDescription>
           </Alert>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { adminApi } from '@/api/endpoints'
 import type { AgentRecord, CoreInstanceRecord, RegistrationCode, ServerRecord } from '@/api/types'
@@ -29,6 +29,10 @@ import { Loader2 } from 'lucide-vue-next'
 const route = useRoute()
 const serverId = computed(() => String(route.params.id))
 
+// 分层判定需要“现在”，定时刷新让它不会停在页面打开那一刻。
+const now = ref(Date.now())
+let ticker: ReturnType<typeof setInterval> | null = null
+
 const server = useResource<ServerRecord>(() => adminApi.servers.get(serverId.value))
 const agents = useResource<AgentRecord[]>(async () => (await adminApi.agents.list({ limit: 200 })).items)
 const instances = useResource<CoreInstanceRecord[]>(async () => (await adminApi.coreInstances.list({ limit: 200 })).items)
@@ -37,6 +41,13 @@ onMounted(() => {
   void server.reload()
   void agents.reload()
   void instances.reload()
+  ticker = setInterval(() => {
+    now.value = Date.now()
+  }, 30_000)
+})
+
+onUnmounted(() => {
+  if (ticker) clearInterval(ticker)
 })
 
 const scopedAgents = computed(() => {
@@ -81,13 +92,220 @@ function onlineOf(agent: AgentRecord): boolean | null {
   if (typeof agent.status === 'string') return agent.status === 'online' ? true : agent.status === 'offline' ? false : null
   return null
 }
+
+/* ------------------------------------------------------------------ *
+ * 运行时分层：三层都用接口返回的真实数据计算，没有一行是写死的说明。
+ * ④「代理握手」已删除：前端没有任何握手探测手段，不能摆一个假层。
+ * ------------------------------------------------------------------ */
+
+// 浏览器时钟可能比服务器慢几秒（实测 WSL 比面板慢 1.3~2s）。
+// 心跳时间落在"未来"时 age 为负，但那是刚心跳，不能判离线。
+const CLOCK_SKEW_TOLERANCE_MS = 10_000
+// 心跳阈值：60 秒内算在线（与维护任务判定离线的口径一致）。
+const HEARTBEAT_ONLINE_MS = 60_000
+// 实例状态里算“进程正常”的集合。
+const RUNNING_STATES = new Set(['applied', 'rollback_applied'])
+
+type LayerTone = 'ok' | 'warn' | 'danger'
+
+interface LayerCard {
+  title: string
+  status: string
+  summary: string
+  details: string[]
+  tone: LayerTone
+}
+
+const DOT_CLASS: Record<LayerTone, string> = {
+  ok: 'bg-emerald-500',
+  warn: 'bg-amber-500',
+  danger: 'bg-red-500',
+}
+
+const TONE_TEXT_CLASS: Record<LayerTone, string> = {
+  ok: 'text-emerald-600 dark:text-emerald-400',
+  warn: 'text-amber-600 dark:text-amber-400',
+  danger: 'text-red-600 dark:text-red-400',
+}
+
+const stateOf = (instance: CoreInstanceRecord): string =>
+  String(instance.state ?? instance.status ?? '').toLowerCase()
+
+const nodeNameOf = (instance: CoreInstanceRecord): string =>
+  instance.node_name ?? instance.node_id ?? instance.id ?? '未命名节点'
+
+const agentLayer = computed<LayerCard>(() => {
+  const rows = scopedAgents.value.map((agent) => {
+    const heartbeat = heartbeatOf(agent)
+    const hbTime = heartbeat ? new Date(heartbeat).getTime() : Number.NaN
+    const age = Number.isNaN(hbTime) ? null : now.value - hbTime
+    const online = age !== null && age > -CLOCK_SKEW_TOLERANCE_MS && age < HEARTBEAT_ONLINE_MS
+    return {
+      name: agent.name ?? agent.id ?? agent.agent_id ?? '未命名 Agent',
+      heartbeat,
+      age,
+      online,
+    }
+  })
+
+  if (!rows.length) {
+    return {
+      title: '① Agent 在线',
+      status: '未知',
+      summary: '未注册 Agent',
+      details: ['该服务器还没有 Agent 上报心跳'],
+      tone: 'warn',
+    }
+  }
+
+  const online = rows.filter((row) => row.online)
+  const tone: LayerTone = online.length === rows.length ? 'ok' : online.length === 0 ? 'danger' : 'warn'
+  // 离线时给出最近一次心跳，用于判断是刚掉线还是长期失联。
+  const heartbeats = rows
+    .map((row) => row.heartbeat)
+    .filter((value): value is string => typeof value === 'string')
+    .sort()
+  const latestHeartbeat = heartbeats.at(-1) ?? null
+  const summary =
+    tone === 'ok'
+      ? rows.length === 1
+        ? '在线'
+        : `${online.length}/${rows.length} 在线`
+      : tone === 'danger'
+        ? latestHeartbeat
+          ? `离线（最后心跳 ${formatRelative(latestHeartbeat, now.value)}）`
+          : '离线（没有心跳记录）'
+        : `${online.length}/${rows.length} 在线`
+
+  return {
+    title: '① Agent 在线',
+    status: tone === 'ok' ? '在线' : tone === 'danger' ? '离线' : '部分离线',
+    summary,
+    details: rows.map((row) =>
+      row.online
+        ? `${row.name}：在线（心跳 ${row.heartbeat ? formatRelative(row.heartbeat, now.value) : '未提供'}）`
+        : `${row.name}：离线（${row.heartbeat ? `最后心跳 ${formatRelative(row.heartbeat, now.value)}` : '没有心跳记录'}）`,
+    ),
+    tone,
+  }
+})
+
+const instanceLayer = computed<LayerCard>(() => {
+  const list = scopedInstances.value
+  if (!list.length) {
+    return {
+      title: '② 进程运行',
+      status: '未知',
+      summary: '没有核心实例',
+      details: ['节点启用并下发后，Agent 才会在这台机器上启动实例'],
+      tone: 'warn',
+    }
+  }
+
+  const running = list.filter((instance) => RUNNING_STATES.has(stateOf(instance)))
+  const failed = list.filter((instance) => stateOf(instance) === 'failed')
+
+  if (failed.length) {
+    return {
+      title: '② 进程运行',
+      status: '失败',
+      summary: `${failed.length} 个实例失败`,
+      details: failed.map(
+        (instance) =>
+          `${nodeNameOf(instance)}：${instance.last_error || instance.error || '服务端未返回错误详情'}`,
+      ),
+      tone: 'danger',
+    }
+  }
+
+  const names = list.map(nodeNameOf)
+  const shown = names.slice(0, 4).join('、') + (names.length > 4 ? ` 等 ${names.length} 个` : '')
+  if (running.length === list.length) {
+    return {
+      title: '② 进程运行',
+      status: '运行中',
+      summary: `${running.length}/${list.length} 运行中`,
+      details: [`节点：${shown}`],
+      tone: 'ok',
+    }
+  }
+
+  const pending = list.filter((instance) => !RUNNING_STATES.has(stateOf(instance)))
+  return {
+    title: '② 进程运行',
+    status: '未全部生效',
+    summary: `${running.length}/${list.length} 运行中`,
+    details: pending.map((instance) => `${nodeNameOf(instance)}：${stateOf(instance) || '状态未提供'}`),
+    tone: 'warn',
+  }
+})
+
+const portLayer = computed<LayerCard>(() => {
+  const list = scopedInstances.value
+  if (!list.length) {
+    return {
+      title: '③ 端口可达',
+      status: '未确认',
+      summary: '没有核心实例',
+      details: ['没有实例，就没有可确认的下发记录'],
+      tone: 'warn',
+    }
+  }
+
+  const applied = list.filter(
+    (instance) => stateOf(instance) === 'applied' && Boolean(instance.applied_at),
+  )
+  const nodeText = list
+    .filter((instance) => !applied.includes(instance))
+    .map(nodeNameOf)
+    .join('、')
+  const note = '浏览器无法直连节点端口，这里只确认下发结果，不代替真实连通性测试。'
+
+  if (applied.length === list.length) {
+    const latest = applied
+      .map((instance) => String(instance.applied_at))
+      .sort()
+      .at(-1) as string
+    return {
+      title: '③ 端口可达',
+      status: '已生效',
+      summary: '已下发并生效',
+      details: [`生效时间：${formatDateTime(latest)}`, note],
+      tone: 'ok',
+    }
+  }
+
+  if (!applied.length) {
+    return {
+      title: '③ 端口可达',
+      status: '未确认',
+      summary: '未确认',
+      details: ['还没有 applied 且记录生效时间的实例', note],
+      tone: 'warn',
+    }
+  }
+
+  const latest = applied
+    .map((instance) => String(instance.applied_at))
+    .sort()
+    .at(-1) as string
+  return {
+    title: '③ 端口可达',
+    status: '部分确认',
+    summary: `${applied.length}/${list.length} 已下发并生效`,
+    details: [`未确认：${nodeText}`, `最近生效时间：${formatDateTime(latest)}`, note],
+    tone: 'warn',
+  }
+})
+
+const layers = computed<LayerCard[]>(() => [agentLayer.value, instanceLayer.value, portLayer.value])
 </script>
 
 <template>
   <div class="space-y-6">
     <PageHeader
       title="Agent 与核心实例"
-      :description="server.data.value ? `${server.data.value.name} · ${server.data.value.address}` : '运行时状态分层展示：Agent 在线、进程运行、端口可达、代理握手分别确认。'"
+      :description="server.data.value ? `${server.data.value.name} · ${server.data.value.address}` : '运行时状态分层展示：Agent 在线、进程运行、端口可达各自确认。'"
     >
       <Button as-child variant="outline">
         <router-link to="/admin/servers">返回服务器</router-link>
@@ -102,22 +320,28 @@ function onlineOf(agent: AgentRecord): boolean | null {
           <CardTitle class="text-base">运行时分层</CardTitle>
         </CardHeader>
         <CardContent>
-          <ol class="grid gap-2 text-sm sm:grid-cols-2 xl:grid-cols-4">
-            <li class="rounded-md border border-border px-3 py-2">
-              <span class="block font-medium">① Agent 在线</span>
-              <span class="text-xs text-muted-foreground">下方 Agent 表的心跳与在线状态</span>
-            </li>
-            <li class="rounded-md border border-border px-3 py-2">
-              <span class="block font-medium">② 进程运行</span>
-              <span class="text-xs text-muted-foreground">核心实例是否启动成功（看实例状态与错误）</span>
-            </li>
-            <li class="rounded-md border border-border px-3 py-2">
-              <span class="block font-medium">③ 端口可达</span>
-              <span class="text-xs text-muted-foreground">节点监听端口是否被外部访问到</span>
-            </li>
-            <li class="rounded-md border border-border px-3 py-2">
-              <span class="block font-medium">④ 代理握手</span>
-              <span class="text-xs text-muted-foreground">真实客户端的握手结果（需结合探测事件确认）</span>
+          <p class="mb-3 text-xs text-muted-foreground">
+            下面三层全部取自 agents / core-instances 接口的实际数据，每 30 秒重新判定一次；没有写死的结论。
+          </p>
+          <ol class="grid gap-3 sm:grid-cols-3">
+            <li
+              v-for="layer in layers"
+              :key="layer.title"
+              class="rounded-md border border-border px-3 py-3"
+            >
+              <div class="flex items-center gap-2">
+                <span class="size-2 shrink-0 rounded-full" :class="DOT_CLASS[layer.tone]" aria-hidden="true" />
+                <span class="font-medium">{{ layer.title }}</span>
+                <span class="ml-auto text-xs font-medium" :class="TONE_TEXT_CLASS[layer.tone]">
+                  {{ layer.status }}
+                </span>
+              </div>
+              <p class="mt-1 text-sm font-medium">{{ layer.summary }}</p>
+              <ul class="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                <li v-for="(detail, index) in layer.details" :key="index" class="break-words [overflow-wrap:anywhere]">
+                  {{ detail }}
+                </li>
+              </ul>
             </li>
           </ol>
         </CardContent>
@@ -191,7 +415,7 @@ function onlineOf(agent: AgentRecord): boolean | null {
               </Table>
             </div>
             <p class="mt-3 text-xs text-muted-foreground">
-              “Agent 在线”不等于“代理可用”；进程运行、端口可达、真实握手需结合核心实例与探测事件确认。
+              “Agent 在线”不等于“代理可用”：进程是否启动、端口是否可用，对照上方分层与下方核心实例表。
             </p>
           </template>
         </CardContent>

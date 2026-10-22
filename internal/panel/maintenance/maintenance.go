@@ -340,16 +340,54 @@ func dedupeKind(key string) string {
 	return key
 }
 
+// alertText / recoveryText 生成发给 Telegram 的正文。
+//
+// 全部用中文：这是一条发给运维的消息，不是日志。原来的
+// "[proxypanel] ALERT over_quota: member ..." 混着英文前缀、内部 kind 码和
+// 原始 ID，读起来像机器输出。
 func alertText(o store.AlertObservation) string {
-	subject := o.SubjectType + " " + o.SubjectID
-	if name := strings.TrimSpace(o.SubjectName); name != "" {
-		subject = fmt.Sprintf("%s %q (%s)", o.SubjectType, name, o.SubjectID)
-	}
-	return fmt.Sprintf("[proxypanel] ALERT %s: %s", o.Kind, clip(o.Message, maxMessageRunes)) + "\nsubject: " + subject
+	subject := humanSubject(o.SubjectType, o.SubjectName, o.SubjectID)
+	return "【异常】" + clip(o.Message, maxMessageRunes) + "\n对象：" + subject
 }
 
 func recoveryText(kind, subjectType, subjectID string) string {
-	return fmt.Sprintf("[proxypanel] RECOVERED %s: %s %s is healthy again", kind, subjectType, subjectID)
+	return "【已恢复】" + humanKind(kind) + "：" + humanSubject(subjectType, "", subjectID)
+}
+
+// humanKind 把内部事件码翻成一句人话。
+func humanKind(kind string) string {
+	switch kind {
+	case store.AlertAgentOffline:
+		return "Agent 重新上线"
+	case store.AlertCoreInstanceFailed:
+		return "核心实例恢复正常"
+	case store.AlertMemberExpired:
+		return "成员到期状态已更新"
+	case store.AlertMemberOverQuota:
+		return "成员的额度已恢复"
+	case store.AlertServerExpiring:
+		return "服务器到期提醒已解除"
+	default:
+		return kind
+	}
+}
+
+// humanSubject 把对象描述成"类型「名字」（ID）"。
+func humanSubject(subjectType, name, id string) string {
+	typeLabel := map[string]string{
+		"agent":         "Agent",
+		"core_instance": "核心实例",
+		"member":        "成员",
+		"server":        "服务器",
+		"node":          "节点",
+	}[subjectType]
+	if typeLabel == "" {
+		typeLabel = subjectType
+	}
+	if n := strings.TrimSpace(name); n != "" {
+		return fmt.Sprintf("%s「%s」（%s）", typeLabel, n, id)
+	}
+	return fmt.Sprintf("%s（%s）", typeLabel, id)
 }
 
 // ─── Telegram delivery ─────────────────────────────────────────────────────

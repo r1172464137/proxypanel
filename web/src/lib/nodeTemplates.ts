@@ -91,15 +91,27 @@ export function newShortId(bytes = 8): string {
 /**
  * 五个常用模板，覆盖绝大多数实际部署。
  *
- * 每个模板都给出可运行的完整配置；用户在表单里只需要改「名称、端口、域名」。
+ * 每个模板都给出可运行的完整配置（**包含 client_settings**）；用户在表单里
+ * 只需要改「名称、端口、域名」。
+ *
+ * 注意 client_settings 用 camelCase（serverName / publicKey / shortId）：
+ * 这是前端 `ClientView` 读写的键，后端的 `ClientSetting` 同时接受 camelCase 别名。
+ * 如果模板写成 snake_case，表单里「域名/公钥/短 ID」会显示为空，用户一旦在
+ * 表单里改域名就会出现两份冲突的键（后端优先 snake_case，用户改动被静默忽略）。
  */
+/** TLS 模板的占位域名：必须在保存前换成用户自己的域名（卡片提示里写明）。 */
+export const TLS_PLACEHOLDER_DOMAIN = 'panel.example.com'
+
 export const NODE_TEMPLATES: NodeTemplate[] = [
   {
     id: 'vless-reality',
     label: 'VLESS + REALITY',
     description: '当前最推荐的方式。不需要自己的域名和证书，借用别人的站点做伪装。',
-    needs: '需要填一个用于伪装的域名（如 www.microsoft.com）和 443 端口。',
+    needs: '需要填一个用于伪装的域名（如 www.microsoft.com）和 443 端口；密钥与 shortId 会自动生成。',
     build(name) {
+      const serverName = 'www.microsoft.com'
+      // 服务端 shortIds 与客户端 shortId 必须是同一个值，所以这里只生成一次。
+      const shortId = newShortId(8)
       return {
         name,
         port: '443',
@@ -109,13 +121,15 @@ export const NODE_TEMPLATES: NodeTemplate[] = [
           network: 'tcp',
           security: 'reality',
           realitySettings: {
-            dest: 'www.microsoft.com:443',
-            serverNames: ['www.microsoft.com'],
-            shortIds: [newShortId(8)],
+            dest: `${serverName}:443`,
+            serverNames: [serverName],
+            shortIds: [shortId],
           },
         },
         protocol_settings: { decryption: 'none' },
-        client_settings: {},
+        // publicKey 由 applyTemplate 用 newRealityKeyPair() 异步补上（与私钥配对），
+        // 其余客户端参数在这里就能确定。
+        client_settings: { serverName, shortId, fingerprint: 'chrome' },
       }
     },
   },
@@ -123,7 +137,7 @@ export const NODE_TEMPLATES: NodeTemplate[] = [
     id: 'vless-ws-tls',
     label: 'VLESS + WebSocket + TLS',
     description: '走 443 的 WebSocket，可以套 CDN。需要自己的域名和证书。',
-    needs: '需要域名和证书文件（或在「加密层」里贴自签证书）。',
+    needs: '需要域名和证书文件（或在「加密层」里贴自签证书）；模板里的 panel.example.com 只是占位符，要改成你自己的域名。',
     build(name) {
       return {
         name,
@@ -134,10 +148,10 @@ export const NODE_TEMPLATES: NodeTemplate[] = [
           network: 'ws',
           security: 'tls',
           wsSettings: { path: '/ws', headers: {} },
-          tlsSettings: { alpn: ['http/1.1'] },
+          tlsSettings: { serverName: TLS_PLACEHOLDER_DOMAIN, alpn: ['http/1.1'] },
         },
         protocol_settings: { decryption: 'none' },
-        client_settings: {},
+        client_settings: { serverName: TLS_PLACEHOLDER_DOMAIN, fingerprint: 'chrome' },
       }
     },
   },
@@ -145,7 +159,7 @@ export const NODE_TEMPLATES: NodeTemplate[] = [
     id: 'vmess-ws-tls',
     label: 'VMess + WebSocket + TLS',
     description: '兼容性最好的组合，客户端支持最广。同样需要域名和证书。',
-    needs: '需要域名和证书文件。',
+    needs: '需要域名和证书文件；模板里的 panel.example.com 只是占位符，要改成你自己的域名。',
     build(name) {
       return {
         name,
@@ -156,10 +170,10 @@ export const NODE_TEMPLATES: NodeTemplate[] = [
           network: 'ws',
           security: 'tls',
           wsSettings: { path: '/vm', headers: {} },
-          tlsSettings: { alpn: ['http/1.1'] },
+          tlsSettings: { serverName: TLS_PLACEHOLDER_DOMAIN, alpn: ['http/1.1'] },
         },
         protocol_settings: { security: 'auto' },
-        client_settings: {},
+        client_settings: { serverName: TLS_PLACEHOLDER_DOMAIN, fingerprint: 'chrome' },
       }
     },
   },
@@ -167,7 +181,7 @@ export const NODE_TEMPLATES: NodeTemplate[] = [
     id: 'trojan-tls',
     label: 'Trojan + TLS',
     description: '伪装成正常的 HTTPS 流量。需要域名和证书。',
-    needs: '需要域名和证书文件。',
+    needs: '需要域名和证书文件；模板里的 panel.example.com 只是占位符，要改成你自己的域名。',
     build(name) {
       return {
         name,
@@ -177,10 +191,10 @@ export const NODE_TEMPLATES: NodeTemplate[] = [
         stream_settings: {
           network: 'tcp',
           security: 'tls',
-          tlsSettings: { alpn: ['http/1.1'] },
+          tlsSettings: { serverName: TLS_PLACEHOLDER_DOMAIN, alpn: ['http/1.1'] },
         },
         protocol_settings: {},
-        client_settings: {},
+        client_settings: { serverName: TLS_PLACEHOLDER_DOMAIN, fingerprint: 'chrome' },
       }
     },
   },
