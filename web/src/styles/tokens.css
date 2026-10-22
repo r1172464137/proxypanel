@@ -24,8 +24,7 @@
  *       按钮单独一套 --shadow-btn(3px 3px 0) → hover 4px → active 1px，
  *       小按钮(.btn--sm / .btn--icon) 用 --shadow-btn-sm(2px) 那一档。
  *       胶囊 --pill-shadow(2px) → hover --pill-hover-shadow(4px + 内侧高光)。
- * 纹理：扫描线 = 1px 线 + 5px 透明（6px 周期），--scanline 按主题换色；
- *       整页 body::after 用 0deg，局部 .scanlines 用上游的 -45deg。
+ * 纹理：已全部移除（扫描线与网格线都会让背景显脏）。
  * 动效：按钮扫边 --dur-sweep(350ms) ease-out（clip-path 顺时针）；enter/exit/
  *       slideUp/slideDown；prefers-reduced-motion 下全部关闭（见 base.css 末尾）。
  *
@@ -146,16 +145,7 @@
   --shadow-card: var(--shadow-1);
 
   --focus-ring: var(--ring);
-  /* 扫描线：-45deg、1px 线 / 6px 周期（上游 .scanlines 的深色值换成暖色低对比） */
-  --scanline: rgba(39, 22, 16, 0.035);
-  --grid-line: rgba(137, 110, 96, 0.18);
-  /* 空状态背景用的更淡网格，避免纹理压过正文 */
-  --grid-line-soft: rgba(137, 110, 96, 0.085);
-  /* body 背景分层（必须照抄；background-attachment: fixed 在 base.css） */
-  --body-layers:
-    radial-gradient(1100px at 5% -10%, #d9775733, transparent 60%),
-    radial-gradient(900px at 90% 0, #60a5fa1f, transparent 65%),
-    linear-gradient(#fff7f2fa, #fff7f2);
+  /* 纹理已移除：整页与组件都使用纯色背景，不再叠加扫描线或网格。 */
 
   --sidebar-bg: #f7ebdf;
   --sidebar-elevated: #f3e0d0;
@@ -231,16 +221,9 @@
   --btn-sweep-contrast: color-mix(in srgb, var(--background) 74%, var(--primary));
 
   --focus-ring: var(--ring);
-  --scanline: rgba(255, 255, 255, 0.05);
   /* 上游 .dark .pixel-button::before 用 amber，深色底上更亮 */
   --btn-sweep: rgba(251, 191, 36, 0.95);
-  --grid-line: rgba(255, 255, 255, 0.055);
-  --grid-line-soft: rgba(255, 255, 255, 0.028);
-
-  --body-layers:
-    radial-gradient(1100px at 5% -10%, #f18c6e26, transparent 60%),
-    radial-gradient(900px at 90% 0, #60a5fa1a, transparent 65%),
-    linear-gradient(#0d101a, #10131c);
+  /* 纹理已移除，同浅色主题。 */
 
   --sidebar-bg: #141822;
   --sidebar-elevated: #1d222f;

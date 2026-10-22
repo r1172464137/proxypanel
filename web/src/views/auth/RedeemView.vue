@@ -42,7 +42,6 @@ async function submit(): Promise<void> {
 
 <template>
   <div class="auth-page">
-    <div class="auth-page__grid texture-grid" aria-hidden="true" />
 
     <form class="auth-card card" @submit.prevent="submit">
       <div class="auth-card__head">
@@ -102,13 +101,6 @@ async function submit(): Promise<void> {
 }
 
 /* 与登录页一致的网格纹理背景，低透明度、不拦截指针 */
-.auth-page__grid {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.6;
-  mask-image: radial-gradient(70% 60% at 50% 35%, #000 20%, transparent 100%);
-}
 
 .auth-card {
   position: relative;

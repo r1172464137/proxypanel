@@ -16,10 +16,9 @@ body,
 
 body {
   margin: 0;
+  /* 纯色背景：不要分层渐变、不要扫描线、不要网格。
+     之前整页铺了 2 个 radial 渐变 + 6px 周期的扫描线，观感偏脏。 */
   background-color: var(--background);
-  background-image: var(--body-layers);
-  background-attachment: fixed;
-  background-repeat: no-repeat;
   color: var(--text);
   font-family: var(--font-sans);
   font-size: var(--text-base);
@@ -28,25 +27,7 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/*
- * 扫描线叠加层：上游 .scanlines = 1px 线 + 5px 透明（6px 周期）。
- * 整页这层用 0deg 水平线（上游把它挂在面板上，这里铺满视口，斜线会抢正文）；
- * 局部 .scanlines 保留上游的 -45deg 斜线版本。透明度极低，pointer-events: none。
- */
-body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: 70;
-  pointer-events: none;
-  background-image: repeating-linear-gradient(
-    0deg,
-    var(--scanline) 0,
-    var(--scanline) 1px,
-    transparent 1px,
-    transparent 6px
-  );
-}
+/* 扫描线与网格纹理已移除：整页保持纯色，不再叠加任何重复图案。 */
 
 /* 局部扫描线：给需要更强质感的面板用（侧栏、顶栏、登录页等） */
 .scanlines {
@@ -55,25 +36,13 @@ body::after {
 }
 
 .scanlines::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background-image: repeating-linear-gradient(
-    -45deg,
-    var(--scanline) 0,
-    var(--scanline) 1px,
-    transparent 1px,
-    transparent 6px
-  );
+  /* 纹理已移除：该类保留为空实现，避免现有标记结构失效。 */
+  content: none;
 }
 
-/* 网格纹理：侧栏 / 空状态 / 登录页背景 */
+/* 网格纹理已移除；保留类名为空实现以兼容现有标记。 */
 .texture-grid {
-  background-image:
-    linear-gradient(var(--grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
-  background-size: 24px 24px;
+  background-image: none;
 }
 
 ::selection {
@@ -146,10 +115,6 @@ hr {
   flex-direction: column;
   gap: var(--space-2);
   background-color: var(--sidebar-bg);
-  background-image:
-    linear-gradient(var(--grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
-  background-size: 24px 24px;
   color: var(--sidebar-text);
   padding: var(--space-3) var(--space-3) var(--space-2);
   position: sticky;
@@ -303,20 +268,7 @@ hr {
 }
 
 .topbar::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  /* 负 z-index：绘制在顶栏背景之上、内容之下，扫描线不会压住按钮文字 */
-  z-index: -1;
-  pointer-events: none;
-  background-image: repeating-linear-gradient(
-    0deg,
-    var(--scanline) 0,
-    var(--scanline) 1px,
-    transparent 1px,
-    transparent 6px
-  );
-  opacity: 0.7;
+  content: none;
 }
 
 .topbar__title {
@@ -1094,11 +1046,6 @@ th.num {
   text-align: center;
   padding: var(--space-7) var(--space-5);
   color: var(--text-muted);
-  background-image:
-    linear-gradient(var(--grid-line-soft) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid-line-soft) 1px, transparent 1px);
-  background-size: 24px 24px;
-  background-position: center;
 }
 
 .state-block__icon {
