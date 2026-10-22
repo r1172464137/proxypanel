@@ -9,6 +9,9 @@ import ErrorState from '@/components/ErrorState.vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 const usage = useResource<MeUsageResult>(() => meApi.usage())
 const status = useResource<MeStatus>(() => meApi.status())
@@ -47,89 +50,120 @@ const remaining = computed(() => {
 </script>
 
 <template>
-  <div>
+  <div class="space-y-6">
     <PageHeader title="我的用量" description="查看本期用了多少流量。数字来自实际计费记录；补报的历史数据会标注「估算」。">
-      <button type="button" class="btn" :disabled="usage.loading.value" @click="usage.reload()">刷新</button>
+      <Button variant="outline" :disabled="usage.loading.value" @click="usage.reload()">刷新</Button>
     </PageHeader>
 
-    <div class="stack">
+    <div class="space-y-6">
       <LoadingBlock v-if="status.loading.value && !status.data.value" :rows="2" label="正在读取额度" />
       <ErrorState v-else-if="status.error.value" :error="status.error.value" @retry="status.reload()" />
-      <section v-else class="card">
-        <div class="card__header"><h2>本周期</h2></div>
-        <div class="card__body grid grid--kpi">
-          <div class="kpi">
-            <span class="kpi__label">已用</span>
-            <span class="kpi__value">{{ formatBytes(quota.used) }}</span>
-            <span class="kpi__meta">明细合计 上 {{ formatBytes(totals.up) }} · 下 {{ formatBytes(totals.down) }}</span>
+      <Card v-else>
+        <CardHeader class="border-b">
+          <CardTitle class="text-base font-semibold">本周期</CardTitle>
+        </CardHeader>
+        <CardContent class="grid gap-4 pt-6 sm:grid-cols-2 lg:grid-cols-4">
+          <div class="rounded-lg border border-border bg-muted/30 px-4 py-3">
+            <p class="text-xs font-medium text-muted-foreground">已用</p>
+            <p class="tabular mt-1 text-xl font-semibold">{{ formatBytes(quota.used) }}</p>
+            <p class="mt-1 text-xs text-muted-foreground">
+              明细合计 上 {{ formatBytes(totals.up) }} · 下 {{ formatBytes(totals.down) }}
+            </p>
           </div>
-          <div class="kpi">
-            <span class="kpi__label">额度</span>
-            <span class="kpi__value">{{ quota.unlimited ? '不限量' : formatQuota(quota.total) }}</span>
-            <span class="kpi__meta">{{ quota.unlimited ? '仍受节点与规则限制' : '超出将暂停代理访问' }}</span>
+          <div class="rounded-lg border border-border bg-muted/30 px-4 py-3">
+            <p class="text-xs font-medium text-muted-foreground">额度</p>
+            <p class="tabular mt-1 text-xl font-semibold">{{ quota.unlimited ? '不限量' : formatQuota(quota.total) }}</p>
+            <p class="mt-1 text-xs text-muted-foreground">
+              {{ quota.unlimited ? '仍受节点与规则限制' : '超出将暂停代理访问' }}
+            </p>
           </div>
-          <div class="kpi">
-            <span class="kpi__label">剩余</span>
-            <span class="kpi__value">{{ remaining === null ? '—' : formatBytes(remaining) }}</span>
-            <span class="kpi__meta">按字节账本计算</span>
+          <div class="rounded-lg border border-border bg-muted/30 px-4 py-3">
+            <p class="text-xs font-medium text-muted-foreground">剩余</p>
+            <p class="tabular mt-1 text-xl font-semibold">{{ remaining === null ? '—' : formatBytes(remaining) }}</p>
+            <p class="mt-1 text-xs text-muted-foreground">按字节账本计算</p>
           </div>
-          <div class="kpi">
-            <span class="kpi__label">重置时间</span>
-            <span class="kpi__value" style="font-size: var(--text-base)">{{ formatDateTime(quota.end, quota.timezone) }}</span>
-            <span class="kpi__meta">周期开始 {{ formatDateTime(quota.start, quota.timezone) }}</span>
+          <div class="rounded-lg border border-border bg-muted/30 px-4 py-3">
+            <p class="text-xs font-medium text-muted-foreground">重置时间</p>
+            <p class="mt-1 text-base font-semibold">{{ formatDateTime(quota.end, quota.timezone) }}</p>
+            <p class="mt-1 text-xs text-muted-foreground">周期开始 {{ formatDateTime(quota.start, quota.timezone) }}</p>
           </div>
-        </div>
-      </section>
+        </CardContent>
+      </Card>
 
       <LoadingBlock v-if="usage.loading.value && !usage.data.value" label="正在读取用量" />
       <ErrorState v-else-if="usage.error.value" :error="usage.error.value" @retry="usage.reload()" />
-      <div v-else class="card card__body--flush">
-        <div v-if="!items.length" class="card__body">
-          <EmptyState title="本周期尚无流量记录" description="Agent 每 5 秒采样；刚开始使用或刚绑定订阅时可能还没有数据。" />
-        </div>
-        <div v-else class="table-wrap">
-          <table class="table">
-            <thead>
-              <tr><th>节点</th><th>周期</th><th>上行</th><th>下行</th><th>标记</th></tr>
-            </thead>
-            <tbody>
-              <tr v-for="(item, index) in items" :key="index">
-                <td class="mono">{{ item.node_id ?? '—' }}</td>
-                <td class="text-xs">
+      <Card v-else>
+        <CardContent class="pt-6">
+          <EmptyState
+            v-if="!items.length"
+            title="本周期尚无流量记录"
+            description="Agent 每 5 秒采样；刚开始使用或刚绑定订阅时可能还没有数据。"
+          />
+          <Table v-else>
+            <TableHeader>
+              <TableRow>
+                <TableHead>节点</TableHead>
+                <TableHead>周期</TableHead>
+                <TableHead>上行</TableHead>
+                <TableHead>下行</TableHead>
+                <TableHead>标记</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow v-for="(item, index) in items" :key="index">
+                <TableCell class="mono">{{ item.node_id ?? '—' }}</TableCell>
+                <TableCell class="text-xs">
                   {{ formatDateTime(item.period_start ?? item.period?.start, item.period?.timezone) }} →
                   {{ formatDateTime(item.period_end ?? item.period?.end, item.period?.timezone) }}
-                </td>
-                <td class="num">{{ formatBytes(item.up_bytes) }}</td>
-                <td class="num">{{ formatBytes(item.down_bytes) }}</td>
-                <td>
-                  <div class="row" style="gap: var(--space-1)">
+                </TableCell>
+                <TableCell class="tabular">{{ formatBytes(item.up_bytes) }}</TableCell>
+                <TableCell class="tabular">{{ formatBytes(item.down_bytes) }}</TableCell>
+                <TableCell>
+                  <div class="flex flex-wrap items-center gap-1">
                     <StatusBadge v-if="item.estimated" status="estimated" />
                     <StatusBadge v-if="item.boundary_split" status="estimated" label="跨周期分摊" />
-                    <span v-if="item.correction || item.corrections?.length" class="badge badge--info">历史更正</span>
-                    <span v-if="!item.estimated && !item.boundary_split && !item.correction && !item.corrections?.length" class="text-muted text-xs">—</span>
+                    <StatusBadge
+                      v-if="item.correction || item.corrections?.length"
+                      label="历史更正"
+                      tone="info"
+                    />
+                    <span
+                      v-if="!item.estimated && !item.boundary_split && !item.correction && !item.corrections?.length"
+                      class="text-xs text-muted-foreground"
+                    >
+                      —
+                    </span>
                   </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
-      <section v-if="adjustments.length" class="card">
-        <div class="card__header"><h2>额度调整记录</h2></div>
-        <div class="table-wrap">
-          <table class="table">
-            <thead><tr><th>时间</th><th>调整量</th><th>原因</th></tr></thead>
-            <tbody>
-              <tr v-for="(adjustment, index) in adjustments" :key="adjustment.id ?? index">
-                <td>{{ formatDateTime(adjustment.created_at) }}</td>
-                <td class="num">{{ formatBytes(adjustment.bytes) }}</td>
-                <td class="text-sm">{{ adjustment.reason ?? '—' }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+      <Card v-if="adjustments.length">
+        <CardHeader class="border-b">
+          <CardTitle class="text-base font-semibold">额度调整记录</CardTitle>
+        </CardHeader>
+        <CardContent class="pt-4">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>时间</TableHead>
+                <TableHead>调整量</TableHead>
+                <TableHead>原因</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow v-for="(adjustment, index) in adjustments" :key="adjustment.id ?? index">
+                <TableCell>{{ formatDateTime(adjustment.created_at) }}</TableCell>
+                <TableCell class="tabular">{{ formatBytes(adjustment.bytes) }}</TableCell>
+                <TableCell class="text-sm">{{ adjustment.reason ?? '—' }}</TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
   </div>
 </template>

@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { Loader2, ShieldCheck } from 'lucide-vue-next'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { homeRoute, login } from '@/stores/session'
 import { describeError } from '@/lib/errors'
 import type { ApiError } from '@/api/http'
 import { toApiError } from '@/lib/errors'
-import AppIcon from '@/components/AppIcon.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -32,114 +37,64 @@ async function submit(): Promise<void> {
 </script>
 
 <template>
-  <div class="auth-page">
-
-    <form class="auth-card card" @submit.prevent="submit">
-      <div class="auth-brand">
-        <span class="auth-brand__seal" aria-hidden="true">代</span>
-        <div class="auth-brand__text">
-          <h1>代理面板</h1>
-          <p class="text-sm text-muted">私人合租 · 管理员与成员入口</p>
-        </div>
-      </div>
-
-      <div v-if="error" class="banner banner--danger" role="alert">
-        <span class="auth-banner__icon" aria-hidden="true">
-          <AppIcon name="alert" :size="16" />
+  <div class="flex min-h-svh items-center justify-center bg-muted/40 px-4 py-10">
+    <Card class="w-full max-w-sm p-6">
+      <div class="flex items-center gap-3">
+        <span
+          class="grid size-10 shrink-0 place-items-center rounded-md bg-primary font-mono text-lg font-bold text-primary-foreground select-none"
+          aria-hidden="true"
+        >
+          代
         </span>
-        <div class="stack--tight">
-          <strong>{{ describeError(error).title }}</strong>
-          <p>{{ describeError(error).message }}</p>
-          <p v-if="describeError(error).hint" class="text-xs text-muted">{{ describeError(error).hint }}</p>
+        <div class="min-w-0">
+          <h1 class="text-xl font-semibold tracking-tight">代理面板</h1>
+          <p class="text-sm text-muted-foreground">私人合租 · 管理员与成员入口</p>
         </div>
       </div>
 
-      <div class="field">
-        <label for="login-username">用户名</label>
-        <input id="login-username" v-model="username" class="input" autocomplete="username" required />
-      </div>
-      <div class="field">
-        <label for="login-password">密码</label>
-        <input id="login-password" v-model="password" class="input" type="password" autocomplete="current-password" required />
-      </div>
+      <Alert v-if="error" variant="destructive" class="mt-5">
+        <AlertTitle>{{ describeError(error).title }}</AlertTitle>
+        <AlertDescription>
+          <p class="break-all">{{ describeError(error).message }}</p>
+          <p v-if="describeError(error).hint" class="mt-1 text-xs text-muted-foreground">
+            {{ describeError(error).hint }}
+          </p>
+        </AlertDescription>
+      </Alert>
 
-      <button type="submit" class="btn btn--primary btn--block" :disabled="submitting || !username || !password">
-        <span v-if="submitting" class="spinner" aria-hidden="true" />
-        <AppIcon v-else name="shield" :size="15" />
-        {{ submitting ? '登录中…' : '登录' }}
-      </button>
+      <form class="mt-5 flex flex-col gap-4" @submit.prevent="submit">
+        <div class="grid gap-2">
+          <Label for="login-username">用户名</Label>
+          <Input id="login-username" v-model="username" autocomplete="username" required />
+        </div>
 
-      <p class="text-xs text-muted">
+        <div class="grid gap-2">
+          <Label for="login-password">密码</Label>
+          <Input
+            id="login-password"
+            v-model="password"
+            type="password"
+            autocomplete="current-password"
+            required
+          />
+        </div>
+
+        <Button type="submit" class="w-full" :disabled="submitting || !username || !password">
+          <Loader2 v-if="submitting" class="animate-spin" aria-hidden="true" />
+          <ShieldCheck v-else aria-hidden="true" />
+          {{ submitting ? '登录中…' : '登录' }}
+        </Button>
+      </form>
+
+      <p class="mt-4 text-xs leading-relaxed text-muted-foreground">
         登录失败不会区分账号是否存在；连续失败会被限流。收到邀请码？
-        <router-link to="/redeem">兑换邀请</router-link>
+        <router-link
+          to="/redeem"
+          class="font-medium text-foreground underline underline-offset-4 hover:text-primary"
+        >
+          兑换邀请
+        </router-link>
       </p>
-    </form>
+    </Card>
   </div>
 </template>
-
-<style scoped>
-.auth-page {
-  position: relative;
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: var(--space-5);
-}
-
-/* 网格纹理铺满登录页背景，低透明度、不拦截指针 */
-
-.auth-card {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  max-width: 388px;
-  padding: var(--space-6);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  box-shadow: var(--shadow-pop);
-  animation: enter var(--dur-slow) var(--ease-spring) both;
-}
-
-.auth-brand {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding-bottom: var(--space-2);
-}
-
-/* 品牌标记：珊瑚实心方块，直角 + 硬边阴影 */
-.auth-brand__seal {
-  width: 34px;
-  height: 34px;
-  flex: none;
-  display: grid;
-  place-items: center;
-  border: 1px solid color-mix(in srgb, var(--foreground) 30%, var(--primary));
-  border-radius: 0;
-  background: var(--primary);
-  color: var(--primary-foreground);
-  box-shadow: 2px 2px #0000002e, inset 0 0 0 1px #ffffff1f;
-  font-family: var(--font-mono);
-  font-size: 17px;
-  font-weight: 700;
-  line-height: 1;
-  user-select: none;
-}
-
-.auth-brand__text h1 {
-  font-family: var(--font-sans);
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-
-.auth-brand__text p {
-  margin-top: 2px;
-}
-
-.auth-banner__icon {
-  color: var(--danger-ink);
-  padding-top: 1px;
-}
-</style>

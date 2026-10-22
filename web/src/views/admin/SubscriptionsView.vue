@@ -6,11 +6,10 @@ import { usePagedList } from '@/lib/paged'
 import { errorText } from '@/lib/errors'
 import { formatQuota } from '@/lib/format'
 import PageHeader from '@/components/PageHeader.vue'
-import ErrorState from '@/components/ErrorState.vue'
-import LoadingBlock from '@/components/LoadingBlock.vue'
-import EmptyState from '@/components/EmptyState.vue'
+import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import { Button } from '@/components/ui/button'
 
 const list = usePagedList<SubscriptionRecord>((cursor) => adminApi.subscriptions.list({ limit: 50, cursor }))
 const deleteTarget = ref<SubscriptionRecord | null>(null)
@@ -38,75 +37,73 @@ async function confirmDelete(): Promise<void> {
     deleting.value = false
   }
 }
+
+const columns = [
+  { label: '名称', width: 'w-64' },
+  { label: '节点组', width: 'w-20' },
+  { label: '每人配额', width: 'w-28', numeric: true },
+  { label: '周期', width: 'w-36', hideOnMobile: true },
+  { label: '绑定成员', width: 'w-24', hideOnMobile: true, numeric: true },
+  { label: '状态', width: 'w-48' },
+  { label: '操作', width: 'w-40' },
+]
 </script>
 
 <template>
-  <div>
+  <div class="space-y-6">
     <PageHeader title="订阅" description="授权规则集合：节点组、每人配额、月周期与时区、默认有效期、访问开关。影响已有成员的修改需预览确认。">
-      <router-link class="btn btn--primary" to="/admin/subscriptions/new">新建订阅</router-link>
+      <Button as-child>
+        <router-link to="/admin/subscriptions/new">新建订阅</router-link>
+      </Button>
     </PageHeader>
 
-    <ErrorState v-if="list.error.value" :error="list.error.value" @retry="list.refresh()" />
-    <LoadingBlock v-else-if="list.loading.value && !list.items.value.length" label="正在读取订阅" />
-    <div v-else class="card card__body--flush">
-      <div v-if="!list.items.value.length" class="card__body">
-        <EmptyState title="还没有订阅规则" description="创建订阅并引用节点组，再把成员绑定到订阅；规则立即在面板生效，节点分发异步。">
-          <router-link class="btn btn--primary" to="/admin/subscriptions/new">新建订阅</router-link>
-        </EmptyState>
-      </div>
-      <template v-else>
-        <div class="table-wrap">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>名称</th>
-                <th>节点组</th>
-                <th>每人配额</th>
-                <th class="hide-sm">周期</th>
-                <th class="hide-sm">绑定成员</th>
-                <th>状态</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="sub in list.items.value" :key="sub.id">
-                <td>
-                  <router-link :to="`/admin/subscriptions/${sub.id}`">{{ sub.name }}</router-link>
-                  <span class="cell-sub mono">{{ sub.id }}</span>
-                  <span v-if="sub.description" class="cell-sub">{{ sub.description }}</span>
-                </td>
-                <td>{{ sub.node_group_ids.length }} 组</td>
-                <td class="num">{{ formatQuota(sub.quota_bytes) }}</td>
-                <td class="hide-sm">
-                  每月 {{ sub.anchor_day }} 日 00:00
-                  <span class="cell-sub">{{ sub.timezone }}</span>
-                </td>
-                <td class="hide-sm num">{{ sub.bound_members ?? '—' }}</td>
-                <td>
-                  <div class="row" style="gap: var(--space-1)">
-                    <StatusBadge v-if="sub.archived" status="archived" label="已归档" />
-                    <StatusBadge v-else-if="!sub.access_enabled" status="paused" label="访问已暂停" />
-                    <StatusBadge v-else status="enabled" label="可访问" />
-                    <StatusBadge :status="sub.allow_new_bindings ? 'enabled' : 'disabled'" :label="sub.allow_new_bindings ? '允许新绑定' : '禁止新绑定'" />
-                  </div>
-                </td>
-                <td class="actions">
-                  <router-link class="btn btn--sm" :to="`/admin/subscriptions/${sub.id}`">编辑</router-link>
-                  <button type="button" class="btn btn--sm btn--danger" @click="deleteTarget = sub">删除</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="row row--between" style="padding: var(--space-3) var(--space-4)">
-          <span class="text-xs text-muted">第 {{ list.page.value }} 页 · 当前页绑定成员合计 {{ totalBound }}</span>
-          <div class="row">
-            <button type="button" class="btn btn--sm" :disabled="list.page.value <= 1 || list.loading.value" @click="list.prev()">上一页</button>
-            <button type="button" class="btn btn--sm" :disabled="!list.nextCursor.value || list.loading.value" @click="list.next()">下一页</button>
+    <DataTable
+      :list="list"
+      :columns="columns"
+      empty-title="还没有订阅规则"
+      empty-description="创建订阅并引用节点组，再把成员绑定到订阅；规则立即在面板生效，节点分发异步。"
+      loading-label="正在读取订阅"
+      :count-label="`本页 ${list.items.value.length} 条 · 当前页绑定成员合计 ${totalBound}`"
+    >
+      <template #row="{ item, columnIndex }">
+        <template v-if="columnIndex === 0">
+          <router-link :to="`/admin/subscriptions/${item.id}`" class="font-medium hover:underline">{{ item.name }}</router-link>
+          <span class="mt-0.5 block font-mono text-xs text-muted-foreground">{{ item.id }}</span>
+          <span v-if="item.description" class="mt-0.5 block text-xs text-muted-foreground">{{ item.description }}</span>
+        </template>
+        <template v-else-if="columnIndex === 1">{{ item.node_group_ids.length }} 组</template>
+        <template v-else-if="columnIndex === 2">{{ formatQuota(item.quota_bytes) }}</template>
+        <template v-else-if="columnIndex === 3">
+          每月 {{ item.anchor_day }} 日 00:00
+          <span class="mt-0.5 block text-xs text-muted-foreground">{{ item.timezone }}</span>
+        </template>
+        <template v-else-if="columnIndex === 4">{{ item.bound_members ?? '—' }}</template>
+        <template v-else-if="columnIndex === 5">
+          <div class="flex flex-wrap items-center gap-1.5">
+            <StatusBadge v-if="item.archived" status="archived" label="已归档" />
+            <StatusBadge v-else-if="!item.access_enabled" status="paused" label="访问已暂停" />
+            <StatusBadge v-else status="enabled" label="可访问" />
+            <StatusBadge
+              :status="item.allow_new_bindings ? 'enabled' : 'disabled'"
+              :label="item.allow_new_bindings ? '允许新绑定' : '禁止新绑定'"
+            />
           </div>
-        </div>
+        </template>
+        <template v-else>
+          <div class="flex flex-wrap items-center gap-1.5">
+            <Button as-child size="sm" variant="outline">
+              <router-link :to="`/admin/subscriptions/${item.id}`">编辑</router-link>
+            </Button>
+            <Button size="sm" variant="destructive" @click="deleteTarget = item">删除</Button>
+          </div>
+        </template>
       </template>
-    </div>
+      <template #empty-action>
+        <Button as-child>
+          <router-link to="/admin/subscriptions/new">新建订阅</router-link>
+        </Button>
+      </template>
+    </DataTable>
 
     <ConfirmDialog
       :open="deleteTarget !== null"

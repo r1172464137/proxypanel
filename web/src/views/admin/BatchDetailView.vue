@@ -9,6 +9,18 @@ import PageHeader from '@/components/PageHeader.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 
 const route = useRoute()
 const batchId = computed(() => String(route.params.id))
@@ -41,87 +53,101 @@ function errorTextOf(item: BatchResultItem): string {
 </script>
 
 <template>
-  <div>
+  <div class="space-y-4">
     <PageHeader
       :title="`批量任务 · ${batchId}`"
       description="这里是这次批量修改的明细。每条都要等节点那边回报成功才算生效，失败的可以到「任务与同步」重试。"
     >
-      <router-link class="btn btn--sm" to="/admin/tasks">任务与同步</router-link>
-      <router-link class="btn btn--sm" to="/admin/members">成员</router-link>
-      <button type="button" class="btn btn--sm" :disabled="batch.loading.value" @click="batch.reload()">刷新</button>
+      <Button as-child variant="outline" size="sm">
+        <router-link to="/admin/tasks">任务与同步</router-link>
+      </Button>
+      <Button as-child variant="outline" size="sm">
+        <router-link to="/admin/members">成员</router-link>
+      </Button>
+      <Button variant="outline" size="sm" :disabled="batch.loading.value" @click="batch.reload()">刷新</Button>
     </PageHeader>
 
     <LoadingBlock v-if="batch.loading.value && !batch.data.value" label="正在读取批量任务" />
     <ErrorState v-else-if="batch.error.value" :error="batch.error.value" @retry="batch.reload()" />
-    <div v-else-if="batch.data.value" class="stack">
-      <section class="card">
-        <div class="card__header"><h2>汇总</h2></div>
-        <div class="card__body stack">
-          <dl class="dl">
-            <dt>任务 ID</dt>
-            <dd class="mono">{{ batch.data.value.id }}</dd>
-            <dt>状态</dt>
+    <div v-else-if="batch.data.value" class="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle class="text-base">汇总</CardTitle>
+        </CardHeader>
+        <CardContent class="space-y-4">
+          <dl class="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-6 gap-y-2 text-sm">
+            <dt class="text-muted-foreground">任务 ID</dt>
+            <dd class="font-mono break-all">{{ batch.data.value.id }}</dd>
+            <dt class="text-muted-foreground">状态</dt>
             <dd><StatusBadge :status="batch.data.value.state ?? 'unknown'" /></dd>
-            <dt>操作</dt>
+            <dt class="text-muted-foreground">操作</dt>
             <dd>{{ batch.data.value.operation ?? '未提供' }}</dd>
-            <dt>创建时间</dt>
+            <dt class="text-muted-foreground">创建时间</dt>
             <dd>{{ formatDateTime(batch.data.value.created_at) }}</dd>
-            <dt>逐对象结果</dt>
-            <dd class="num">{{ achieved }} 已生效</dd>
+            <dt class="text-muted-foreground">逐对象结果</dt>
+            <dd class="tabular">{{ achieved }} 已生效</dd>
           </dl>
-          <div class="row">
-            <span v-for="[status, count] in summary" :key="status" class="badge">
+          <div class="flex flex-wrap items-center gap-1">
+            <Badge v-for="[status, count] in summary" :key="status" variant="secondary">
               {{ status }}：{{ count }}
-            </span>
+            </Badge>
           </div>
-          <p class="text-xs text-muted">
+          <p class="text-xs text-muted-foreground">
             汇总不代表全部生效：未收到匹配版本回执的对象仍可能处于 pending/dispatched/applying。
           </p>
-        </div>
-      </section>
+        </CardContent>
+      </Card>
 
-      <section class="card">
-        <div class="card__header"><h2>逐对象结果</h2></div>
-        <div v-if="!results.length" class="card__body state-block">
-          <p>服务端尚未返回逐对象结果，请稍后刷新。</p>
-        </div>
-        <div v-else class="table-wrap">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>成员</th>
-                <th>节点</th>
-                <th>Agent</th>
-                <th>状态</th>
-                <th>错误 / 说明</th>
-                <th class="hide-sm">回执时间</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(item, index) in results" :key="`${item.member_id}-${item.node_id}-${index}`">
-                <td class="mono">{{ item.member_id ?? '—' }}</td>
-                <td class="mono">{{ item.node_id ?? '—' }}</td>
-                <td class="mono">{{ item.agent_id ?? '—' }}</td>
-                <td><StatusBadge :status="item.status ?? 'unknown'" /></td>
-                <td class="text-sm break-all">{{ errorTextOf(item) }}</td>
-                <td class="hide-sm">
+      <Card>
+        <CardHeader>
+          <CardTitle class="text-base">逐对象结果</CardTitle>
+        </CardHeader>
+        <CardContent v-if="!results.length" class="text-sm text-muted-foreground">
+          服务端尚未返回逐对象结果，请稍后刷新。
+        </CardContent>
+        <CardContent v-else class="px-0 pb-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>成员</TableHead>
+                <TableHead>节点</TableHead>
+                <TableHead>Agent</TableHead>
+                <TableHead>状态</TableHead>
+                <TableHead>错误 / 说明</TableHead>
+                <TableHead class="hidden md:table-cell">回执时间</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow v-for="(item, index) in results" :key="`${item.member_id}-${item.node_id}-${index}`">
+                <TableCell class="font-mono">{{ item.member_id ?? '—' }}</TableCell>
+                <TableCell class="font-mono">{{ item.node_id ?? '—' }}</TableCell>
+                <TableCell class="font-mono">{{ item.agent_id ?? '—' }}</TableCell>
+                <TableCell><StatusBadge :status="item.status ?? 'unknown'" /></TableCell>
+                <TableCell><span class="break-all text-sm">{{ errorTextOf(item) }}</span></TableCell>
+                <TableCell class="hidden md:table-cell">
                   <span :title="utcLabel(item.applied_at as string)">{{ formatDateTime(item.applied_at as string) }}</span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
-      <section class="card">
-        <div class="card__header"><h2>原始响应</h2></div>
-        <div class="card__body">
-          <details>
-            <summary class="text-sm text-muted">展开完整字段</summary>
-            <pre class="code-block">{{ prettyJson(batch.data.value) }}</pre>
-          </details>
-        </div>
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle class="text-base">原始响应</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Collapsible>
+            <CollapsibleTrigger as-child>
+              <Button variant="ghost" size="sm" class="text-muted-foreground">展开完整字段</Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <pre class="mt-2 max-h-96 overflow-auto rounded-md border border-border bg-muted p-3 font-mono text-xs whitespace-pre-wrap break-all">{{ prettyJson(batch.data.value) }}</pre>
+            </CollapsibleContent>
+          </Collapsible>
+        </CardContent>
+      </Card>
     </div>
   </div>
 </template>

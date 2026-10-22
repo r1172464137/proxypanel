@@ -1,16 +1,22 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { Loader2 } from 'lucide-vue-next'
 import { adminApi } from '@/api/endpoints'
 import type { BatchOperation, NodeGroupRecord, NodeRecord } from '@/api/types'
 import { usePagedList } from '@/lib/paged'
 import { errorText, isPreviewRequired } from '@/lib/errors'
 import PageHeader from '@/components/PageHeader.vue'
+import DataTable from '@/components/DataTable.vue'
 import ErrorState from '@/components/ErrorState.vue'
-import LoadingBlock from '@/components/LoadingBlock.vue'
-import EmptyState from '@/components/EmptyState.vue'
 import AppModal from '@/components/AppModal.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import ImpactPreviewDialog from '@/components/ImpactPreviewDialog.vue'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 
 const list = usePagedList<NodeGroupRecord>((cursor) => adminApi.nodeGroups.list({ limit: 50, cursor }))
 const nodes = ref<NodeRecord[]>([])
@@ -126,98 +132,109 @@ async function confirmDelete(): Promise<void> {
     deleting.value = false
   }
 }
+
+const columns = [
+  { label: '名称', width: 'w-56' },
+  { label: '节点' },
+  { label: '说明', hideOnMobile: true },
+  { label: '版本', width: 'w-20', numeric: true },
+  { label: '操作', width: 'w-40' },
+]
 </script>
 
 <template>
-  <div>
+  <div class="space-y-6">
     <PageHeader title="节点组" description="资源组织单位；被订阅引用。修改成员会影响已有授权，服务端要求先预览再提交。">
-      <button type="button" class="btn btn--primary" @click="openCreate">新建节点组</button>
+      <Button @click="openCreate">新建节点组</Button>
     </PageHeader>
 
-    <ErrorState v-if="list.error.value" :error="list.error.value" @retry="list.refresh()" />
     <ErrorState v-if="nodesError" :error="nodesError" @retry="list.refresh()" />
-    <LoadingBlock v-else-if="list.loading.value && !list.items.value.length" label="正在读取节点组" />
-    <div v-else class="card card__body--flush">
-      <div v-if="!list.items.value.length" class="card__body">
-        <EmptyState title="还没有节点组" description="把相关节点组合成组，再在订阅中引用；同一成员的多组节点会按节点去重输出。">
-          <button type="button" class="btn btn--primary" @click="openCreate">新建节点组</button>
-        </EmptyState>
-      </div>
-      <template v-else>
-        <div class="table-wrap">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>名称</th>
-                <th>节点</th>
-                <th class="hide-sm">说明</th>
-                <th>版本</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="group in list.items.value" :key="group.id">
-                <td>
-                  {{ group.name }}
-                  <span class="cell-sub mono">{{ group.id }}</span>
-                </td>
-                <td>
-                  {{ group.node_ids.length }} 个
-                  <span class="cell-sub">{{ group.node_ids.map((id) => nodeNames.get(id) ?? id).join('、') }}</span>
-                </td>
-                <td class="hide-sm text-sm">{{ group.description || '—' }}</td>
-                <td class="num">{{ group.version }}</td>
-                <td class="actions">
-                  <button type="button" class="btn btn--sm" @click="openEdit(group)">编辑</button>
-                  <button type="button" class="btn btn--sm btn--danger" @click="deleteTarget = group">删除</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="row row--between" style="padding: var(--space-3) var(--space-4)">
-          <span class="text-xs text-muted">第 {{ list.page.value }} 页</span>
-          <div class="row">
-            <button type="button" class="btn btn--sm" :disabled="list.page.value <= 1 || list.loading.value" @click="list.prev()">上一页</button>
-            <button type="button" class="btn btn--sm" :disabled="!list.nextCursor.value || list.loading.value" @click="list.next()">下一页</button>
+
+    <DataTable
+      :list="list"
+      :columns="columns"
+      empty-title="还没有节点组"
+      empty-description="把相关节点组合成组，再在订阅中引用；同一成员的多组节点会按节点去重输出。"
+      loading-label="正在读取节点组"
+      :count-label="`本页 ${list.items.value.length} 个节点组`"
+    >
+      <template #row="{ item, columnIndex }">
+        <template v-if="columnIndex === 0">
+          <span class="font-medium">{{ item.name }}</span>
+          <span class="mt-0.5 block font-mono text-xs text-muted-foreground">{{ item.id }}</span>
+        </template>
+        <template v-else-if="columnIndex === 1">
+          {{ item.node_ids.length }} 个
+          <span class="mt-0.5 block text-xs text-muted-foreground">
+            {{ item.node_ids.map((id) => nodeNames.get(id) ?? id).join('、') }}
+          </span>
+        </template>
+        <template v-else-if="columnIndex === 2">
+          <span class="text-sm">{{ item.description || '—' }}</span>
+        </template>
+        <template v-else-if="columnIndex === 3">{{ item.version }}</template>
+        <template v-else>
+          <div class="flex flex-wrap items-center gap-1.5">
+            <Button size="sm" variant="outline" @click="openEdit(item)">编辑</Button>
+            <Button size="sm" variant="destructive" @click="deleteTarget = item">删除</Button>
           </div>
-        </div>
+        </template>
       </template>
-    </div>
+      <template #empty-action>
+        <Button @click="openCreate">新建节点组</Button>
+      </template>
+    </DataTable>
 
     <AppModal :open="formOpen" :title="form.id ? '编辑节点组' : '新建节点组'" @close="formOpen = false">
-      <div class="stack">
-        <p v-if="formError" class="banner banner--danger" role="alert">{{ formError }}</p>
-        <p v-for="error in formErrors" :key="error" class="banner banner--warn">{{ error }}</p>
-        <div class="field">
-          <label for="group-name">名称</label>
-          <input id="group-name" v-model="form.name" class="input" required />
+      <div class="space-y-4">
+        <Alert v-if="formError" variant="destructive" role="alert">
+          <AlertDescription class="break-all">{{ formError }}</AlertDescription>
+        </Alert>
+        <Alert v-for="error in formErrors" :key="error" variant="destructive" role="alert">
+          <AlertDescription>{{ error }}</AlertDescription>
+        </Alert>
+
+        <div class="space-y-1.5">
+          <Label for="group-name">名称</Label>
+          <Input id="group-name" v-model="form.name" required />
         </div>
-        <div class="field">
-          <label for="group-desc">说明</label>
-          <textarea id="group-desc" v-model="form.description" class="textarea" style="min-height: 70px" />
+        <div class="space-y-1.5">
+          <Label for="group-desc">说明</Label>
+          <Textarea id="group-desc" v-model="form.description" class="min-h-[70px]" />
         </div>
-        <div class="field">
-          <label>包含节点（{{ form.node_ids.length }}）</label>
-          <div class="node-picker">
-            <label v-for="node in nodes" :key="node.id" class="checkbox node-picker__item">
-              <input type="checkbox" :checked="form.node_ids.includes(node.id)" @change="toggleNode(node.id)" />
-              <span>
+        <div class="space-y-2">
+          <Label>包含节点（{{ form.node_ids.length }}）</Label>
+          <div class="max-h-72 space-y-1 overflow-y-auto rounded-md border border-border p-3">
+            <div
+              v-for="node in nodes"
+              :key="node.id"
+              class="flex cursor-pointer items-start gap-2 rounded-sm px-1 py-1.5 text-sm hover:bg-muted/60"
+              @click="toggleNode(node.id)"
+            >
+              <Checkbox
+                class="mt-0.5"
+                :model-value="form.node_ids.includes(node.id)"
+                @update:model-value="toggleNode(node.id)"
+                @click.stop
+              />
+              <span class="select-none">
                 {{ node.name }}
-                <span class="text-xs text-muted">{{ node.protocol }} · {{ node.host }}:{{ node.port }}</span>
+                <span class="block text-xs text-muted-foreground">{{ node.protocol }} · {{ node.host }}:{{ node.port }}</span>
               </span>
-            </label>
-            <p v-if="!nodes.length" class="text-sm text-muted">还没有节点，请先创建节点。</p>
+            </div>
+            <p v-if="!nodes.length" class="text-sm text-muted-foreground">还没有节点，请先创建节点。</p>
           </div>
         </div>
-        <p v-if="form.id" class="text-xs text-muted">若该组已被订阅/成员引用，直接保存会被拒绝并转入影响预览流程。</p>
+        <p v-if="form.id" class="text-xs text-muted-foreground">
+          若该组已被订阅/成员引用，直接保存会被拒绝并转入影响预览流程。
+        </p>
       </div>
       <template #footer>
-        <button type="button" class="btn" :disabled="saving" @click="formOpen = false">取消</button>
-        <button type="button" class="btn btn--primary" :disabled="saving" @click="save">
-          <span v-if="saving" class="spinner" aria-hidden="true" />
+        <Button variant="outline" :disabled="saving" @click="formOpen = false">取消</Button>
+        <Button :disabled="saving" @click="save">
+          <Loader2 v-if="saving" class="animate-spin" aria-hidden="true" />
           {{ saving ? '保存中…' : '保存' }}
-        </button>
+        </Button>
       </template>
     </AppModal>
 
@@ -246,19 +263,3 @@ async function confirmDelete(): Promise<void> {
     />
   </div>
 </template>
-
-<style scoped>
-.node-picker {
-  display: grid;
-  gap: var(--space-2);
-  max-height: 280px;
-  overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: var(--space-3);
-}
-
-.node-picker__item {
-  align-items: flex-start;
-}
-</style>

@@ -6,10 +6,9 @@ import { usePagedList } from '@/lib/paged'
 import { formatDateTime } from '@/lib/format'
 import { BATCH_OPERATIONS } from '@/lib/batch'
 import PageHeader from '@/components/PageHeader.vue'
-import ErrorState from '@/components/ErrorState.vue'
-import LoadingBlock from '@/components/LoadingBlock.vue'
-import EmptyState from '@/components/EmptyState.vue'
+import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
+import { Button } from '@/components/ui/button'
 
 // 批次列表：契约里是 GET /admin/batches（items + next_cursor）。endpoints.ts 只封装了
 // preview/submit/get，这里用同一个 api.page 走相同路径，避免改动共享的端点文件。
@@ -48,72 +47,66 @@ function summaryText(batch: BatchDetail): string {
 function detailPath(batch: BatchDetail): string {
   return `/admin/batches/${encodeURIComponent(batch.id)}`
 }
+
+const columns = [
+  { label: '任务', width: 'w-56' },
+  { label: '操作', width: 'w-40' },
+  { label: '状态', width: 'w-28' },
+  { label: '成员数', width: 'w-24', numeric: true },
+  { label: '逐对象生效', width: 'w-28', hideOnMobile: true, numeric: true },
+  { label: '创建时间', width: 'w-40', hideOnMobile: true },
+  { label: '操作', width: 'w-32' },
+]
 </script>
 
 <template>
-  <div>
+  <div class="space-y-6">
     <PageHeader title="批量任务" description="批量修改的历史记录。提交后逐个成员下发到节点，全部生效才算完成。">
-      <router-link class="btn btn--sm" to="/admin/members">成员</router-link>
-      <router-link class="btn btn--sm" to="/admin/tasks">任务与同步</router-link>
-      <button type="button" class="btn btn--sm" :disabled="list.loading.value" @click="list.refresh()">刷新</button>
+      <Button as-child size="sm" variant="outline">
+        <router-link to="/admin/members">成员</router-link>
+      </Button>
+      <Button as-child size="sm" variant="outline">
+        <router-link to="/admin/tasks">任务与同步</router-link>
+      </Button>
+      <Button size="sm" variant="outline" :disabled="list.loading.value" @click="list.refresh()">刷新</Button>
     </PageHeader>
 
-    <ErrorState v-if="list.error.value" :error="list.error.value" @retry="list.refresh()" />
-    <LoadingBlock v-else-if="list.loading.value && !list.items.value.length" label="正在读取批量任务" />
-    <div v-else class="card card__body--flush">
-      <div v-if="!list.items.value.length" class="card__body">
-        <EmptyState
-          title="还没有批量任务"
-          description="批量操作提交后会出现在这里。批量变更在成员页或订阅/节点组编辑时经过“预览影响 → 确认提交”产生；规则提交与节点生效是两件事。"
-        >
-          <router-link class="btn btn--primary" to="/admin/members">前往成员页发起批量操作</router-link>
-        </EmptyState>
-      </div>
-      <template v-else>
-        <div class="table-wrap">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>任务</th>
-                <th>操作</th>
-                <th>状态</th>
-                <th>成员数</th>
-                <th class="hide-sm">逐对象生效</th>
-                <th class="hide-sm">创建时间</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="batch in list.items.value" :key="batch.id">
-                <td>
-                  <router-link :to="detailPath(batch)" class="mono">{{ batch.id }}</router-link>
-                  <span class="cell-sub">{{ summaryText(batch) }}</span>
-                </td>
-                <td>{{ operationLabel(batch.operation) }}</td>
-                <td><StatusBadge :status="batch.state ?? 'unknown'" /></td>
-                <td class="num">{{ memberCount(batch) }}</td>
-                <td class="hide-sm num">
-                  <template v-if="Array.isArray(batch.results)">
-                    {{ succeededCount(batch) }} / {{ batch.results.length }}
-                  </template>
-                  <template v-else>—</template>
-                </td>
-                <td class="hide-sm">{{ formatDateTime(batch.created_at) }}</td>
-                <td class="actions">
-                  <router-link class="btn btn--sm" :to="detailPath(batch)">查看详情</router-link>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="row row--between" style="padding: var(--space-3) var(--space-4)">
-          <span class="text-xs text-muted">第 {{ list.page.value }} 页</span>
-          <div class="row">
-            <button type="button" class="btn btn--sm" :disabled="list.page.value <= 1 || list.loading.value" @click="list.prev()">上一页</button>
-            <button type="button" class="btn btn--sm" :disabled="!list.nextCursor.value || list.loading.value" @click="list.next()">下一页</button>
-          </div>
-        </div>
+    <DataTable
+      :list="list"
+      :columns="columns"
+      empty-title="还没有批量任务"
+      empty-description="批量操作提交后会出现在这里。批量变更在成员页或订阅/节点组编辑时经过“预览影响 → 确认提交”产生；规则提交与节点生效是两件事。"
+      loading-label="正在读取批量任务"
+      :count-label="`本页 ${list.items.value.length} 个任务`"
+    >
+      <template #row="{ item, columnIndex }">
+        <template v-if="columnIndex === 0">
+          <router-link :to="detailPath(item)" class="font-mono text-xs font-medium hover:underline">{{ item.id }}</router-link>
+          <span class="mt-0.5 block text-xs text-muted-foreground">{{ summaryText(item) }}</span>
+        </template>
+        <template v-else-if="columnIndex === 1">{{ operationLabel(item.operation) }}</template>
+        <template v-else-if="columnIndex === 2">
+          <StatusBadge :status="item.state ?? 'unknown'" />
+        </template>
+        <template v-else-if="columnIndex === 3">{{ memberCount(item) }}</template>
+        <template v-else-if="columnIndex === 4">
+          <template v-if="Array.isArray(item.results)">
+            {{ succeededCount(item) }} / {{ item.results.length }}
+          </template>
+          <template v-else>—</template>
+        </template>
+        <template v-else-if="columnIndex === 5">{{ formatDateTime(item.created_at) }}</template>
+        <template v-else>
+          <Button as-child size="sm" variant="outline">
+            <router-link :to="detailPath(item)">查看详情</router-link>
+          </Button>
+        </template>
       </template>
-    </div>
+      <template #empty-action>
+        <Button as-child>
+          <router-link to="/admin/members">前往成员页发起批量操作</router-link>
+        </Button>
+      </template>
+    </DataTable>
   </div>
 </template>

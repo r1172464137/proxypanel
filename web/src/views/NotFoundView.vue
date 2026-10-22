@@ -8,7 +8,10 @@
 // "返回首页"直接给出目标路由而不是 "/"："/" 会再重定向一次，观感像"点了没反应"。
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import AppIcon from '@/components/AppIcon.vue'
+import { ArrowLeft, Info, Search } from 'lucide-vue-next'
+import { Button, buttonVariants } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { cn } from '@/lib/utils'
 import { sessionState } from '@/stores/session'
 
 const route = useRoute()
@@ -55,19 +58,35 @@ function goBack() {
 </script>
 
 <template>
-  <div class="state-block">
-    <div class="state-block__icon" aria-hidden="true">
-      <AppIcon :name="looksLikeFeatureGap ? 'info' : 'search'" :size="20" />
-    </div>
-    <h3>{{ heading }}</h3>
-    <p>{{ explanation }}</p>
-    <p class="state-block__path">
-      <span class="cell-sub">请求的地址</span>
-      <code class="mono">{{ requestedPath }}</code>
-    </p>
-    <div class="state-block__actions">
-      <button type="button" class="btn" @click="goBack">返回上一页</button>
-      <router-link class="btn" :to="homeTarget">返回首页</router-link>
-    </div>
+  <div class="flex min-h-[60vh] items-center justify-center px-1 py-8">
+    <Card class="w-full max-w-xl p-6 sm:p-8">
+      <div class="flex items-start gap-4">
+        <span
+          class="grid size-11 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground"
+          aria-hidden="true"
+        >
+          <Info v-if="looksLikeFeatureGap" :size="20" />
+          <Search v-else :size="20" />
+        </span>
+
+        <div class="min-w-0 flex-1">
+          <h1 class="text-lg font-semibold tracking-tight">{{ heading }}</h1>
+          <p class="mt-2 text-sm leading-relaxed text-muted-foreground">{{ explanation }}</p>
+
+          <div class="mt-4 rounded-md border border-border bg-muted/50 px-3 py-2">
+            <p class="text-xs text-muted-foreground">请求的地址</p>
+            <code class="mono block break-all text-sm">{{ requestedPath }}</code>
+          </div>
+
+          <div class="mt-5 flex flex-wrap items-center gap-2">
+            <Button type="button" variant="outline" @click="goBack">
+              <ArrowLeft aria-hidden="true" />
+              返回上一页
+            </Button>
+            <router-link :to="homeTarget" :class="cn(buttonVariants())">返回首页</router-link>
+          </div>
+        </div>
+      </div>
+    </Card>
   </div>
 </template>

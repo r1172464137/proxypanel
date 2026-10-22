@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { Loader2 } from 'lucide-vue-next'
 import { adminApi } from '@/api/endpoints'
 import type { PanelSettings, TemplateFormat, TemplateRecord } from '@/api/types'
 import { TEMPLATE_FORMATS } from '@/api/types'
@@ -14,6 +15,32 @@ import EmptyState from '@/components/EmptyState.vue'
 import AppModal from '@/components/AppModal.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import JsonEditor from '@/components/JsonEditor.vue'
+import StatusBadge from '@/components/StatusBadge.vue'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { Textarea } from '@/components/ui/textarea'
 
 const settings = ref<PanelSettings | null>(null)
 const loading = ref(false)
@@ -248,176 +275,242 @@ const hasTemplateDefaults = computed(() => {
 </script>
 
 <template>
-  <div>
+  <div class="space-y-4">
     <PageHeader title="设置" description="面板的全局设置：默认时区、通知、数据保留、客户端模板。">
-      <span v-if="settings?.version !== undefined" class="text-xs text-muted">版本 {{ settings.version }}</span>
-      <button type="button" class="btn" :disabled="loading" @click="load">重新读取</button>
-      <button type="button" class="btn btn--primary" :disabled="saving" @click="save">
-        <span v-if="saving" class="spinner" aria-hidden="true" />
+      <StatusBadge
+        v-if="settings?.version !== undefined"
+        status="version"
+        tone="muted"
+        :label="`版本 ${settings.version}`"
+      />
+      <Button variant="outline" :disabled="loading" @click="load">重新读取</Button>
+      <Button :disabled="saving" @click="save">
+        <Loader2 v-if="saving" class="animate-spin" aria-hidden="true" />
         {{ saving ? '保存中…' : '保存设置' }}
-      </button>
+      </Button>
     </PageHeader>
 
     <LoadingBlock v-if="loading && !settings" label="正在读取设置" />
     <ErrorState v-else-if="loadError" :error="loadError" @retry="load" />
-    <div v-else class="stack">
-      <p v-if="saveError" class="banner banner--danger" role="alert">{{ saveError }}</p>
+    <div v-else class="space-y-4">
+      <Alert v-if="saveError" variant="destructive">
+        <AlertDescription class="break-all">{{ saveError }}</AlertDescription>
+      </Alert>
 
-      <section class="card">
-        <div class="card__header"><h2>基础</h2></div>
-        <div class="card__body grid grid--form">
-          <div class="field">
-            <label for="settings-tz">默认时区</label>
-            <input id="settings-tz" v-model="form.timezone" class="input mono" placeholder="Asia/Shanghai" />
-            <p class="field__help">订阅必须显式写入时区；此处仅默认值。</p>
-          </div>
-          <div class="field">
-            <label for="settings-retention">数据保留天数</label>
-            <input id="settings-retention" v-model="form.retention_days" class="input" inputmode="numeric" />
-            <p class="field__help">高频监控数据聚合后清理；账本与审计按服务端策略保留。</p>
-          </div>
-        </div>
-      </section>
+      <Tabs default-value="general" class="space-y-4">
+        <TabsList class="w-full justify-start overflow-x-auto sm:w-auto">
+          <TabsTrigger value="general">基础与通知</TabsTrigger>
+          <TabsTrigger value="templates">客户端模板</TabsTrigger>
+          <TabsTrigger value="recovery">恢复协调模式</TabsTrigger>
+        </TabsList>
 
-      <section class="card">
-        <div class="card__header">
-          <h2>通知（Telegram）</h2>
-          <div class="card__header-actions">
-            <span class="badge" :class="tokenConfigured ? 'badge--ok' : 'badge--muted'">
-              {{ tokenConfigured ? '已配置令牌' : '未配置令牌' }}
-            </span>
-          </div>
-        </div>
-        <div class="card__body stack">
-          <label class="checkbox">
-            <input v-model="form.telegram_enabled" type="checkbox" />
-            启用 Telegram 通知（启用前请确认实际送达）
-          </label>
-          <div class="grid grid--form">
-            <div class="field">
-              <label for="settings-chat">Chat ID</label>
-              <input id="settings-chat" v-model="form.telegram_chat_id" class="input mono" />
-            </div>
-            <div class="field">
-              <label for="settings-token">Bot Token（仅写）</label>
-              <input id="settings-token" v-model="form.telegram_token" class="input mono" type="password" autocomplete="off" placeholder="留空表示不修改" />
-              <p class="field__help">服务端只返回“是否已设置”，不回显明文；保存后页面立即清除输入。</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="card__header"><h2>模板默认设置</h2></div>
-        <div class="card__body stack">
-          <!-- 这个字段是自由结构（后端类型就是 Object），当前一般为空。
-               直接摊开一个空 JSON 编辑器会让人以为"必须填点什么"。
-               有值时才给只读预览，需要改再手动展开编辑器。 -->
-          <template v-if="!templateDefaultsKey">
-            <p class="text-sm text-muted">当前服务端没有这个设置项，无需配置。</p>
-          </template>
-          <template v-else-if="!hasTemplateDefaults">
-            <p class="text-sm">
-              模板默认值为空。一般情况下这里不需要填写 —— 新建的客户端模板会自动带上合适的默认结构。
-            </p>
-            <details @toggle="templateEditorOpen = ($event.target as HTMLDetailsElement).open">
-              <summary class="text-xs text-muted">确实需要手动设置？</summary>
-              <!-- 只在展开后挂载编辑器：折叠状态下也会出现在 DOM 里，
-                   表现为页面上多了一个空的 {} 框。 -->
-              <div v-if="templateEditorOpen" style="margin-top: var(--space-2)">
-                <JsonEditor
-                  :model-value="templateDefaults"
-                  label="模板默认值（高级）"
-                  hint="填写后会影响新建模板的初始结构。不熟悉时请保持为空。"
-                  @update:model-value="templateDefaults = $event"
-                  @update:error="templateJsonError = $event"
-                />
+        <TabsContent value="general" class="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle class="text-base">基础</CardTitle>
+            </CardHeader>
+            <CardContent class="grid gap-4 sm:grid-cols-2">
+              <div class="grid gap-2">
+                <Label for="settings-tz">默认时区</Label>
+                <Input id="settings-tz" v-model="form.timezone" class="font-mono" placeholder="Asia/Shanghai" />
+                <p class="text-xs text-muted-foreground">订阅必须显式写入时区；此处仅默认值。</p>
               </div>
-            </details>
-          </template>
-          <template v-else>
-            <p class="text-sm">当前已设置以下默认值。修改会写入新建的客户端模板。</p>
-            <pre class="code-block">{{ templateDefaultsPreview }}</pre>
-            <details @toggle="templateEditorOpen = ($event.target as HTMLDetailsElement).open">
-              <summary class="text-xs text-muted">编辑</summary>
-              <div v-if="templateEditorOpen" style="margin-top: var(--space-2)">
-                <JsonEditor
-                  :model-value="templateDefaults"
-                  label="模板默认值（高级）"
-                  hint="保存后立即生效。"
-                  @update:model-value="templateDefaults = $event"
-                  @update:error="templateJsonError = $event"
-                />
+              <div class="grid gap-2">
+                <Label for="settings-retention">数据保留天数</Label>
+                <Input id="settings-retention" v-model="form.retention_days" inputmode="numeric" />
+                <p class="text-xs text-muted-foreground">高频监控数据聚合后清理；账本与审计按服务端策略保留。</p>
               </div>
-            </details>
-          </template>
-        </div>
-      </section>
+            </CardContent>
+          </Card>
 
-      <section class="card">
-        <div class="card__header">
-          <h2>客户端模板</h2>
-          <div class="card__header-actions">
-            <button type="button" class="btn btn--sm" @click="openTemplateCreate">新建模板</button>
-          </div>
-        </div>
-        <ErrorState v-if="templatesError" :error="templatesError" @retry="loadTemplates" />
-        <div v-else-if="!templates.length" class="card__body">
-          <EmptyState title="还没有客户端模板" description="模板用于 xray / mihomo / singbox 输出；格式能力不兼容时服务端会明确报错。">
-            <button type="button" class="btn btn--primary" @click="openTemplateCreate">新建模板</button>
-          </EmptyState>
-        </div>
-        <div v-else class="table-wrap">
-          <table class="table">
-            <thead><tr><th>名称</th><th>格式</th><th class="hide-sm">说明</th><th>版本</th><th>操作</th></tr></thead>
-            <tbody>
-              <tr v-for="template in templates" :key="template.id">
-                <td>{{ template.name }}<span class="cell-sub mono">{{ template.id }}</span></td>
-                <td><span class="badge">{{ template.format }}</span></td>
-                <td class="hide-sm text-sm">{{ template.description || '—' }}</td>
-                <td class="num">{{ template.version }}</td>
-                <td class="actions">
-                  <button type="button" class="btn btn--sm" @click="openTemplateEdit(template)">编辑</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+          <Card>
+            <CardHeader class="flex-row items-start justify-between space-y-0">
+              <CardTitle class="text-base">通知（Telegram）</CardTitle>
+              <StatusBadge
+                :tone="tokenConfigured ? 'ok' : 'muted'"
+                :label="tokenConfigured ? '已配置令牌' : '未配置令牌'"
+              />
+            </CardHeader>
+            <CardContent class="space-y-4">
+              <div class="flex items-center gap-3">
+                <Switch id="settings-telegram" v-model="form.telegram_enabled" />
+                <Label for="settings-telegram">启用 Telegram 通知（启用前请确认实际送达）</Label>
+              </div>
+              <div class="grid gap-4 sm:grid-cols-2">
+                <div class="grid gap-2">
+                  <Label for="settings-chat">Chat ID</Label>
+                  <Input id="settings-chat" v-model="form.telegram_chat_id" class="font-mono" />
+                </div>
+                <div class="grid gap-2">
+                  <Label for="settings-token">Bot Token（仅写）</Label>
+                  <Input
+                    id="settings-token"
+                    v-model="form.telegram_token"
+                    class="font-mono"
+                    type="password"
+                    autocomplete="off"
+                    placeholder="留空表示不修改"
+                  />
+                  <p class="text-xs text-muted-foreground">服务端只返回“是否已设置”，不回显明文；保存后页面立即清除输入。</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
-      <section class="card">
-        <div class="card__header"><h2>恢复协调模式</h2></div>
-        <div class="card__body stack">
-          <p class="text-sm text-muted">
-            从旧备份恢复后必须进入恢复协调：暂停普通变更与旧权限推送，核对节点授权版本与账本后再显式退出。
-            当前状态：{{ recoveryState ? (recoveryState.recovery_mode ? '恢复协调中' : '正常运行') : '未读取' }}；控制代际：{{ recoveryState?.control_generation ?? '未知' }}。
-          </p>
-          <div class="row">
-            <button type="button" class="btn btn--danger" @click="openRecovery('enter')">进入恢复协调模式</button>
-            <button type="button" class="btn" @click="openRecovery('exit')">退出恢复协调模式</button>
-          </div>
-        </div>
-      </section>
+          <Card>
+            <CardHeader>
+              <CardTitle class="text-base">模板默认设置</CardTitle>
+            </CardHeader>
+            <CardContent class="space-y-3">
+              <!-- 这个字段是自由结构（后端类型就是 Object），当前一般为空。
+                   直接摊开一个空 JSON 编辑器会让人以为"必须填点什么"。
+                   有值时才给只读预览，需要改再手动展开编辑器。 -->
+              <template v-if="!templateDefaultsKey">
+                <p class="text-sm text-muted-foreground">当前服务端没有这个设置项，无需配置。</p>
+              </template>
+              <template v-else-if="!hasTemplateDefaults">
+                <p class="text-sm">
+                  模板默认值为空。一般情况下这里不需要填写 —— 新建的客户端模板会自动带上合适的默认结构。
+                </p>
+                <Collapsible v-model:open="templateEditorOpen">
+                  <CollapsibleTrigger as-child>
+                    <Button variant="link" size="sm" class="h-auto p-0 text-xs text-muted-foreground">
+                      确实需要手动设置？
+                    </Button>
+                  </CollapsibleTrigger>
+                  <!-- 只在展开后挂载编辑器：折叠状态下也会出现在 DOM 里，
+                       表现为页面上多了一个空的 {} 框。 -->
+                  <CollapsibleContent>
+                    <div v-if="templateEditorOpen" class="pt-2">
+                      <JsonEditor
+                        :model-value="templateDefaults"
+                        label="模板默认值（高级）"
+                        hint="填写后会影响新建模板的初始结构。不熟悉时请保持为空。"
+                        @update:model-value="templateDefaults = $event"
+                        @update:error="templateJsonError = $event"
+                      />
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              </template>
+              <template v-else>
+                <p class="text-sm">当前已设置以下默认值。修改会写入新建的客户端模板。</p>
+                <pre class="max-h-80 overflow-auto rounded-md border border-border bg-muted p-3 font-mono text-xs whitespace-pre-wrap break-all">{{ templateDefaultsPreview }}</pre>
+                <Collapsible v-model:open="templateEditorOpen">
+                  <CollapsibleTrigger as-child>
+                    <Button variant="link" size="sm" class="h-auto p-0 text-xs text-muted-foreground">编辑</Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div v-if="templateEditorOpen" class="pt-2">
+                      <JsonEditor
+                        :model-value="templateDefaults"
+                        label="模板默认值（高级）"
+                        hint="保存后立即生效。"
+                        @update:model-value="templateDefaults = $event"
+                        @update:error="templateJsonError = $event"
+                      />
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              </template>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="templates">
+          <Card>
+            <CardHeader class="flex-row items-center justify-between space-y-0">
+              <CardTitle class="text-base">客户端模板</CardTitle>
+              <Button size="sm" @click="openTemplateCreate">新建模板</Button>
+            </CardHeader>
+            <ErrorState v-if="templatesError" :error="templatesError" @retry="loadTemplates" />
+            <CardContent v-else-if="!templates.length">
+              <EmptyState
+                title="还没有客户端模板"
+                description="模板用于 xray / mihomo / singbox 输出；格式能力不兼容时服务端会明确报错。"
+              >
+                <Button @click="openTemplateCreate">新建模板</Button>
+              </EmptyState>
+            </CardContent>
+            <CardContent v-else class="px-0 pb-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>名称</TableHead>
+                    <TableHead>格式</TableHead>
+                    <TableHead class="hidden md:table-cell">说明</TableHead>
+                    <TableHead class="text-right">版本</TableHead>
+                    <TableHead>操作</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableRow v-for="template in templates" :key="template.id">
+                    <TableCell>
+                      <div class="flex flex-col">
+                        <span>{{ template.name }}</span>
+                        <span class="font-mono text-xs text-muted-foreground">{{ template.id }}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge :tone="'muted'" :label="template.format" />
+                    </TableCell>
+                    <TableCell class="hidden text-sm md:table-cell">{{ template.description || '—' }}</TableCell>
+                    <TableCell class="text-right tabular">{{ template.version }}</TableCell>
+                    <TableCell>
+                      <Button variant="outline" size="sm" @click="openTemplateEdit(template)">编辑</Button>
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="recovery">
+          <Card>
+            <CardHeader>
+              <CardTitle class="text-base">恢复协调模式</CardTitle>
+            </CardHeader>
+            <CardContent class="space-y-4">
+              <p class="text-sm text-muted-foreground">
+                从旧备份恢复后必须进入恢复协调：暂停普通变更与旧权限推送，核对节点授权版本与账本后再显式退出。
+                当前状态：{{ recoveryState ? (recoveryState.recovery_mode ? '恢复协调中' : '正常运行') : '未读取' }}；控制代际：{{ recoveryState?.control_generation ?? '未知' }}。
+              </p>
+              <div class="flex flex-wrap items-center gap-2">
+                <Button variant="destructive" @click="openRecovery('enter')">进入恢复协调模式</Button>
+                <Button variant="outline" @click="openRecovery('exit')">退出恢复协调模式</Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
 
     <AppModal :open="templateModal" :title="templateForm.id ? '编辑模板' : '新建模板'" size="md" @close="templateModal = false">
-      <div class="stack">
-        <p v-if="templateSaveError" class="banner banner--danger" role="alert">{{ templateSaveError }}</p>
-        <div class="grid grid--form">
-          <div class="field">
-            <label for="tpl-name">名称</label>
-            <input id="tpl-name" v-model="templateForm.name" class="input" />
+      <div class="space-y-4">
+        <Alert v-if="templateSaveError" variant="destructive">
+          <AlertDescription class="break-all">{{ templateSaveError }}</AlertDescription>
+        </Alert>
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div class="grid gap-2">
+            <Label for="tpl-name">名称</Label>
+            <Input id="tpl-name" v-model="templateForm.name" />
           </div>
-          <div class="field">
-            <label for="tpl-format">格式</label>
-            <select id="tpl-format" v-model="templateForm.format" class="select">
-              <option v-for="format in TEMPLATE_FORMATS" :key="format" :value="format">{{ format }}</option>
-            </select>
+          <div class="grid gap-2">
+            <Label for="tpl-format">格式</Label>
+            <Select v-model="templateForm.format">
+              <SelectTrigger id="tpl-format" class="w-full">
+                <SelectValue placeholder="选择格式" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="format in TEMPLATE_FORMATS" :key="format" :value="format">{{ format }}</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
-        <div class="field">
-          <label for="tpl-desc">说明</label>
-          <textarea id="tpl-desc" v-model="templateForm.description" class="textarea" style="min-height: 60px" />
+        <div class="grid gap-2">
+          <Label for="tpl-desc">说明</Label>
+          <Textarea id="tpl-desc" v-model="templateForm.description" class="min-h-16" />
         </div>
         <JsonEditor
           v-model="templateForm.content"
@@ -427,10 +520,10 @@ const hasTemplateDefaults = computed(() => {
         />
       </div>
       <template #footer>
-        <button type="button" class="btn" :disabled="templateSaving" @click="templateModal = false">取消</button>
-        <button type="button" class="btn btn--primary" :disabled="templateSaving" @click="saveTemplate">
-          <span v-if="templateSaving" class="spinner" aria-hidden="true" />保存
-        </button>
+        <Button variant="outline" :disabled="templateSaving" @click="templateModal = false">取消</Button>
+        <Button :disabled="templateSaving" @click="saveTemplate">
+          <Loader2 v-if="templateSaving" class="animate-spin" aria-hidden="true" />保存
+        </Button>
       </template>
     </AppModal>
 
@@ -446,19 +539,29 @@ const hasTemplateDefaults = computed(() => {
     >
       <template v-if="recovery.mode === 'enter'">
         <p>进入后：普通变更暂停、不再向节点推送旧权限，直到显式核对并退出。</p>
-        <ul class="text-sm">
+        <ul class="list-disc pl-5 text-sm">
           <li>成员/订阅/节点的普通变更可能被拒绝。</li>
           <li>请先核对 Agent 已知授权版本、任务回执与账本。</li>
         </ul>
       </template>
       <template v-else>
         <p>退出前请确认：</p>
-        <ul class="text-sm">
+        <ul class="list-disc pl-5 text-sm">
           <li>节点授权版本与面板一致，账本无缺口。</li>
           <li>旧备份中已撤销的成员不会被重新放行。</li>
         </ul>
-        <label class="row"><input v-model="recoveryChecks.agent_revisions_checked" type="checkbox" />已核对 Agent 修订及已撤销权限，不会恢复旧授权</label>
-        <label class="row"><input v-model="recoveryChecks.ledger_checked" type="checkbox" />已核对用量账本与待补报队列</label>
+        <div class="flex items-start gap-2">
+          <Checkbox id="recovery-agent-revisions" v-model="recoveryChecks.agent_revisions_checked" class="mt-0.5" />
+          <Label for="recovery-agent-revisions" class="font-normal leading-snug">
+            已核对 Agent 修订及已撤销权限，不会恢复旧授权
+          </Label>
+        </div>
+        <div class="flex items-start gap-2">
+          <Checkbox id="recovery-ledger" v-model="recoveryChecks.ledger_checked" class="mt-0.5" />
+          <Label for="recovery-ledger" class="font-normal leading-snug">
+            已核对用量账本与待补报队列
+          </Label>
+        </div>
       </template>
     </ConfirmDialog>
   </div>

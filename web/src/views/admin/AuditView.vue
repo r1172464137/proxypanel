@@ -5,70 +5,73 @@ import type { AuditRecord } from '@/api/types'
 import { usePagedList } from '@/lib/paged'
 import { formatDateTime, prettyJson, utcLabel } from '@/lib/format'
 import PageHeader from '@/components/PageHeader.vue'
-import ErrorState from '@/components/ErrorState.vue'
-import LoadingBlock from '@/components/LoadingBlock.vue'
-import EmptyState from '@/components/EmptyState.vue'
+import DataTable from '@/components/DataTable.vue'
+import { Button } from '@/components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 
 const list = usePagedList<AuditRecord>((cursor) => adminApi.auditLogs.list({ limit: 50, cursor }))
 
 onMounted(() => void list.refresh())
+
+const columns = [
+  { label: '时间', width: 'w-44' },
+  { label: '动作' },
+  { label: '操作者' },
+  { label: '对象 / 来源' },
+  { label: '详情', width: 'w-32' },
+]
 </script>
 
 <template>
-  <div>
+  <div class="space-y-4">
     <PageHeader title="审计" description="管理操作与安全事件留痕；服务端脱敏，不记录密码、令牌或私钥。">
-      <button type="button" class="btn" :disabled="list.loading.value" @click="list.refresh()">刷新</button>
+      <Button variant="outline" :disabled="list.loading.value" @click="list.refresh()">刷新</Button>
     </PageHeader>
 
-    <ErrorState v-if="list.error.value" :error="list.error.value" @retry="list.refresh()" />
-    <LoadingBlock v-else-if="list.loading.value && !list.items.value.length" label="正在读取审计" />
-    <div v-else class="card card__body--flush">
-      <div v-if="!list.items.value.length" class="card__body">
-        <EmptyState title="没有审计记录" description="操作发生后会写入审计；此接口不返回秘密值。" />
-      </div>
-      <template v-else>
-        <div class="table-wrap">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>时间</th>
-                <th>动作</th>
-                <th>操作者</th>
-                <th>对象 / 来源</th>
-                <th>详情</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="entry in list.items.value" :key="entry.id">
-                <td class="nowrap" :title="utcLabel(entry.created_at)">{{ formatDateTime(entry.created_at) }}</td>
-                <td>{{ entry.action ?? '—' }}</td>
-                <td>
-                  <template v-if="entry.actor_username">{{ entry.actor_username }}</template>
-                  <template v-else-if="entry.actor_id">{{ entry.actor_id }}</template>
-                  <span v-else class="text-muted">匿名<template v-if="entry.action === 'auth.login'">（登录事件本身没有操作者）</template></span>
-                </td>
-                <td class="text-xs">
-                  {{ entry.target_type ?? '—' }}
-                  <span class="cell-sub mono">{{ entry.target_id ?? '' }}</span><span class="cell-sub" v-if="entry.ip || entry.request_id">来源 {{ entry.ip ?? '—' }} · {{ entry.request_id ?? '—' }}</span>
-                </td>
-                <td>
-                  <details>
-                    <summary class="text-xs text-muted">展开</summary>
-                    <pre class="code-block">{{ prettyJson(entry.detail ?? entry.details ?? entry) }}</pre>
-                  </details>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="row row--between" style="padding: var(--space-3) var(--space-4)">
-          <span class="text-xs text-muted">第 {{ list.page.value }} 页</span>
-          <div class="row">
-            <button type="button" class="btn btn--sm" :disabled="list.page.value <= 1 || list.loading.value" @click="list.prev()">上一页</button>
-            <button type="button" class="btn btn--sm" :disabled="!list.nextCursor.value || list.loading.value" @click="list.next()">下一页</button>
+    <DataTable
+      :list="list"
+      :columns="columns"
+      empty-title="没有审计记录"
+      empty-description="操作发生后会写入审计；此接口不返回秘密值。"
+      loading-label="正在读取审计"
+    >
+      <template #row="{ item, columnIndex }">
+        <template v-if="columnIndex === 0">
+          <span class="whitespace-nowrap" :title="utcLabel(item.created_at)">{{ formatDateTime(item.created_at) }}</span>
+        </template>
+        <template v-else-if="columnIndex === 1">
+          {{ item.action ?? '—' }}
+        </template>
+        <template v-else-if="columnIndex === 2">
+          <template v-if="item.actor_username">{{ item.actor_username }}</template>
+          <template v-else-if="item.actor_id">{{ item.actor_id }}</template>
+          <span v-else class="text-muted-foreground">
+            匿名<template v-if="item.action === 'auth.login'">（登录事件本身没有操作者）</template>
+          </span>
+        </template>
+        <template v-else-if="columnIndex === 3">
+          <div class="flex flex-col text-xs">
+            <span>{{ item.target_type ?? '—' }}</span>
+            <span class="font-mono text-muted-foreground">{{ item.target_id ?? '' }}</span>
+            <span v-if="item.ip || item.request_id" class="text-muted-foreground">
+              来源 {{ item.ip ?? '—' }} · {{ item.request_id ?? '—' }}
+            </span>
           </div>
-        </div>
+        </template>
+        <template v-else-if="columnIndex === 4">
+          <Collapsible>
+            <CollapsibleTrigger as-child>
+              <Button variant="ghost" size="sm" class="text-muted-foreground">展开</Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <pre class="mt-2 max-h-80 min-w-60 overflow-auto rounded-md border border-border bg-muted p-3 font-mono text-xs whitespace-pre-wrap break-all">{{ prettyJson(item.detail ?? item.details ?? item) }}</pre>
+            </CollapsibleContent>
+          </Collapsible>
+        </template>
       </template>
-    </div>
+      <template #empty-action>
+        <Button variant="outline" @click="list.refresh()">刷新</Button>
+      </template>
+    </DataTable>
   </div>
 </template>

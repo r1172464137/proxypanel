@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, shallowRef, watch } from 'vue'
+import { Loader2 } from 'lucide-vue-next'
 import { adminApi } from '@/api/endpoints'
 import type { BatchOperation, MemberRecord, NodeRecord, SubscriptionRecord, TokenRotationResult } from '@/api/types'
 import { usePagedList } from '@/lib/paged'
@@ -9,8 +10,8 @@ import { buildMemberWrite, draftFromMember, emptyMemberDraft, quotaSource, type 
 import { pushToast } from '@/lib/toast'
 import { accessReasonSummary, describeQuotaSource } from '@/lib/accessReasons'
 import PageHeader from '@/components/PageHeader.vue'
+import DataTable from '@/components/DataTable.vue'
 import ErrorState from '@/components/ErrorState.vue'
-import LoadingBlock from '@/components/LoadingBlock.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import AppModal from '@/components/AppModal.vue'
@@ -18,6 +19,13 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import CopyField from '@/components/CopyField.vue'
 import QrPanel from '@/components/QrPanel.vue'
 import ImpactPreviewDialog from '@/components/ImpactPreviewDialog.vue'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 
 const list = usePagedList<MemberRecord>((cursor) => adminApi.members.list({ limit: 50, cursor }))
 const subscriptions = ref<SubscriptionRecord[]>([])
@@ -74,6 +82,18 @@ function toggleSelectAll(): void {
 const allVisibleSelected = computed(
   () => visibleMembers.value.length > 0 && visibleMembers.value.every((member) => selected.has(member.id)),
 )
+
+// DataTable 只负责呈现，数据仍来自后端游标分页；过滤只裁剪当前页的行，
+// 因此把同一个 PagedList 的 items 换成过滤后的 shallowRef，其余（分页/错误/加载）沿用原对象。
+const filteredItems = shallowRef<MemberRecord[]>([])
+watch(visibleMembers, (value) => (filteredItems.value = value), { immediate: true })
+const filteredList = { ...list, items: filteredItems }
+
+const countLabel = computed(() => {
+  const base = `本页 ${visibleMembers.value.length} 名`
+  if (!selectedOnOtherPages.value) return base
+  return `${base} · 已选择 ${selected.size} 名（含其它页 ${selectedOnOtherPages.value} 名）`
+})
 
 /* ---------- 创建 / 编辑 ---------- */
 const formOpen = ref(false)
@@ -190,6 +210,14 @@ function openCredential(member: MemberRecord): void {
   credOpen.value = true
 }
 
+function setCredScope(value: unknown): void {
+  credScope.value = value === 'single_node' ? 'single_node' : 'all_nodes'
+}
+
+function setQuotaMode(value: unknown): void {
+  form.quota_override_enabled = value === 'override'
+}
+
 async function submitCredential(): Promise<void> {
   const target = credTarget.value
   if (!target) return
@@ -284,315 +312,384 @@ function startBatchImpact(): void {
   impact.open = true
   batchOpen.value = false
 }
+
+// 表单里的下拉保持原生 select：jsdom 测试可直接设值，提交逻辑与重写前一致。
+const selectClass =
+  'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+
+const columns = [
+  { label: '选择', width: 'w-12' },
+  { label: '成员', width: 'w-52' },
+  { label: '账户 / 代理', width: 'w-56' },
+  { label: '订阅', width: 'w-40' },
+  { label: '有效期', width: 'w-40', hideOnMobile: true },
+  { label: '用量 / 额度', width: 'w-56' },
+  { label: '周期', width: 'w-40', hideOnMobile: true },
+  { label: '操作', width: 'w-80' },
+]
 </script>
 
 <template>
-  <div>
+  <div class="space-y-6">
     <PageHeader title="成员" description="成员能不能登录、能不能用代理、有多少流量，是三件独立的事。批量改之前会先让你看一遍影响。">
-      <button type="button" class="btn" :disabled="list.loading.value" @click="list.refresh()">刷新</button>
-      <button type="button" class="btn btn--primary" @click="openCreate">新建成员</button>
+      <Button variant="outline" :disabled="list.loading.value" @click="list.refresh()">刷新</Button>
+      <Button @click="openCreate">新建成员</Button>
     </PageHeader>
 
     <ErrorState v-if="referenceError" :error="referenceError" @retry="list.refresh()" />
-    <div class="toolbar">
-      <input v-model="filter" class="input" style="max-width: 280px" placeholder="按用户名或 ID 过滤当前页" aria-label="过滤成员" />
-      <span class="text-xs text-muted">过滤仅作用于当前页数据；跨页请用批量操作的显式成员集合。</span>
-      <div class="toolbar__spacer" />
-      <button type="button" class="btn" :disabled="!selected.size" @click="openBatch">
+
+    <!-- 过滤与批量入口始终可见：空页/错误态下也能清空过滤或重新选择。 -->
+    <div class="flex flex-wrap items-center gap-3">
+      <Input
+        v-model="filter"
+        class="max-w-[280px]"
+        placeholder="按用户名或 ID 过滤当前页"
+        aria-label="过滤成员"
+      />
+      <span class="text-xs text-muted-foreground">过滤仅作用于当前页数据；跨页请用批量操作的显式成员集合。</span>
+      <div class="flex-1" />
+      <div class="flex items-center gap-2">
+        <Checkbox
+          id="members-select-all"
+          :model-value="allVisibleSelected"
+          :disabled="!visibleMembers.length"
+          aria-label="选择当前页全部成员"
+          @update:model-value="toggleSelectAll"
+        />
+        <Label for="members-select-all" class="text-sm font-normal text-muted-foreground">全选本页</Label>
+      </div>
+      <Button variant="outline" :disabled="!selected.size" @click="openBatch">
         批量操作（已选 {{ selected.size }}）
-      </button>
-      <button v-if="selected.size" type="button" class="btn btn--ghost" @click="selected.clear()">清空选择</button>
+      </Button>
+      <Button v-if="selected.size" variant="ghost" @click="selected.clear()">清空选择</Button>
     </div>
 
-    <ErrorState v-if="list.error.value" :error="list.error.value" @retry="list.refresh()" />
-    <LoadingBlock v-else-if="list.loading.value && !list.items.value.length" label="正在读取成员" />
-    <div v-else class="card card__body--flush">
-      <div v-if="!list.items.value.length" class="card__body">
-        <EmptyState title="还没有成员" description="创建成员或生成邀请码；成员可登录查看状态，但代理权限取决于订阅与授权判定。">
-          <button type="button" class="btn btn--primary" @click="openCreate">新建成员</button>
-          <router-link class="btn" to="/admin/invitations">生成邀请</router-link>
-        </EmptyState>
-      </div>
-      <div v-else-if="!visibleMembers.length" class="card__body">
-        <EmptyState title="当前页没有匹配的成员" description="过滤只作用于当前页数据；清空过滤词即可恢复。跨页请使用批量操作的显式成员集合。">
-          <button type="button" class="btn" @click="filter = ''">清空过滤</button>
-        </EmptyState>
-      </div>
-      <template v-else>
-        <div class="table-wrap">
-          <table class="table">
-            <thead>
-              <tr>
-                <th style="width: 34px">
-                  <input
-                    type="checkbox"
-                    :checked="allVisibleSelected"
-                    aria-label="选择当前页全部成员"
-                    @change="toggleSelectAll"
-                  />
-                </th>
-                <th>成员</th>
-                <th>账户 / 代理</th>
-                <th>订阅</th>
-                <th class="hide-sm">有效期</th>
-                <th>用量 / 额度</th>
-                <th class="hide-sm">周期</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="member in visibleMembers" :key="member.id">
-                <td>
-                  <input
-                    type="checkbox"
-                    :checked="selected.has(member.id)"
-                    :aria-label="`选择 ${member.username}`"
-                    @change="toggleSelect(member.id)"
-                  />
-                </td>
-                <td>
-                  <router-link :to="`/admin/members/${member.id}`">{{ member.username }}</router-link>
-                  <span class="cell-sub">
-                    {{ member.role === 'admin' ? '管理员' : '成员' }}
-                    <span v-if="member.quota_override_enabled" class="badge badge--accent" style="margin-left: 4px">配额覆盖</span>
-                  </span>
-                </td>
-                <td>
-                  <div class="row" style="gap: var(--space-1)">
-                    <StatusBadge :status="member.active ? 'active' : 'suspended'" :label="member.active ? '正常' : '已停用'" />
-                    <StatusBadge :status="member.proxy_access ?? (member.proxy_enabled ? 'enabled' : 'paused_by_admin')" />
-                  </div>
-                  <span v-if="member.over_quota" class="badge badge--danger" style="margin-left: 4px">已超额</span>
-                  <span v-if="member.access_reasons?.length" class="cell-sub">{{ accessReasonSummary(member.access_reasons) }}</span>
-                </td>
-                <td>
-                  {{ member.subscription_id ? subscriptionNames.get(member.subscription_id) ?? member.subscription_id : '未绑定' }}
-                </td>
-                <td class="hide-sm">
-                  <span :title="utcLabel(member.expires_at)">{{ formatDateTime(member.expires_at) }}</span>
-                </td>
-                <td class="num">
-                  {{ formatBytes(member.used_bytes) }} / {{ formatQuota(member.effective_quota_bytes) }}
-                  <span class="cell-sub">额度来源：{{ describeQuotaSource(quotaSource(member)) }}</span>
-                </td>
-                <td class="hide-sm text-xs">
-                  <div v-if="member.period_start || member.period_end">
-                    {{ formatDateTime(member.period_start, member.period_timezone) }} →<br />{{ formatDateTime(member.period_end, member.period_timezone) }}
-                  </div>
-                  <span v-else class="text-muted">未提供</span>
-                </td>
-                <td class="actions">
-                  <button type="button" class="btn btn--sm" @click="openEdit(member)">编辑</button>
-                  <button type="button" class="btn btn--sm" @click="toggleActive(member)">
-                    {{ member.active ? '停用' : '启用' }}
-                  </button>
-                  <button type="button" class="btn btn--sm" @click="openCredential(member)">凭据</button>
-                  <button type="button" class="btn btn--sm" @click="rotateToken(member)">订阅链接</button>
-                  <button type="button" class="btn btn--sm btn--danger" @click="deleteTarget = member">删除</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="row row--between" style="padding: var(--space-3) var(--space-4)">
-          <span class="text-xs text-muted">
-            第 {{ list.page.value }} 页 · 本页 {{ visibleMembers.length }} 名
-            <template v-if="selectedOnOtherPages"> · 已选择 {{ selected.size }} 名（含其它页 {{ selectedOnOtherPages }} 名）</template>
+    <EmptyState
+      v-if="list.items.value.length && !visibleMembers.length"
+      title="当前页没有匹配的成员"
+      description="过滤只作用于当前页数据；清空过滤词即可恢复。跨页请使用批量操作的显式成员集合。"
+      icon="search"
+    >
+      <Button variant="outline" @click="filter = ''">清空过滤</Button>
+    </EmptyState>
+
+    <DataTable
+      v-else
+      :list="filteredList"
+      :columns="columns"
+      empty-title="还没有成员"
+      empty-description="创建成员或生成邀请码；成员可登录查看状态，但代理权限取决于订阅与授权判定。"
+      loading-label="正在读取成员"
+      :count-label="countLabel"
+    >
+      <template #row="{ item, columnIndex }">
+        <template v-if="columnIndex === 0">
+          <Checkbox
+            :model-value="selected.has(item.id)"
+            :aria-label="`选择 ${item.username}`"
+            @update:model-value="toggleSelect(item.id)"
+          />
+        </template>
+        <template v-else-if="columnIndex === 1">
+          <router-link :to="`/admin/members/${item.id}`" class="font-medium hover:underline">{{ item.username }}</router-link>
+          <span class="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+            {{ item.role === 'admin' ? '管理员' : '成员' }}
+            <Badge v-if="item.quota_override_enabled" variant="outline" class="border-transparent bg-brand text-brand-foreground">配额覆盖</Badge>
           </span>
-          <div class="row">
-            <button type="button" class="btn btn--sm" :disabled="list.page.value <= 1 || list.loading.value" @click="list.prev()">上一页</button>
-            <button type="button" class="btn btn--sm" :disabled="!list.nextCursor.value || list.loading.value" @click="list.next()">下一页</button>
+        </template>
+        <template v-else-if="columnIndex === 2">
+          <div class="flex flex-wrap items-center gap-1.5">
+            <StatusBadge :status="item.active ? 'active' : 'suspended'" :label="item.active ? '正常' : '已停用'" />
+            <StatusBadge :status="item.proxy_access ?? (item.proxy_enabled ? 'enabled' : 'paused_by_admin')" />
+            <Badge v-if="item.over_quota" variant="destructive">已超额</Badge>
           </div>
-        </div>
+          <span v-if="item.access_reasons?.length" class="mt-0.5 block text-xs text-muted-foreground">
+            {{ accessReasonSummary(item.access_reasons) }}
+          </span>
+        </template>
+        <template v-else-if="columnIndex === 3">
+          {{ item.subscription_id ? subscriptionNames.get(item.subscription_id) ?? item.subscription_id : '未绑定' }}
+        </template>
+        <template v-else-if="columnIndex === 4">
+          <span :title="utcLabel(item.expires_at)">{{ formatDateTime(item.expires_at) }}</span>
+        </template>
+        <template v-else-if="columnIndex === 5">
+          {{ formatBytes(item.used_bytes) }} / {{ formatQuota(item.effective_quota_bytes) }}
+          <span class="mt-0.5 block text-xs text-muted-foreground">额度来源：{{ describeQuotaSource(quotaSource(item)) }}</span>
+        </template>
+        <template v-else-if="columnIndex === 6">
+          <div v-if="item.period_start || item.period_end" class="text-xs">
+            {{ formatDateTime(item.period_start, item.period_timezone) }} →<br />{{ formatDateTime(item.period_end, item.period_timezone) }}
+          </div>
+          <span v-else class="text-xs text-muted-foreground">未提供</span>
+        </template>
+        <template v-else>
+          <div class="flex flex-wrap items-center gap-1.5">
+            <Button size="sm" variant="outline" @click="openEdit(item)">编辑</Button>
+            <Button size="sm" variant="outline" @click="toggleActive(item)">
+              {{ item.active ? '停用' : '启用' }}
+            </Button>
+            <Button size="sm" variant="outline" @click="openCredential(item)">凭据</Button>
+            <Button size="sm" variant="outline" @click="rotateToken(item)">订阅链接</Button>
+            <Button size="sm" variant="destructive" @click="deleteTarget = item">删除</Button>
+          </div>
+        </template>
       </template>
-    </div>
+      <template #empty-action>
+        <Button @click="openCreate">新建成员</Button>
+        <Button as-child variant="outline">
+          <router-link to="/admin/invitations">生成邀请</router-link>
+        </Button>
+      </template>
+    </DataTable>
 
-    <div v-if="selected.size" class="selection-bar">
-      <span>已选择 {{ selected.size }} 名成员</span>
-      <span class="text-xs">{{ selectedMembers.map((m) => m.username).join('、') }}{{ selectedOnOtherPages ? ` 等 ${selected.size} 名` : '' }}</span>
-      <div class="toolbar__spacer" />
-      <button type="button" class="btn btn--sm" @click="openBatch">批量操作</button>
-      <button type="button" class="btn btn--sm" @click="selected.clear()">清空</button>
+    <div v-if="selected.size" class="sticky bottom-4 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/80 px-4 py-2 backdrop-blur">
+      <span class="text-sm">已选择 {{ selected.size }} 名成员</span>
+      <span class="text-xs text-muted-foreground">
+        {{ selectedMembers.map((m) => m.username).join('、') }}{{ selectedOnOtherPages ? ` 等 ${selected.size} 名` : '' }}
+      </span>
+      <div class="flex-1" />
+      <Button size="sm" @click="openBatch">批量操作</Button>
+      <Button size="sm" variant="ghost" @click="selected.clear()">清空</Button>
     </div>
 
     <!-- 创建 / 编辑 -->
     <AppModal :open="formOpen" :title="formTitle" size="md" @close="formOpen = false">
-      <div class="stack">
-        <p v-if="formError" class="banner banner--danger" role="alert">{{ formError }}</p>
-        <p v-for="error in formErrors" :key="error" class="banner banner--warn">{{ error }}</p>
-        <div class="grid grid--form">
-          <div class="field">
-            <label for="member-username">用户名</label>
-            <input id="member-username" v-model="form.username" class="input" autocomplete="off" />
+      <div class="space-y-4">
+        <Alert v-if="formError" variant="destructive" role="alert">
+          <AlertTitle>保存失败</AlertTitle>
+          <AlertDescription class="break-all">{{ formError }}</AlertDescription>
+        </Alert>
+        <Alert v-for="error in formErrors" :key="error" variant="destructive" role="alert">
+          <AlertDescription>{{ error }}</AlertDescription>
+        </Alert>
+
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div class="space-y-1.5">
+            <Label for="member-username">用户名</Label>
+            <Input id="member-username" v-model="form.username" autocomplete="off" />
           </div>
-          <div class="field">
-            <label for="member-password">{{ editing ? '重置密码（留空不修改）' : '初始密码' }}</label>
-            <input id="member-password" v-model="form.password" class="input" type="password" autocomplete="new-password" />
-            <p class="field__help">至少 10 位；成员输出永不包含密码或哈希</p>
+          <div class="space-y-1.5">
+            <Label for="member-password">{{ editing ? '重置密码（留空不修改）' : '初始密码' }}</Label>
+            <Input id="member-password" v-model="form.password" type="password" autocomplete="new-password" />
+            <p class="text-xs text-muted-foreground">至少 10 位；成员输出永不包含密码或哈希</p>
           </div>
-          <div class="field">
-            <label for="member-role">角色</label>
-            <select id="member-role" v-model="form.role" class="select">
+          <div class="space-y-1.5">
+            <Label for="member-role">角色</Label>
+            <select id="member-role" v-model="form.role" :class="selectClass">
               <option value="member">成员</option>
               <option value="admin">管理员</option>
             </select>
           </div>
-          <div class="field">
-            <label for="member-sub">订阅</label>
-            <select id="member-sub" v-model="form.subscription_id" class="select">
+          <div class="space-y-1.5">
+            <Label for="member-sub">订阅</Label>
+            <select id="member-sub" v-model="form.subscription_id" :class="selectClass">
               <option value="">不绑定</option>
               <option v-for="sub in subscriptions" :key="sub.id" :value="sub.id">{{ sub.name }}</option>
             </select>
           </div>
-          <div class="field">
-            <label for="member-expires">到期时间</label>
-            <input id="member-expires" v-model="form.expires_at_local" class="input" type="datetime-local" />
-            <p class="field__help">留空表示跟随订阅默认有效期</p>
+          <div class="space-y-1.5">
+            <Label for="member-expires">到期时间</Label>
+            <Input id="member-expires" v-model="form.expires_at_local" type="datetime-local" />
+            <p class="text-xs text-muted-foreground">留空表示跟随订阅默认有效期</p>
           </div>
-          <div class="field">
-            <span class="field__label">流量额度</span>
-            <label class="checkbox">
-              <input v-model="form.quota_override_enabled" type="radio" :value="false" />
-              跟随订阅<template v-if="inheritedQuotaLabel">（当前 {{ inheritedQuotaLabel }}）</template>
-            </label>
-            <label class="checkbox">
-              <input v-model="form.quota_override_enabled" type="radio" :value="true" />
-              单独给这个人设置
-            </label>
-            <div v-if="form.quota_override_enabled" class="row" style="margin-top: var(--space-2)">
-              <input
+          <div class="space-y-2">
+            <span class="text-sm font-medium leading-none">流量额度</span>
+            <RadioGroup
+              :model-value="form.quota_override_enabled ? 'override' : 'inherit'"
+              @update:model-value="setQuotaMode"
+            >
+              <div class="flex items-start gap-2">
+                <RadioGroupItem id="member-quota-inherit" value="inherit" class="mt-0.5" />
+                <Label for="member-quota-inherit" class="font-normal leading-snug">
+                  跟随订阅<template v-if="inheritedQuotaLabel">（当前 {{ inheritedQuotaLabel }}）</template>
+                </Label>
+              </div>
+              <div class="flex items-start gap-2">
+                <RadioGroupItem id="member-quota-override" value="override" class="mt-0.5" />
+                <Label for="member-quota-override" class="font-normal leading-snug">单独给这个人设置</Label>
+              </div>
+            </RadioGroup>
+            <div v-if="form.quota_override_enabled" class="flex items-center gap-2">
+              <Input
                 id="member-override"
                 v-model="form.quota_override_gib"
-                class="input"
                 inputmode="decimal"
                 placeholder="留空表示不限量"
                 aria-label="单独设置的流量额度（GiB）"
               />
-              <span class="text-sm text-muted">GiB</span>
+              <span class="text-sm text-muted-foreground">GiB</span>
             </div>
-            <p class="field__help">
+            <p class="text-xs text-muted-foreground">
               跟随订阅时，这个人的额度等于订阅里设的每人配额；
               单独设置只影响他自己，其他人不变。留空表示不限量。
             </p>
           </div>
         </div>
-        <label class="checkbox">
-          <input v-model="form.active" type="checkbox" />
-          允许登录
-        </label>
-        <p class="field__help">
-          关掉后这个人立刻无法登录，正在使用的会话失效。重新开启即可恢复，但他需要重新登录。
-        </p>
-        <label class="checkbox">
-          <input v-model="form.proxy_enabled" type="checkbox" />
-          允许使用代理
-        </label>
-        <p class="field__help">
-          关掉后他所有代理连接立即断开，客户端连不上。重新开启后需要重新拉取订阅。
-        </p>
-        <div v-if="formWarnings.length" class="banner banner--warn">
-          <div>
-            <div class="banner__title">提示</div>
-            <ul><li v-for="warning in formWarnings" :key="warning">{{ warning }}</li></ul>
+
+        <div class="space-y-1">
+          <div class="flex cursor-pointer items-start gap-2" @click="form.active = !form.active">
+            <Checkbox
+              class="mt-0.5"
+              :model-value="form.active"
+              aria-label="允许登录"
+              @update:model-value="(value) => (form.active = value === true)"
+              @click.stop
+            />
+            <span class="text-sm font-medium leading-none">允许登录</span>
           </div>
+          <p class="text-xs text-muted-foreground">
+            关掉后这个人立刻无法登录，正在使用的会话失效。重新开启即可恢复，但他需要重新登录。
+          </p>
         </div>
+
+        <div class="space-y-1">
+          <div class="flex cursor-pointer items-start gap-2" @click="form.proxy_enabled = !form.proxy_enabled">
+            <Checkbox
+              class="mt-0.5"
+              :model-value="form.proxy_enabled"
+              aria-label="允许使用代理"
+              @update:model-value="(value) => (form.proxy_enabled = value === true)"
+              @click.stop
+            />
+            <span class="text-sm font-medium leading-none">允许使用代理</span>
+          </div>
+          <p class="text-xs text-muted-foreground">
+            关掉后他所有代理连接立即断开，客户端连不上。重新开启后需要重新拉取订阅。
+          </p>
+        </div>
+
+        <Alert v-if="formWarnings.length">
+          <AlertTitle>提示</AlertTitle>
+          <AlertDescription>
+            <ul class="list-disc space-y-1 pl-4">
+              <li v-for="warning in formWarnings" :key="warning">{{ warning }}</li>
+            </ul>
+          </AlertDescription>
+        </Alert>
       </div>
       <template #footer>
-        <button type="button" class="btn" :disabled="saving" @click="formOpen = false">取消</button>
-        <button type="button" class="btn btn--primary" :disabled="saving" @click="saveMember">
-          <span v-if="saving" class="spinner" aria-hidden="true" />
+        <Button variant="outline" :disabled="saving" @click="formOpen = false">取消</Button>
+        <Button :disabled="saving" @click="saveMember">
+          <Loader2 v-if="saving" class="animate-spin" aria-hidden="true" />
           {{ saving ? '保存中…' : '保存' }}
-        </button>
+        </Button>
       </template>
     </AppModal>
 
     <!-- 令牌轮换 -->
     <AppModal :open="tokenOpen" title="订阅令牌轮换" size="md" @close="tokenOpen = false">
-      <div class="stack">
-        <p class="text-sm text-muted">
-          成员：<strong>{{ tokenTarget?.username }}</strong>。轮换只使旧订阅链接失效，不改变代理凭据、不中断现有连接。
+      <div class="space-y-4">
+        <p class="text-sm text-muted-foreground">
+          成员：<strong class="text-foreground">{{ tokenTarget?.username }}</strong>。轮换只使旧订阅链接失效，不改变代理凭据、不中断现有连接。
         </p>
-        <p v-if="tokenLoading" class="text-sm"><span class="spinner" aria-hidden="true" /> 正在轮换…</p>
-        <p v-if="tokenError" class="banner banner--danger" role="alert">{{ tokenError }}</p>
+        <p v-if="tokenLoading" class="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 class="animate-spin" aria-hidden="true" /> 正在轮换…
+        </p>
+        <Alert v-if="tokenError" variant="destructive" role="alert">
+          <AlertDescription class="break-all">{{ tokenError }}</AlertDescription>
+        </Alert>
         <template v-if="tokenResult">
-          <div class="banner banner--info">旧令牌已失效；新链接仅在此处展示，请立即交付给成员。</div>
+          <div class="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-200">
+            旧令牌已失效；新链接仅在此处展示，请立即交付给成员。
+          </div>
           <CopyField :value="tokenResult.url" label="订阅链接" mask warning="此链接等同于密码；请通过受控渠道交付。" />
           <CopyField :value="tokenResult.token" label="令牌" mask warning="令牌可重建订阅链接，勿公开。" />
           <QrPanel :value="tokenResult.url" />
         </template>
       </div>
-      <template #footer><button type="button" class="btn" @click="tokenOpen = false">关闭</button></template>
+      <template #footer>
+        <Button variant="outline" @click="tokenOpen = false">关闭</Button>
+      </template>
     </AppModal>
 
     <!-- 凭据轮换 -->
     <AppModal :open="credOpen" title="代理凭据轮换" size="md" @close="credOpen = false">
-      <div class="stack">
-        <p class="text-sm text-muted">成员：<strong>{{ credTarget?.username }}</strong>。旧凭据立即失效（硬撤权），可能导致连接中断。</p>
-        <div class="field">
-          <label>范围</label>
-          <label class="checkbox"><input v-model="credScope" type="radio" value="all_nodes" /> 该成员全部节点</label>
-          <label class="checkbox"><input v-model="credScope" type="radio" value="single_node" /> 单个节点</label>
+      <div class="space-y-4">
+        <p class="text-sm text-muted-foreground">
+          成员：<strong class="text-foreground">{{ credTarget?.username }}</strong>。旧凭据立即失效（硬撤权），可能导致连接中断。
+        </p>
+        <div class="space-y-2">
+          <span class="text-sm font-medium leading-none">范围</span>
+          <RadioGroup :model-value="credScope" @update:model-value="setCredScope">
+            <div class="flex items-center gap-2">
+              <RadioGroupItem id="cred-scope-all" value="all_nodes" />
+              <Label for="cred-scope-all" class="font-normal">该成员全部节点</Label>
+            </div>
+            <div class="flex items-center gap-2">
+              <RadioGroupItem id="cred-scope-single" value="single_node" />
+              <Label for="cred-scope-single" class="font-normal">单个节点</Label>
+            </div>
+          </RadioGroup>
         </div>
-        <div v-if="credScope === 'single_node'" class="field">
-          <label for="cred-node">节点</label>
-          <select id="cred-node" v-model="credNodeId" class="select">
+        <div v-if="credScope === 'single_node'" class="space-y-1.5">
+          <Label for="cred-node">节点</Label>
+          <select id="cred-node" v-model="credNodeId" :class="selectClass">
             <option value="">请选择节点</option>
             <option v-for="node in nodes" :key="node.id" :value="node.id">{{ node.name }}（{{ node.protocol }}）</option>
           </select>
         </div>
-        <p class="text-xs text-muted">影响：受影响节点上的旧客户端配置立即不可用；新凭据由 Agent 异步下发。</p>
-        <p v-if="credError" class="banner banner--danger" role="alert">{{ credError }}</p>
-        <p v-if="credDone" class="banner banner--info">轮换已提交；实际生效以 Agent 回执为准（任务页可追踪）。</p>
+        <p class="text-xs text-muted-foreground">影响：受影响节点上的旧客户端配置立即不可用；新凭据由 Agent 异步下发。</p>
+        <Alert v-if="credError" variant="destructive" role="alert">
+          <AlertDescription class="break-all">{{ credError }}</AlertDescription>
+        </Alert>
+        <div v-if="credDone" class="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-200">
+          轮换已提交；实际生效以 Agent 回执为准（任务页可追踪）。
+        </div>
       </div>
       <template #footer>
-        <button type="button" class="btn" @click="credOpen = false">关闭</button>
-        <button type="button" class="btn btn--primary" :disabled="credPending" @click="submitCredential">
-          <span v-if="credPending" class="spinner" aria-hidden="true" />
+        <Button variant="outline" @click="credOpen = false">关闭</Button>
+        <Button :disabled="credPending" @click="submitCredential">
+          <Loader2 v-if="credPending" class="animate-spin" aria-hidden="true" />
           {{ credPending ? '提交中…' : '确认轮换' }}
-        </button>
+        </Button>
       </template>
     </AppModal>
 
     <!-- 批量操作 -->
     <AppModal :open="batchOpen" title="批量操作（先预览）" size="md" @close="batchOpen = false">
-      <div class="stack">
-        <p class="text-sm text-muted">已选择 {{ selected.size }} 名成员。提交前必须生成预览；预览过期或成员集合变化后需重新预览。</p>
-        <div class="field">
-          <label for="batch-op">操作</label>
-          <select id="batch-op" v-model="batchOperation" class="select">
+      <div class="space-y-4">
+        <p class="text-sm text-muted-foreground">
+          已选择 {{ selected.size }} 名成员。提交前必须生成预览；预览过期或成员集合变化后需重新预览。
+        </p>
+        <div class="space-y-1.5">
+          <Label for="batch-op">操作</Label>
+          <select id="batch-op" v-model="batchOperation" :class="selectClass">
             <option value="assign_subscription">分配 / 切换订阅</option>
             <option value="set_active">启用 / 停用账户</option>
             <option value="set_expiry">调整有效期</option>
             <option value="clear_override">清除个人覆盖</option>
           </select>
         </div>
-        <div v-if="batchOperation === 'assign_subscription'" class="field">
-          <label for="batch-sub">目标订阅</label>
-          <select id="batch-sub" v-model="batchValues.subscription_id" class="select">
+        <div v-if="batchOperation === 'assign_subscription'" class="space-y-1.5">
+          <Label for="batch-sub">目标订阅</Label>
+          <select id="batch-sub" v-model="batchValues.subscription_id" :class="selectClass">
             <option value="">请选择</option>
             <option v-for="sub in subscriptions" :key="sub.id" :value="sub.id">{{ sub.name }}</option>
           </select>
         </div>
-        <div v-if="batchOperation === 'set_active'" class="field">
-          <label for="batch-active">账户状态</label>
-          <select id="batch-active" v-model="batchValues.active" class="select">
+        <div v-if="batchOperation === 'set_active'" class="space-y-1.5">
+          <Label for="batch-active">账户状态</Label>
+          <select id="batch-active" v-model="batchValues.active" :class="selectClass">
             <option value="false">停用（撤销会话 + 硬撤权）</option>
             <option value="true">启用</option>
           </select>
         </div>
-        <div v-if="batchOperation === 'set_expiry'" class="field">
-          <label for="batch-expiry">新的到期时间</label>
-          <input id="batch-expiry" v-model="batchValues.expires_at_local" class="input" type="datetime-local" />
-          <p class="field__help">这是成员有效期，不是订阅周期规则；周期规则请在订阅页修改（同样需要预览）。</p>
+        <div v-if="batchOperation === 'set_expiry'" class="space-y-1.5">
+          <Label for="batch-expiry">新的到期时间</Label>
+          <Input id="batch-expiry" v-model="batchValues.expires_at_local" type="datetime-local" />
+          <p class="text-xs text-muted-foreground">这是成员有效期，不是订阅周期规则；周期规则请在订阅页修改（同样需要预览）。</p>
         </div>
         <p v-if="batchOperation === 'clear_override'" class="text-sm">
           将清除所选成员的配额/有效期个人覆盖，恢复继承订阅默认值。
         </p>
-        <p v-if="batchError" class="banner banner--warn" role="alert">{{ batchError }}</p>
+        <Alert v-if="batchError" variant="destructive" role="alert">
+          <AlertDescription>{{ batchError }}</AlertDescription>
+        </Alert>
       </div>
       <template #footer>
-        <button type="button" class="btn" @click="batchOpen = false">取消</button>
-        <button type="button" class="btn btn--primary" :disabled="!selected.size" @click="startBatchImpact">生成预览</button>
+        <Button variant="outline" @click="batchOpen = false">取消</Button>
+        <Button :disabled="!selected.size" @click="startBatchImpact">生成预览</Button>
       </template>
     </AppModal>
 
@@ -617,7 +714,7 @@ function startBatchImpact(): void {
       @confirm="confirmDelete"
     >
       <p>将删除成员 <strong>{{ deleteTarget?.username }}</strong>（{{ deleteTarget?.id }}）。</p>
-      <ul class="text-sm">
+      <ul class="list-disc space-y-1 pl-5 text-sm">
         <li>服务端对删除执行归档/墓碑，保留历史账本与审计。</li>
         <li>该成员所有会话与代理权限会被撤销；节点生效为异步。</li>
       </ul>

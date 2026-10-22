@@ -11,10 +11,29 @@ import ErrorState from '@/components/ErrorState.vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 
 const list = usePagedList<EventRecord>((cursor) => adminApi.events.list({ limit: 50, cursor }))
 const severity = ref('')
 const acking = ref<string | null>(null)
+
+// Select 需要非空值：空串（全部级别）用一个哨兵值表示，事件筛选逻辑仍读 severity。
+const ALL = '__all__'
+const severityFilter = computed({
+  get: () => severity.value || ALL,
+  set: (value: string) => {
+    severity.value = value === ALL ? '' : value
+  },
+})
 
 onMounted(() => void list.refresh())
 
@@ -51,94 +70,90 @@ async function ack(event: EventRecord): Promise<void> {
 </script>
 
 <template>
-  <div>
-    <PageHeader title="事件与告警" description="这里记录节点异常、到期提醒、上报积压等问题。点「确认」只是标记你已看到，问题本身要等服务端再次上报恢复才会消失。">
-      <button type="button" class="btn" :disabled="list.loading.value" @click="list.refresh()">刷新</button>
+  <div class="space-y-4">
+    <PageHeader
+      title="事件与告警"
+      description="这里记录节点异常、到期提醒、上报积压等问题。点「确认」只是标记你已看到，问题本身要等服务端再次上报恢复才会消失。"
+    >
+      <Button variant="outline" :disabled="list.loading.value" @click="list.refresh()">刷新</Button>
     </PageHeader>
 
-    <div class="toolbar">
-      <select v-model="severity" class="select" style="max-width: 220px" aria-label="按级别过滤">
-        <option value="">全部级别</option>
-        <option v-for="value in severities" :key="value" :value="value">{{ value }}</option>
-      </select>
-      <span class="text-xs text-muted">过滤仅作用于当前页。</span>
+    <div class="flex flex-wrap items-center gap-3">
+      <Select v-model="severityFilter">
+        <SelectTrigger class="w-full max-w-[220px]" aria-label="按级别过滤">
+          <SelectValue placeholder="全部级别" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem :value="ALL">全部级别</SelectItem>
+          <SelectItem v-for="value in severities" :key="value" :value="value">{{ value }}</SelectItem>
+        </SelectContent>
+      </Select>
+      <span class="text-xs text-muted-foreground">过滤仅作用于当前页。</span>
     </div>
 
     <ErrorState v-if="list.error.value" :error="list.error.value" @retry="list.refresh()" />
     <LoadingBlock v-else-if="list.loading.value && !list.items.value.length" label="正在读取事件" />
-    <div v-else class="card card__body--flush">
-      <div v-if="!list.items.value.length" class="card__body">
-        <EmptyState title="没有事件" description="系统异常、到期提醒与撤权失败会在此记录；告警去重与恢复事件由服务端维护。" />
+    <Card v-else class="overflow-hidden">
+      <div v-if="!list.items.value.length" class="p-6">
+        <EmptyState
+          title="没有事件"
+          description="系统异常、到期提醒与撤权失败会在此记录；告警去重与恢复事件由服务端维护。"
+        />
       </div>
-      <div v-else-if="!visible.length" class="state-block">
+      <div v-else-if="!visible.length" class="p-6 text-sm text-muted-foreground">
         <p>当前页没有该级别的事件。</p>
       </div>
       <template v-else>
-        <ul class="event-list">
-          <li v-for="event in visible" :key="event.id" class="event-item">
-            <div class="row">
+        <ul class="divide-y divide-border">
+          <li
+            v-for="event in visible"
+            :key="event.id"
+            class="flex min-w-0 flex-col gap-2 p-4 sm:p-5"
+          >
+            <div class="flex flex-wrap items-center gap-2">
               <StatusBadge :status="event.severity ?? 'unknown'" />
-              <strong>{{ event.message ?? event.title ?? event.code ?? event.kind ?? '事件' }}</strong>
-              <span class="topbar__spacer" />
-              <time class="text-xs text-faint" :title="utcLabel(event.created_at)">{{ formatDateTime(event.created_at) }}</time>
+              <strong class="min-w-0 break-words [overflow-wrap:anywhere]">
+                {{ event.message ?? event.title ?? event.code ?? event.kind ?? '事件' }}
+              </strong>
+              <time class="ml-auto text-xs text-muted-foreground" :title="utcLabel(event.created_at)">
+                {{ formatDateTime(event.created_at) }}
+              </time>
             </div>
-            <p v-if="event.state" class="text-sm text-muted">状态：{{ event.state }}<template v-if="event.dedupe_key"> · 去重键：{{ event.dedupe_key }}</template></p>
-            <p class="text-xs text-faint">
-              对象：{{ event.subject_type ?? '—' }} / <span class="mono">{{ event.subject_id ?? event.id }}</span>
+            <p v-if="event.state" class="text-sm text-muted-foreground">
+              状态：{{ event.state }}<template v-if="event.dedupe_key"> · 去重键：{{ event.dedupe_key }}</template>
             </p>
-            <div class="row">
-              <button
-                type="button"
-                class="btn btn--sm"
+            <p class="text-xs text-muted-foreground">
+              对象：{{ event.subject_type ?? '—' }} /
+              <span class="font-mono">{{ event.subject_id ?? event.id }}</span>
+            </p>
+            <div class="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
                 :disabled="isAcked(event) || acking === event.id"
                 @click="ack(event)"
               >
                 {{ isAcked(event) ? '已确认' : acking === event.id ? '确认中…' : '确认告警' }}
-              </button>
-              <details>
-                <summary class="text-xs text-muted">原始字段</summary>
-                <pre class="code-block">{{ prettyJson(event) }}</pre>
-              </details>
+              </Button>
+              <Collapsible>
+                <CollapsibleTrigger as-child>
+                  <Button variant="ghost" size="sm" class="text-muted-foreground">原始字段</Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <pre class="mt-2 max-h-80 overflow-auto rounded-md border border-border bg-muted p-3 font-mono text-xs whitespace-pre-wrap break-all">{{ prettyJson(event) }}</pre>
+                </CollapsibleContent>
+              </Collapsible>
             </div>
           </li>
         </ul>
-        <div class="row row--between" style="padding: var(--space-3) var(--space-4)">
-          <span class="text-xs text-muted">第 {{ list.page.value }} 页</span>
-          <div class="row">
-            <button type="button" class="btn btn--sm" :disabled="list.page.value <= 1 || list.loading.value" @click="list.prev()">上一页</button>
-            <button type="button" class="btn btn--sm" :disabled="!list.nextCursor.value || list.loading.value" @click="list.next()">下一页</button>
+        <div class="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-3">
+          <span class="text-xs text-muted-foreground">第 {{ list.page.value }} 页</span>
+          <div class="flex items-center gap-2">
+            <Button variant="outline" size="sm" :disabled="list.page.value <= 1 || list.loading.value" @click="list.prev()">上一页</Button>
+            <Button variant="outline" size="sm" :disabled="!list.nextCursor.value || list.loading.value" @click="list.next()">下一页</Button>
           </div>
         </div>
       </template>
-    </div>
+    </Card>
   </div>
 </template>
-
-<style scoped>
-.event-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.event-item {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-4) var(--space-5);
-  border-bottom: 1px solid var(--border);
-  min-width: 0;
-}
-
-/* 告警原文常含超长不可断 token（校验输出/JSON 片段）：
-   作为 flex item 默认 min-width:auto 会按 min-content 撑开，
-   在窄屏把整页推到横向溢出；显式允许任意位置折行。 */
-.event-item > .row > strong {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.event-item:last-child {
-  border-bottom: 0;
-}
-</style>

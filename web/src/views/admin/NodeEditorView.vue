@@ -37,6 +37,16 @@ import LoadingBlock from '@/components/LoadingBlock.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import JsonEditor from '@/components/JsonEditor.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Separator } from '@/components/ui/separator'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
+import { Loader2 } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -277,149 +287,240 @@ const cipherValue = computed({
 </script>
 
 <template>
-  <div>
+  <div class="space-y-6">
     <PageHeader
       :title="isEdit ? '编辑节点' : '新建节点'"
       description="VLESS / VMess / Trojan / Shadowsocks（含 2022）。结构化表单与原生 JSON 编辑同一份数据：未知字段保留并在保存时原样提交。"
     >
-      <router-link class="btn btn--sm" to="/admin/nodes">返回列表</router-link>
-      <button type="button" class="btn btn--primary" :disabled="saving" @click="save">
-        <span v-if="saving" class="spinner" aria-hidden="true" />
+      <Button as-child variant="outline">
+        <router-link to="/admin/nodes">返回列表</router-link>
+      </Button>
+      <Button :disabled="saving" @click="save">
+        <Loader2 v-if="saving" class="animate-spin" aria-hidden="true" />
         {{ saving ? '保存中…' : '保存节点' }}
-      </button>
+      </Button>
     </PageHeader>
 
     <LoadingBlock v-if="loading" label="正在读取节点" />
     <ErrorState v-else-if="loadError" :error="loadError" @retry="load" />
-    <div v-else class="stack">
-      <p v-if="saveError" class="banner banner--danger" role="alert">{{ saveError }}</p>
+    <div v-else class="space-y-4">
+      <Alert v-if="saveError" variant="destructive">
+        <AlertTitle>保存失败</AlertTitle>
+        <AlertDescription class="break-all">{{ saveError }}</AlertDescription>
+      </Alert>
       <ErrorState v-if="serversError" :error="serversError" @retry="load" show-retry />
-      <div v-if="!servers.length" class="banner banner--warn">
-        还没有服务器档案，必须先创建服务器才能保存节点。<router-link to="/admin/servers">前往服务器</router-link>
-      </div>
-      <div v-if="node" class="banner banner--info">
-        节点 ID <span class="mono">{{ node.id }}</span> · 版本 {{ node.version }} · 更新于 {{ formatDateTime(node.updated_at) }}
-      </div>
+      <Alert v-if="!servers.length">
+        <AlertTitle>还没有服务器档案</AlertTitle>
+        <AlertDescription>
+          必须先创建服务器才能保存节点。
+          <router-link to="/admin/servers" class="font-medium underline underline-offset-4">前往服务器</router-link>
+        </AlertDescription>
+      </Alert>
+      <Alert v-if="node">
+        <AlertDescription>
+          节点 ID <span class="font-mono">{{ node.id }}</span> · 版本 {{ node.version }} · 更新于 {{ formatDateTime(node.updated_at) }}
+        </AlertDescription>
+      </Alert>
 
       <!-- 新建节点时先选模板：一套可用配置一键填好，用户只需要改名称与端口。
            编辑已有节点时不显示，避免覆盖现有配置。 -->
-      <section v-if="!isEdit" class="card">
-        <div class="card__header">
-          <h2>用模板快速创建</h2>
-          <div class="card__header-actions">
-            <button type="button" class="btn btn--sm" @click="showTemplates = !showTemplates">
-              {{ showTemplates ? '收起' : '展开' }}
-            </button>
-          </div>
-        </div>
-        <div v-if="showTemplates" class="card__body">
-          <p class="text-sm text-muted" style="margin-bottom: var(--space-3)">
+      <Card v-if="!isEdit">
+        <CardHeader class="flex-row flex-wrap items-center justify-between gap-3 space-y-0">
+          <CardTitle class="text-base">用模板快速创建</CardTitle>
+          <Button variant="outline" size="sm" @click="showTemplates = !showTemplates">
+            {{ showTemplates ? '收起' : '展开' }}
+          </Button>
+        </CardHeader>
+        <CardContent v-if="showTemplates" class="space-y-4">
+          <p class="text-sm text-muted-foreground">
             选一个模板会自动填好协议、传输、加密层和需要的密钥，你只需要改名称和端口。
             也可以跳过，直接在下面手动配置。
           </p>
-          <div class="template-grid">
+          <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <button
               v-for="tpl in NODE_TEMPLATES"
               :key="tpl.id"
               type="button"
-              class="template-card"
-              :class="{ 'template-card--active': appliedTemplate === tpl.id }"
+              class="rounded-lg border border-border bg-background p-3 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              :class="appliedTemplate === tpl.id ? 'border-primary bg-accent ring-1 ring-primary' : ''"
+              :aria-pressed="appliedTemplate === tpl.id"
               @click="applyTemplate(tpl)"
             >
-              <strong>{{ tpl.label }}</strong>
-              <span class="template-card__desc">{{ tpl.description }}</span>
-              <span class="template-card__needs">需要准备：{{ tpl.needs }}</span>
+              <span class="block text-sm font-medium">{{ tpl.label }}</span>
+              <span class="mt-1 block text-xs text-muted-foreground">{{ tpl.description }}</span>
+              <span class="mt-2 block text-xs text-muted-foreground">需要准备：{{ tpl.needs }}</span>
             </button>
           </div>
-          <p v-if="templateNote" class="banner banner--info" role="status" style="margin-top: var(--space-3)">
+          <p v-if="templateNote" role="status" class="rounded-md border border-border bg-muted px-3 py-2 text-sm">
             {{ templateNote }}
           </p>
-        </div>
-      </section>
+        </CardContent>
+      </Card>
 
-      <section class="card">
-        <div class="card__header"><h2>基本信息</h2></div>
-        <div class="card__body grid grid--form">
-          <div class="field">
-            <label for="node-name">名称</label>
-            <input id="node-name" v-model="draft.name" class="input" :class="{ 'input--error': errorFor('node-name') }" required />
-            <p v-if="errorFor('node-name')" class="field__error">{{ errorFor('node-name') }}</p>
+      <Card>
+        <CardHeader>
+          <CardTitle class="text-base">基本信息</CardTitle>
+        </CardHeader>
+        <CardContent class="grid gap-4 sm:grid-cols-2">
+          <div class="space-y-1.5">
+            <Label for="node-name">名称</Label>
+            <Input
+              id="node-name"
+              v-model="draft.name"
+              required
+              :aria-invalid="Boolean(errorFor('node-name'))"
+              :class="errorFor('node-name') ? 'border-destructive focus-visible:ring-destructive' : ''"
+            />
+            <p v-if="errorFor('node-name')" class="text-xs text-destructive">{{ errorFor('node-name') }}</p>
           </div>
-          <div class="field">
-            <label for="node-server">所属服务器</label>
-            <select id="node-server" v-model="draft.server_id" class="select" :class="{ 'input--error': errorFor('node-server') }">
+          <div class="space-y-1.5">
+            <Label for="node-server">所属服务器</Label>
+            <select
+              id="node-server"
+              v-model="draft.server_id"
+              :aria-invalid="Boolean(errorFor('node-server'))"
+              :class="[
+                'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                errorFor('node-server') ? 'border-destructive' : '',
+              ]"
+            >
               <option value="">请选择</option>
               <option v-for="option in serverOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
             </select>
-            <p v-if="errorFor('node-server')" class="field__error">{{ errorFor('node-server') }}</p>
+            <p v-if="errorFor('node-server')" class="text-xs text-destructive">{{ errorFor('node-server') }}</p>
           </div>
-          <div class="field">
-            <label for="node-protocol">协议</label>
-            <select id="node-protocol" v-model="draft.protocol" class="select">
+          <div class="space-y-1.5">
+            <Label for="node-protocol">协议</Label>
+            <select
+              id="node-protocol"
+              v-model="draft.protocol"
+              :aria-invalid="Boolean(errorFor('node-protocol'))"
+              :class="[
+                'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                errorFor('node-protocol') ? 'border-destructive' : '',
+              ]"
+            >
               <option v-for="(label, value) in NODE_PROTOCOL_LABELS" :key="value" :value="value">{{ label }}</option>
             </select>
+            <p v-if="errorFor('node-protocol')" class="text-xs text-destructive">{{ errorFor('node-protocol') }}</p>
           </div>
-          <div class="field">
-            <label for="node-host">对外地址</label>
-            <input id="node-host" v-model="draft.host" class="input mono" :class="{ 'input--error': errorFor('node-host') }" placeholder="节点域名或 IP（写入成员配置）" />
-            <p v-if="errorFor('node-host')" class="field__error">{{ errorFor('node-host') }}</p>
+          <div class="space-y-1.5">
+            <Label for="node-host">对外地址</Label>
+            <Input
+              id="node-host"
+              v-model="draft.host"
+              class="font-mono"
+              placeholder="节点域名或 IP（写入成员配置）"
+              :aria-invalid="Boolean(errorFor('node-host'))"
+              :class="errorFor('node-host') ? 'border-destructive focus-visible:ring-destructive' : ''"
+            />
+            <p v-if="errorFor('node-host')" class="text-xs text-destructive">{{ errorFor('node-host') }}</p>
           </div>
-          <div class="field">
-            <label for="node-port">对外端口</label>
-            <input id="node-port" v-model="draft.port" class="input" :class="{ 'input--error': errorFor('node-port') }" inputmode="numeric" />
-            <p v-if="errorFor('node-port')" class="field__error">{{ errorFor('node-port') }}</p>
+          <div class="space-y-1.5">
+            <Label for="node-port">对外端口</Label>
+            <Input
+              id="node-port"
+              v-model="draft.port"
+              inputmode="numeric"
+              :aria-invalid="Boolean(errorFor('node-port'))"
+              :class="errorFor('node-port') ? 'border-destructive focus-visible:ring-destructive' : ''"
+            />
+            <p v-if="errorFor('node-port')" class="text-xs text-destructive">{{ errorFor('node-port') }}</p>
           </div>
-          <div class="field">
-            <label for="node-listen">监听地址</label>
-            <input id="node-listen" v-model="draft.listen" class="input mono" :class="{ 'input--error': errorFor('node-listen') }" placeholder="0.0.0.0" />
-            <p v-if="errorFor('node-listen')" class="field__error">{{ errorFor('node-listen') }}</p>
+          <div class="space-y-1.5">
+            <Label for="node-listen">监听地址</Label>
+            <Input
+              id="node-listen"
+              v-model="draft.listen"
+              class="font-mono"
+              placeholder="0.0.0.0"
+              :aria-invalid="Boolean(errorFor('node-listen'))"
+              :class="errorFor('node-listen') ? 'border-destructive focus-visible:ring-destructive' : ''"
+            />
+            <p v-if="errorFor('node-listen')" class="text-xs text-destructive">{{ errorFor('node-listen') }}</p>
           </div>
-          <div class="field">
-            <label for="node-sort">排序</label>
-            <input id="node-sort" v-model="draft.sort_order" class="input" inputmode="numeric" />
+          <div class="space-y-1.5">
+            <Label for="node-sort">排序</Label>
+            <Input
+              id="node-sort"
+              v-model="draft.sort_order"
+              inputmode="numeric"
+              :aria-invalid="Boolean(errorFor('node-sort'))"
+              :class="errorFor('node-sort') ? 'border-destructive focus-visible:ring-destructive' : ''"
+            />
+            <p v-if="errorFor('node-sort')" class="text-xs text-destructive">{{ errorFor('node-sort') }}</p>
           </div>
-          <label class="checkbox" style="align-self: end; padding-bottom: 8px">
-            <input v-model="draft.enabled" type="checkbox" />
-            启用该节点
-          </label>
-          <p class="field__help">
-            关掉后这条线路停止提供服务，正在使用的连接会断开。重新开启并保存后会重新上线。
-          </p>
-        </div>
-      </section>
+          <div class="space-y-1.5 self-end">
+            <div class="flex items-center gap-2">
+              <Checkbox
+                id="node-enabled"
+                :model-value="draft.enabled"
+                @update:model-value="(value) => (draft.enabled = value === true)"
+              />
+              <Label for="node-enabled" class="font-normal">启用该节点</Label>
+            </div>
+            <p class="text-xs text-muted-foreground">
+              关掉后这条线路停止提供服务，正在使用的连接会断开。重新开启并保存后会重新上线。
+            </p>
+          </div>
+        </CardContent>
+      </Card>
 
-      <div class="row">
-        <button type="button" class="btn" :class="{ 'btn--primary': tab === 'structured' }" @click="tab = 'structured'">结构化参数</button>
+      <div class="flex flex-wrap items-center gap-3">
+        <Tabs
+          :model-value="tab"
+          @update:model-value="(value) => (tab = value === 'advanced' ? 'advanced' : 'structured')"
+        >
+          <TabsList>
+            <TabsTrigger value="structured">结构化参数</TabsTrigger>
+            <TabsTrigger v-if="isEdit || advancedAllowed" value="advanced">原生 JSON（高级）</TabsTrigger>
+          </TabsList>
+        </Tabs>
         <template v-if="isEdit || advancedAllowed">
-          <button type="button" class="btn" :class="{ 'btn--primary': tab === 'advanced' }" @click="tab = 'advanced'">原生 JSON（高级）</button>
-          <span class="text-xs text-muted">两种方式编辑同一对象；JSON 中的额外字段不会丢失。</span>
+          <span class="text-xs text-muted-foreground">两种方式编辑同一对象；JSON 中的额外字段不会丢失。</span>
         </template>
         <template v-else>
-          <button type="button" class="btn btn--sm" @click="advancedAllowed = true">需要直接改 JSON？</button>
-          <span class="text-xs text-muted">
+          <Button variant="outline" size="sm" @click="advancedAllowed = true">需要直接改 JSON？</Button>
+          <span class="text-xs text-muted-foreground">
             新建时默认用结构化表单，字段说明更清楚。熟悉 Xray 原生配置可以切到 JSON 模式。
           </span>
         </template>
       </div>
 
       <template v-if="tab === 'structured'">
-        <section class="card">
-          <div class="card__header"><h2>协议参数（protocol_settings）</h2></div>
-          <div class="card__body stack">
-            <p v-if="hasClientsInSettings" class="banner banner--warn">
-              protocol_settings 中存在 clients：客户端凭据只能由后端注入，保存时会移除该字段（其它字段保留）。
-            </p>
+        <Card>
+          <CardHeader>
+            <CardTitle class="text-base">协议参数（protocol_settings）</CardTitle>
+          </CardHeader>
+          <CardContent class="space-y-4">
+            <Alert v-if="hasClientsInSettings">
+              <AlertDescription>
+                protocol_settings 中存在 clients：客户端凭据只能由后端注入，保存时会移除该字段（其它字段保留）。
+              </AlertDescription>
+            </Alert>
 
-            <div class="grid grid--form">
+            <div class="grid gap-4 sm:grid-cols-2">
               <template v-if="draft.protocol === 'vless'">
-                <div class="field">
-                  <label for="protocol-decryption">加密方式</label>
-                  <input id="protocol-decryption" v-model="protocolState.decryption" class="input mono" placeholder="none" />
-                  <p class="field__help">VLESS 常用 none</p>
+                <div class="space-y-1.5">
+                  <Label for="protocol-decryption">加密方式</Label>
+                  <Input
+                    id="protocol-decryption"
+                    v-model="protocolState.decryption"
+                    class="font-mono"
+                    placeholder="none"
+                    :aria-invalid="Boolean(errorFor('protocol-decryption'))"
+                    :class="errorFor('protocol-decryption') ? 'border-destructive focus-visible:ring-destructive' : ''"
+                  />
+                  <p v-if="errorFor('protocol-decryption')" class="text-xs text-destructive">{{ errorFor('protocol-decryption') }}</p>
+                  <p class="text-xs text-muted-foreground">VLESS 常用 none</p>
                 </div>
-                <div class="field">
-                  <label for="vless-flow">流控</label>
-                  <select id="vless-flow" v-model="draft.flow" class="select">
+                <div class="space-y-1.5">
+                  <Label for="vless-flow">流控</Label>
+                  <select
+                    id="vless-flow"
+                    v-model="draft.flow"
+                    class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  >
                     <option value="">不使用</option>
                     <option value="xtls-rprx-vision">xtls-rprx-vision</option>
                   </select>
@@ -427,9 +528,13 @@ const cipherValue = computed({
               </template>
 
               <template v-if="draft.protocol === 'vmess'">
-                <div class="field">
-                  <label for="vmess-insecure">禁用不安全加密</label>
-                  <select id="vmess-insecure" v-model="protocolState.vmessDisableInsecure" class="select">
+                <div class="space-y-1.5">
+                  <Label for="vmess-insecure">禁用不安全加密</Label>
+                  <select
+                    id="vmess-insecure"
+                    v-model="protocolState.vmessDisableInsecure"
+                    class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  >
                     <option value="">不设置（沿用核心默认）</option>
                     <option value="true">true</option>
                     <option value="false">false</option>
@@ -438,22 +543,44 @@ const cipherValue = computed({
               </template>
 
               <template v-if="draft.protocol === 'shadowsocks'">
-                <div class="field">
-                  <label for="ss-method">加密算法</label>
-                  <input id="ss-method" v-model="cipherValue" class="input mono" list="ss-methods" placeholder="aes-256-gcm 或 2022-blake3-*" />
+                <div class="space-y-1.5">
+                  <Label for="ss-method">加密算法</Label>
+                  <Input
+                    id="ss-method"
+                    v-model="cipherValue"
+                    class="font-mono"
+                    list="ss-methods"
+                    placeholder="aes-256-gcm 或 2022-blake3-*"
+                    :aria-invalid="Boolean(errorFor('ss-method'))"
+                    :class="errorFor('ss-method') ? 'border-destructive focus-visible:ring-destructive' : ''"
+                  />
                   <datalist id="ss-methods">
                     <option v-for="method in SS_METHOD_OPTIONS" :key="method" :value="method" />
                   </datalist>
-                  <p class="field__help">2022 系列方法需配套多用户主密钥；被核心移除的算法不要声称支持。</p>
+                  <p v-if="errorFor('ss-method')" class="text-xs text-destructive">{{ errorFor('ss-method') }}</p>
+                  <p class="text-xs text-muted-foreground">2022 系列方法需配套多用户主密钥；被核心移除的算法不要声称支持。</p>
                 </div>
-                <div class="field">
-                  <label for="ss-password">服务端密钥</label>
-                  <input id="ss-password" v-model="protocolState.ssPassword" class="input mono" type="password" autocomplete="off" />
-                  <p class="field__help">只保存在面板；不写入成员配置。留空表示由后端注入。</p>
+                <div class="space-y-1.5">
+                  <Label for="ss-password">服务端密钥</Label>
+                  <Input
+                    id="ss-password"
+                    v-model="protocolState.ssPassword"
+                    class="font-mono"
+                    type="password"
+                    autocomplete="off"
+                    :aria-invalid="Boolean(errorFor('ss-password'))"
+                    :class="errorFor('ss-password') ? 'border-destructive focus-visible:ring-destructive' : ''"
+                  />
+                  <p v-if="errorFor('ss-password')" class="text-xs text-destructive">{{ errorFor('ss-password') }}</p>
+                  <p class="text-xs text-muted-foreground">只保存在面板；不写入成员配置。留空表示由后端注入。</p>
                 </div>
-                <div class="field">
-                  <label for="ss-network">传输网络</label>
-                  <select id="ss-network" v-model="protocolState.ssNetwork" class="select">
+                <div class="space-y-1.5">
+                  <Label for="ss-network">传输网络</Label>
+                  <select
+                    id="ss-network"
+                    v-model="protocolState.ssNetwork"
+                    class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  >
                     <option value="">不设置</option>
                     <option value="tcp">tcp</option>
                     <option value="udp">udp</option>
@@ -463,249 +590,351 @@ const cipherValue = computed({
               </template>
             </div>
 
-            <div v-if="showFallbacks" class="field">
-              <label for="protocol-fallbacks">回落规则（高级）</label>
-              <textarea
+            <div v-if="showFallbacks" class="space-y-1.5">
+              <Label for="protocol-fallbacks">回落规则（高级）</Label>
+              <Textarea
                 id="protocol-fallbacks"
                 v-model="protocolState.fallbacksText"
-                class="textarea"
+                class="min-h-[120px] font-mono"
                 spellcheck="false"
-                style="min-height: 120px"
                 placeholder='[{"dest": 80, "alpn": ""}]'
+                :aria-invalid="Boolean(errorFor('protocol-fallbacks'))"
+                :class="errorFor('protocol-fallbacks') ? 'border-destructive focus-visible:ring-destructive' : ''"
               />
-              <p class="field__help">与 Xray 原生 fallbacks 一致；留空表示不设置。非数组会在保存校验中被阻止。</p>
+              <p v-if="errorFor('protocol-fallbacks')" class="text-xs text-destructive">{{ errorFor('protocol-fallbacks') }}</p>
+              <p class="text-xs text-muted-foreground">与 Xray 原生 fallbacks 一致；留空表示不设置。非数组会在保存校验中被阻止。</p>
             </div>
 
-            <div v-if="preservedProtocol.length" class="banner banner--info">
-              以下 protocol_settings 键不在结构化表单中，将原样保留：<span class="mono">{{ preservedProtocol.join(', ') }}</span>
-            </div>
-          </div>
-        </section>
+            <p v-if="preservedProtocol.length" class="rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
+              以下 protocol_settings 键不在结构化表单中，将原样保留：<span class="font-mono">{{ preservedProtocol.join(', ') }}</span>
+            </p>
+          </CardContent>
+        </Card>
 
-        <section class="card">
-          <div class="card__header">
-            <h2>传输与安全（stream_settings）</h2>
-            <div class="card__header-actions">
-              <StatusBadge :status="security" :label="`security: ${security}`" />
-            </div>
-          </div>
-          <div class="card__body stack">
-            <div class="grid grid--form">
-              <div class="field">
-                <label for="stream-network">传输方式</label>
-                <input id="stream-network" v-model="streamState.network" class="input mono" list="networks" />
+        <Card>
+          <CardHeader class="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
+            <CardTitle class="text-base">传输与安全（stream_settings）</CardTitle>
+            <StatusBadge :status="security" :label="`security: ${security}`" />
+          </CardHeader>
+          <CardContent class="space-y-4">
+            <div class="grid gap-4 sm:grid-cols-2">
+              <div class="space-y-1.5">
+                <Label for="stream-network">传输方式</Label>
+                <Input
+                  id="stream-network"
+                  v-model="streamState.network"
+                  class="font-mono"
+                  list="networks"
+                  :aria-invalid="Boolean(errorFor('stream-network'))"
+                  :class="errorFor('stream-network') ? 'border-destructive focus-visible:ring-destructive' : ''"
+                />
                 <datalist id="networks">
                   <option v-for="network in NETWORK_OPTIONS" :key="network" :value="network" />
                 </datalist>
-                <p class="field__help">常用 tcp / ws / grpc / httpupgrade；核心已移除的传输请勿声称支持。</p>
+                <p v-if="errorFor('stream-network')" class="text-xs text-destructive">{{ errorFor('stream-network') }}</p>
+                <p class="text-xs text-muted-foreground">常用 tcp / ws / grpc / httpupgrade；核心已移除的传输请勿声称支持。</p>
               </div>
-              <div class="field">
-                <label for="stream-security">加密层</label>
-                <select id="stream-security" v-model="streamState.security" class="select">
+              <div class="space-y-1.5">
+                <Label for="stream-security">加密层</Label>
+                <select
+                  id="stream-security"
+                  v-model="streamState.security"
+                  :aria-invalid="Boolean(errorFor('stream-security'))"
+                  :class="[
+                    'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                    errorFor('stream-security') ? 'border-destructive' : '',
+                  ]"
+                >
                   <option v-for="option in SECURITY_OPTIONS" :key="option" :value="option">{{ option }}</option>
                 </select>
+                <p v-if="errorFor('stream-security')" class="text-xs text-destructive">{{ errorFor('stream-security') }}</p>
               </div>
             </div>
 
             <template v-if="streamState.security === 'tls'">
-              <div class="section-title">TLS</div>
-              <div class="grid grid--form">
-                <div class="field">
-                  <label for="tls-sni">证书域名</label>
-                  <input id="tls-sni" v-model="streamState.tlsServerName" class="input mono" />
+              <div class="flex items-center gap-3">
+                <span class="text-sm font-medium">TLS</span>
+                <Separator class="flex-1" />
+              </div>
+              <div class="grid gap-4 sm:grid-cols-2">
+                <div class="space-y-1.5">
+                  <Label for="tls-sni">证书域名</Label>
+                  <Input id="tls-sni" v-model="streamState.tlsServerName" class="font-mono" />
                 </div>
-                <div class="field">
-                  <label for="tls-alpn">协商协议</label>
-                  <input id="tls-alpn" v-model="streamState.tlsAlpn" class="input mono" placeholder="h2, http/1.1" />
+                <div class="space-y-1.5">
+                  <Label for="tls-alpn">协商协议</Label>
+                  <Input id="tls-alpn" v-model="streamState.tlsAlpn" class="font-mono" placeholder="h2, http/1.1" />
                 </div>
-                <div class="field">
-                  <label for="tls-cert">证书文件路径</label>
-                  <input id="tls-cert" v-model="streamState.tlsCertFile" class="input mono" />
+                <div class="space-y-1.5">
+                  <Label for="tls-cert">证书文件路径</Label>
+                  <Input
+                    id="tls-cert"
+                    v-model="streamState.tlsCertFile"
+                    class="font-mono"
+                    :aria-invalid="Boolean(errorFor('tls-cert-file'))"
+                    :class="errorFor('tls-cert-file') ? 'border-destructive focus-visible:ring-destructive' : ''"
+                  />
+                  <p v-if="errorFor('tls-cert-file')" class="text-xs text-destructive">{{ errorFor('tls-cert-file') }}</p>
                 </div>
-                <div class="field">
-                  <label for="tls-key">私钥文件路径</label>
-                  <input id="tls-key" v-model="streamState.tlsKeyFile" class="input mono" />
-                  <p class="field__help">路径必须位于 Agent 受控目录；不接受任意路径注入。</p>
+                <div class="space-y-1.5">
+                  <Label for="tls-key">私钥文件路径</Label>
+                  <Input id="tls-key" v-model="streamState.tlsKeyFile" class="font-mono" />
+                  <p class="text-xs text-muted-foreground">路径必须位于 Agent 受控目录；不接受任意路径注入。</p>
                 </div>
               </div>
             </template>
 
             <template v-if="streamState.security === 'reality'">
-              <div class="section-title">REALITY</div>
-              <div class="grid grid--form">
-                <div class="field">
-                  <label for="reality-dest">回落目标</label>
-                  <input id="reality-dest" v-model="streamState.realityDest" class="input mono" :class="{ 'input--error': errorFor('reality-dest') }" placeholder="回落目标，如 example.com:443" />
-                  <p v-if="errorFor('reality-dest')" class="field__error">{{ errorFor('reality-dest') }}</p>
+              <div class="flex items-center gap-3">
+                <span class="text-sm font-medium">REALITY</span>
+                <Separator class="flex-1" />
+              </div>
+              <div class="grid gap-4 sm:grid-cols-2">
+                <div class="space-y-1.5">
+                  <Label for="reality-dest">回落目标</Label>
+                  <Input
+                    id="reality-dest"
+                    v-model="streamState.realityDest"
+                    class="font-mono"
+                    placeholder="回落目标，如 example.com:443"
+                    :aria-invalid="Boolean(errorFor('reality-dest'))"
+                    :class="errorFor('reality-dest') ? 'border-destructive focus-visible:ring-destructive' : ''"
+                  />
+                  <p v-if="errorFor('reality-dest')" class="text-xs text-destructive">{{ errorFor('reality-dest') }}</p>
                 </div>
-                <div class="field">
-                  <label for="reality-server-names">允许的域名</label>
-                  <input id="reality-server-names" v-model="streamState.realityServerNames" class="input mono" :class="{ 'input--error': errorFor('reality-server-names') }" placeholder="逗号分隔" />
-                  <p v-if="errorFor('reality-server-names')" class="field__error">{{ errorFor('reality-server-names') }}</p>
+                <div class="space-y-1.5">
+                  <Label for="reality-server-names">允许的域名</Label>
+                  <Input
+                    id="reality-server-names"
+                    v-model="streamState.realityServerNames"
+                    class="font-mono"
+                    placeholder="逗号分隔"
+                    :aria-invalid="Boolean(errorFor('reality-server-names'))"
+                    :class="errorFor('reality-server-names') ? 'border-destructive focus-visible:ring-destructive' : ''"
+                  />
+                  <p v-if="errorFor('reality-server-names')" class="text-xs text-destructive">{{ errorFor('reality-server-names') }}</p>
                 </div>
-                <div class="field">
-                  <label for="reality-private-key">REALITY 私钥</label>
-                  <div class="row">
-                    <input id="reality-private-key" v-model="streamState.realityPrivateKey" class="input mono" :class="{ 'input--error': errorFor('reality-private-key') }" type="password" autocomplete="off" />
-                    <p v-if="errorFor('reality-private-key')" class="field__error">{{ errorFor('reality-private-key') }}</p>
-                    <button type="button" class="btn btn--sm" @click="generateRealityKeys">生成一对</button>
+                <div class="space-y-1.5 sm:col-span-2">
+                  <Label for="reality-private-key">REALITY 私钥</Label>
+                  <div class="flex items-start gap-2">
+                    <div class="flex-1 space-y-1.5">
+                      <Input
+                        id="reality-private-key"
+                        v-model="streamState.realityPrivateKey"
+                        class="font-mono"
+                        type="password"
+                        autocomplete="off"
+                        :aria-invalid="Boolean(errorFor('reality-private-key'))"
+                        :class="errorFor('reality-private-key') ? 'border-destructive focus-visible:ring-destructive' : ''"
+                      />
+                      <p v-if="errorFor('reality-private-key')" class="text-xs text-destructive">{{ errorFor('reality-private-key') }}</p>
+                    </div>
+                    <Button type="button" variant="outline" size="sm" @click="generateRealityKeys">生成一对</Button>
                   </div>
-                  <p class="field__help">
+                  <p class="text-xs text-muted-foreground">
                     只有面板和节点自己知道，成员看不到。点「生成一对」会自动填好私钥和公钥。
                   </p>
                 </div>
-                <div class="field">
-                  <label for="reality-short-ids">短 ID 列表</label>
-                  <div class="row">
-                    <input id="reality-short-ids" v-model="streamState.realityShortIds" class="input mono" placeholder="逗号分隔，十六进制" />
-                    <button type="button" class="btn btn--sm" @click="streamState.realityShortIds = newShortId(8)">生成</button>
+                <div class="space-y-1.5 sm:col-span-2">
+                  <Label for="reality-short-ids">短 ID 列表</Label>
+                  <div class="flex items-start gap-2">
+                    <div class="flex-1 space-y-1.5">
+                      <Input
+                        id="reality-short-ids"
+                        v-model="streamState.realityShortIds"
+                        class="font-mono"
+                        placeholder="逗号分隔，十六进制"
+                        :aria-invalid="Boolean(errorFor('reality-short-ids'))"
+                        :class="errorFor('reality-short-ids') ? 'border-destructive focus-visible:ring-destructive' : ''"
+                      />
+                      <p v-if="errorFor('reality-short-ids')" class="text-xs text-destructive">{{ errorFor('reality-short-ids') }}</p>
+                    </div>
+                    <Button type="button" variant="outline" size="sm" @click="streamState.realityShortIds = newShortId(8)">生成</Button>
                   </div>
-                  <p class="field__help">一串十六进制，用来区分同时使用同一域名的不同节点。留空也可以工作。</p>
+                  <p class="text-xs text-muted-foreground">一串十六进制，用来区分同时使用同一域名的不同节点。留空也可以工作。</p>
                 </div>
-                <div class="field">
-                  <label for="reality-public-key">REALITY 公钥</label>
-                  <input id="reality-public-key" v-model="streamState.realityPublicKey" class="input mono" />
-                  <p class="field__help">由私钥推出，会写进成员的客户端配置。点上面的「生成一对」会一起填好。</p>
+                <div class="space-y-1.5">
+                  <Label for="reality-public-key">REALITY 公钥</Label>
+                  <Input id="reality-public-key" v-model="streamState.realityPublicKey" class="font-mono" />
+                  <p class="text-xs text-muted-foreground">由私钥推出，会写进成员的客户端配置。点上面的「生成一对」会一起填好。</p>
                 </div>
-                <div class="field">
-                  <label for="reality-fingerprint">指纹</label>
-                  <input id="reality-fingerprint" v-model="streamState.realityFingerprint" class="input mono" placeholder="chrome" />
+                <div class="space-y-1.5">
+                  <Label for="reality-fingerprint">指纹</Label>
+                  <Input id="reality-fingerprint" v-model="streamState.realityFingerprint" class="font-mono" placeholder="chrome" />
                 </div>
-                <div class="field">
-                  <label for="reality-spider">爬虫路径</label>
-                  <input id="reality-spider" v-model="streamState.realitySpiderX" class="input mono" />
+                <div class="space-y-1.5">
+                  <Label for="reality-spider">爬虫路径</Label>
+                  <Input id="reality-spider" v-model="streamState.realitySpiderX" class="font-mono" />
                 </div>
               </div>
             </template>
 
-            <div class="row">
-              <button v-if="streamState.security !== 'tls'" type="button" class="btn btn--sm" @click="clearBlock('tls')">移除 tlsSettings 块</button>
-              <button v-if="streamState.security !== 'reality'" type="button" class="btn btn--sm" @click="clearBlock('reality')">移除 realitySettings 块</button>
-              <span class="text-xs text-muted">切换 security 不会删除另一分支的配置；需要清理时请显式点击。</span>
+            <div class="flex flex-wrap items-center gap-2">
+              <Button v-if="streamState.security !== 'tls'" type="button" variant="outline" size="sm" @click="clearBlock('tls')">
+                移除 tlsSettings 块
+              </Button>
+              <Button v-if="streamState.security !== 'reality'" type="button" variant="outline" size="sm" @click="clearBlock('reality')">
+                移除 realitySettings 块
+              </Button>
+              <span class="text-xs text-muted-foreground">切换 security 不会删除另一分支的配置；需要清理时请显式点击。</span>
             </div>
 
-            <div v-if="preservedStream.length" class="banner banner--info">
-              以下 stream_settings 键不在结构化表单中，将原样保留：<span class="mono">{{ preservedStream.join(', ') }}</span>
-            </div>
-          </div>
-        </section>
+            <p v-if="preservedStream.length" class="rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
+              以下 stream_settings 键不在结构化表单中，将原样保留：<span class="font-mono">{{ preservedStream.join(', ') }}</span>
+            </p>
+          </CardContent>
+        </Card>
 
-        <section class="card">
-          <div class="card__header"><h2>客户端参数（client_settings）</h2></div>
-          <div class="card__body stack">
-            <p class="text-sm text-muted">面向成员客户端的非秘密参数；服务端私钥一律不写入此处。</p>
-            <div class="grid grid--form">
-              <div class="field">
-                <label for="client-sni">域名</label>
-                <input id="client-sni" v-model="clientState.serverName" class="input mono" />
+        <Card>
+          <CardHeader>
+            <CardTitle class="text-base">客户端参数（client_settings）</CardTitle>
+          </CardHeader>
+          <CardContent class="space-y-4">
+            <p class="text-sm text-muted-foreground">面向成员客户端的非秘密参数；服务端私钥一律不写入此处。</p>
+            <div class="grid gap-4 sm:grid-cols-2">
+              <div class="space-y-1.5">
+                <Label for="client-sni">域名</Label>
+                <Input id="client-sni" v-model="clientState.serverName" class="font-mono" />
               </div>
-              <div class="field">
-                <label for="client-public-key">公钥</label>
-                <input id="client-public-key" v-model="clientState.publicKey" class="input mono" />
+              <div class="space-y-1.5">
+                <Label for="client-public-key">公钥</Label>
+                <Input
+                  id="client-public-key"
+                  v-model="clientState.publicKey"
+                  class="font-mono"
+                  :aria-invalid="Boolean(errorFor('client-public-key'))"
+                  :class="errorFor('client-public-key') ? 'border-destructive focus-visible:ring-destructive' : ''"
+                />
+                <p v-if="errorFor('client-public-key')" class="text-xs text-destructive">{{ errorFor('client-public-key') }}</p>
               </div>
-              <div class="field">
-                <label for="client-short-id">短 ID</label>
-                <input id="client-short-id" v-model="clientState.shortId" class="input mono" />
+              <div class="space-y-1.5">
+                <Label for="client-short-id">短 ID</Label>
+                <Input id="client-short-id" v-model="clientState.shortId" class="font-mono" />
               </div>
-              <div class="field">
-                <label for="client-fingerprint">指纹</label>
-                <input id="client-fingerprint" v-model="clientState.fingerprint" class="input mono" />
+              <div class="space-y-1.5">
+                <Label for="client-fingerprint">指纹</Label>
+                <Input id="client-fingerprint" v-model="clientState.fingerprint" class="font-mono" />
               </div>
-              <div class="field">
-                <label for="client-alpn">协商协议</label>
-                <input id="client-alpn" v-model="clientState.alpn" class="input mono" placeholder="h2, http/1.1" />
+              <div class="space-y-1.5">
+                <Label for="client-alpn">协商协议</Label>
+                <Input id="client-alpn" v-model="clientState.alpn" class="font-mono" placeholder="h2, http/1.1" />
               </div>
-              <div class="field">
-                <label for="client-insecure">跳过证书校验</label>
-                <select id="client-insecure" v-model="clientState.allowInsecure" class="select">
+              <div class="space-y-1.5">
+                <Label for="client-insecure">跳过证书校验</Label>
+                <select
+                  id="client-insecure"
+                  v-model="clientState.allowInsecure"
+                  class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
                   <option value="">不设置</option>
                   <option value="false">false（推荐）</option>
                   <option value="true">true</option>
                 </select>
               </div>
             </div>
-            <div v-if="preservedClient.length" class="banner banner--info">
-              以下 client_settings 键将原样保留：<span class="mono">{{ preservedClient.join(', ') }}</span>
-            </div>
-          </div>
-        </section>
-
-        <section class="card">
-          <div class="card__header"><h2>服务端密钥</h2></div>
-          <div class="card__body stack">
-            <p v-if="isEdit" class="text-xs text-muted">
-              服务端已保存节点级秘密：<strong>{{ node?.server_key_set ? '是' : '否/未提供' }}</strong>（明文永不返回）
+            <p v-if="preservedClient.length" class="rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
+              以下 client_settings 键将原样保留：<span class="font-mono">{{ preservedClient.join(', ') }}</span>
             </p>
-            <div class="field">
-              <label for="node-server-key">服务端密钥</label>
-              <input id="node-server-key" v-model="draft.server_key" class="input mono" type="password" autocomplete="off" />
-              <p class="field__help">节点级秘密（如 REALITY 私钥或 SS 主密钥）；不写入成员配置，页面与日志脱敏。</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle class="text-base">服务端密钥</CardTitle>
+          </CardHeader>
+          <CardContent class="space-y-4">
+            <p v-if="isEdit" class="text-xs text-muted-foreground">
+              服务端已保存节点级秘密：<strong class="text-foreground">{{ node?.server_key_set ? '是' : '否/未提供' }}</strong>（明文永不返回）
+            </p>
+            <div class="space-y-1.5">
+              <Label for="node-server-key">服务端密钥</Label>
+              <Input id="node-server-key" v-model="draft.server_key" class="font-mono" type="password" autocomplete="off" />
+              <p class="text-xs text-muted-foreground">节点级秘密（如 REALITY 私钥或 SS 主密钥）；不写入成员配置，页面与日志脱敏。</p>
             </div>
-            <label v-if="isEdit" class="checkbox">
-              <input v-model="keepServerKey" type="checkbox" />
-              保持服务端现有密钥不变（不提交 server_key，避免误覆盖）
-            </label>
-          </div>
-        </section>
+            <div v-if="isEdit" class="flex items-start gap-2">
+              <Checkbox
+                id="keep-server-key"
+                class="mt-0.5"
+                :model-value="keepServerKey"
+                @update:model-value="(value) => (keepServerKey = value === true)"
+              />
+              <Label for="keep-server-key" class="font-normal leading-snug">
+                保持服务端现有密钥不变（不提交 server_key，避免误覆盖）
+              </Label>
+            </div>
+          </CardContent>
+        </Card>
       </template>
 
       <template v-else>
-        <section class="card">
-          <div class="card__header"><h2>原生 JSON 编辑</h2></div>
-          <div class="card__body stack">
-            <p class="banner banner--info">
-              完整提交三个对象：stream_settings / protocol_settings / client_settings。JSON 解析失败时禁止保存，避免静默丢参数。
-              clients 由后端注入，保存时会被移除。
-            </p>
-            <JsonEditor
-              :model-value="draft.stream_settings"
-              label="stream_settings"
-              hint="Xray 原生 streamSettings：network / security / tlsSettings / realitySettings / sockopt 等。"
-              @update:model-value="updateStreamJson"
-              @update:error="jsonErrors.stream = $event"
-            />
-            <p v-if="jsonErrors.stream" class="text-xs" style="color: var(--danger)">stream_settings 未通过解析，保存被阻止。</p>
-            <JsonEditor
-              :model-value="draft.protocol_settings"
-              label="protocol_settings"
-              hint="入站 settings 中除 clients 外的字段；未知结构必须由后端校验，不能静默丢弃。"
-              @update:model-value="updateProtocolJson"
-              @update:error="jsonErrors.protocol = $event"
-            />
-            <p v-if="jsonErrors.protocol" class="text-xs" style="color: var(--danger)">protocol_settings 未通过解析，保存被阻止。</p>
-            <JsonEditor
-              :model-value="draft.client_settings"
-              label="client_settings"
-              hint="面向客户端的非秘密参数；不同客户端能力不同，无法表示的组合由服务端明确报错。"
-              @update:model-value="updateClientJson"
-              @update:error="jsonErrors.client = $event"
-            />
-            <p v-if="jsonErrors.client" class="text-xs" style="color: var(--danger)">client_settings 未通过解析，保存被阻止。</p>
-          </div>
-        </section>
+        <Card>
+          <CardHeader>
+            <CardTitle class="text-base">原生 JSON 编辑</CardTitle>
+          </CardHeader>
+          <CardContent class="space-y-4">
+            <Alert>
+              <AlertDescription>
+                完整提交三个对象：stream_settings / protocol_settings / client_settings。JSON 解析失败时禁止保存，避免静默丢参数。
+                clients 由后端注入，保存时会被移除。
+              </AlertDescription>
+            </Alert>
+            <div class="space-y-1.5">
+              <JsonEditor
+                :model-value="draft.stream_settings"
+                label="stream_settings"
+                hint="Xray 原生 streamSettings：network / security / tlsSettings / realitySettings / sockopt 等。"
+                @update:model-value="updateStreamJson"
+                @update:error="jsonErrors.stream = $event"
+              />
+              <p v-if="jsonErrors.stream" class="text-xs text-destructive">stream_settings 未通过解析，保存被阻止。</p>
+            </div>
+            <div class="space-y-1.5">
+              <JsonEditor
+                :model-value="draft.protocol_settings"
+                label="protocol_settings"
+                hint="入站 settings 中除 clients 外的字段；未知结构必须由后端校验，不能静默丢弃。"
+                @update:model-value="updateProtocolJson"
+                @update:error="jsonErrors.protocol = $event"
+              />
+              <p v-if="jsonErrors.protocol" class="text-xs text-destructive">protocol_settings 未通过解析，保存被阻止。</p>
+            </div>
+            <div class="space-y-1.5">
+              <JsonEditor
+                :model-value="draft.client_settings"
+                label="client_settings"
+                hint="面向客户端的非秘密参数；不同客户端能力不同，无法表示的组合由服务端明确报错。"
+                @update:model-value="updateClientJson"
+                @update:error="jsonErrors.client = $event"
+              />
+              <p v-if="jsonErrors.client" class="text-xs text-destructive">client_settings 未通过解析，保存被阻止。</p>
+            </div>
+          </CardContent>
+        </Card>
       </template>
 
-      <section v-if="validation.errors.length || validation.warnings.length" class="card">
-        <div class="card__header"><h2>校验结果</h2></div>
-        <div class="card__body stack">
-          <div v-if="validation.errors.length" class="banner banner--danger">
-            <div>
-              <div class="banner__title">阻止保存</div>
-              <ul>
+      <Card v-if="validation.errors.length || validation.warnings.length">
+        <CardHeader>
+          <CardTitle class="text-base">校验结果</CardTitle>
+        </CardHeader>
+        <CardContent class="space-y-3">
+          <Alert v-if="validation.errors.length" variant="destructive">
+            <AlertTitle>阻止保存</AlertTitle>
+            <AlertDescription>
+              <ul class="list-disc space-y-1 pl-4">
                 <li v-for="error in validation.errors" :key="error">{{ error }}</li>
               </ul>
-            </div>
-          </div>
-          <div v-if="validation.warnings.length" class="banner banner--warn">
-            <div>
-              <div class="banner__title">保存前请确认</div>
-              <ul>
+            </AlertDescription>
+          </Alert>
+          <Alert v-if="validation.warnings.length">
+            <AlertTitle>保存前请确认</AlertTitle>
+            <AlertDescription>
+              <ul class="list-disc space-y-1 pl-4">
                 <li v-for="warning in validation.warnings" :key="warning">{{ warning }}</li>
               </ul>
-            </div>
-          </div>
-        </div>
-      </section>
+            </AlertDescription>
+          </Alert>
+        </CardContent>
+      </Card>
     </div>
   </div>
 </template>

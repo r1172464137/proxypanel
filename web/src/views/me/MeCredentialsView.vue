@@ -11,6 +11,12 @@ import LoadingBlock from '@/components/LoadingBlock.vue'
 import CopyField from '@/components/CopyField.vue'
 import QrPanel from '@/components/QrPanel.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Label } from '@/components/ui/label'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 const subscription = useResource<MeSubscription>(() => meApi.subscription())
 const nodes = useResource<MeNode[]>(async () => (await meApi.nodes()).items)
@@ -90,75 +96,79 @@ async function rotateCredentials(): Promise<void> {
 </script>
 
 <template>
-  <div>
+  <div class="space-y-6">
     <PageHeader title="我的凭据" description="两样东西：一个是订阅链接，一个是每个节点各自的密码。下面分别说明用途和泄露后果。">
-      <button type="button" class="btn" :disabled="subscription.loading.value" @click="subscription.reload()">刷新</button>
+      <Button variant="outline" :disabled="subscription.loading.value" @click="subscription.reload()">刷新</Button>
     </PageHeader>
 
-    <div class="stack">
+    <div class="space-y-6">
       <LoadingBlock v-if="subscription.loading.value && !subscription.data.value" label="正在读取凭据" />
       <ErrorState v-else-if="subscription.error.value" :error="subscription.error.value" @retry="subscription.reload()" />
       <template v-else-if="subscription.data.value">
-        <section class="card">
-          <div class="card__header">
-            <h2>订阅链接</h2>
-            <div class="card__header-actions">
-              <button type="button" class="btn btn--sm" @click="openToken">换一个链接</button>
-            </div>
-          </div>
-          <div class="card__body">
-            <p class="text-sm">
+        <Card>
+          <CardHeader class="flex-row items-center justify-between space-y-0">
+            <CardTitle class="text-base font-semibold">订阅链接</CardTitle>
+            <Button variant="outline" size="sm" @click="openToken">换一个链接</Button>
+          </CardHeader>
+          <CardContent class="space-y-2 pt-2">
+            <p class="text-sm leading-relaxed">
               这是一个网址。把它粘进客户端（v2rayN / sing-box / Mihomo 等），客户端就会自动拿到你的所有节点。
             </p>
-            <p class="text-sm text-muted">
-              换掉之后旧网址失效，但<strong>已经导入客户端的配置照常能用</strong>，正在使用的连接也不会断。
+            <p class="text-sm leading-relaxed text-muted-foreground">
+              换掉之后旧网址失效，但<strong class="font-medium text-foreground">已经导入客户端的配置照常能用</strong>，正在使用的连接也不会断。
               只在怀疑链接被别人拿到时才需要换。
             </p>
-          </div>
-          <div class="card__body grid grid--2">
-            <div class="stack">
-              <CopyField :value="currentUrl" label="订阅链接" mask warning="这个链接等同于密码，别转发给别人。" />
-            </div>
+          </CardContent>
+          <CardContent class="grid gap-6 pt-4 lg:grid-cols-2">
+            <CopyField :value="currentUrl" label="订阅链接" mask warning="这个链接等同于密码，别转发给别人。" />
             <QrPanel :value="currentUrl" />
-          </div>
-        </section>
+          </CardContent>
+        </Card>
 
-        <section class="card">
-          <div class="card__header">
-            <h2>节点密码</h2>
-            <div class="card__header-actions">
-              <button type="button" class="btn btn--sm btn--danger" @click="openCred">全部换掉</button>
-            </div>
-          </div>
-          <div class="card__body">
-            <p class="text-sm">
+        <Card>
+          <CardHeader class="flex-row items-center justify-between space-y-0">
+            <CardTitle class="text-base font-semibold">节点密码</CardTitle>
+            <Button variant="destructive" size="sm" @click="openCred">全部换掉</Button>
+          </CardHeader>
+          <CardContent class="space-y-2 pt-2">
+            <p class="text-sm leading-relaxed">
               每个节点各有一份密码（通常是 UUID），由面板自动生成并随订阅链接下发，所以这里不显示明文。
             </p>
-            <p class="text-sm text-muted">
-              <strong>换掉之后所有设备立刻断开</strong>，已导入的客户端全部失效，必须重新拉取订阅并重新导入才能恢复。
+            <p class="text-sm leading-relaxed text-muted-foreground">
+              <strong class="font-medium text-destructive">换掉之后所有设备立刻断开</strong>，已导入的客户端全部失效，必须重新拉取订阅并重新导入才能恢复。
               只在确认密码被别人拿去用、或者要踢掉某台设备时才用。
             </p>
-          </div>
-        </section>
+          </CardContent>
+        </Card>
 
-        <section class="card">
-          <div class="card__header"><h2>授权节点</h2></div>
-          <LoadingBlock v-if="nodes.loading.value && !nodes.data.value" :rows="2" label="正在读取节点" />
-          <ErrorState v-else-if="nodes.error.value" :error="nodes.error.value" @retry="nodes.reload()" />
-          <div v-else-if="!nodes.data.value?.length" class="state-block"><p>当前没有授权节点。</p></div>
-          <div v-else class="table-wrap">
-            <table class="table">
-              <thead><tr><th>节点</th><th>协议</th><th>地址</th></tr></thead>
-              <tbody>
-                <tr v-for="(node, index) in nodes.data.value" :key="node.id ?? node.node_id ?? index">
-                  <td>{{ node.name ?? node.node_id ?? '—' }}</td>
-                  <td class="mono">{{ node.protocol ?? '—' }}</td>
-                  <td class="mono">{{ node.host ?? '—' }}<template v-if="node.port">:{{ node.port }}</template></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
+        <Card>
+          <CardHeader class="border-b">
+            <CardTitle class="text-base font-semibold">授权节点</CardTitle>
+          </CardHeader>
+          <CardContent class="pt-4">
+            <LoadingBlock v-if="nodes.loading.value && !nodes.data.value" :rows="2" label="正在读取节点" />
+            <ErrorState v-else-if="nodes.error.value" :error="nodes.error.value" @retry="nodes.reload()" />
+            <p v-else-if="!nodes.data.value?.length" class="text-sm text-muted-foreground">当前没有授权节点。</p>
+            <Table v-else>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>节点</TableHead>
+                  <TableHead>协议</TableHead>
+                  <TableHead>地址</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow v-for="(node, index) in nodes.data.value" :key="node.id ?? node.node_id ?? index">
+                  <TableCell>{{ node.name ?? node.node_id ?? '—' }}</TableCell>
+                  <TableCell class="mono">{{ node.protocol ?? '—' }}</TableCell>
+                  <TableCell class="mono">
+                    {{ node.host ?? '—' }}<template v-if="node.port">:{{ node.port }}</template>
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       </template>
     </div>
 
@@ -173,8 +183,8 @@ async function rotateCredentials(): Promise<void> {
       @confirm="rotateToken"
     >
       <p>旧订阅链接会立即失效，需要更新客户端导入链接。</p>
-      <p class="text-sm">代理凭据不变，现有连接不会中断。</p>
-      <div v-if="rotated" class="stack">
+      <p class="text-sm text-muted-foreground">代理凭据不变，现有连接不会中断。</p>
+      <div v-if="rotated" class="space-y-3">
         <CopyField :value="rotated.url" label="新订阅链接" mask />
         <CopyField :value="rotated.token" label="新令牌" mask />
       </div>
@@ -191,15 +201,37 @@ async function rotateCredentials(): Promise<void> {
       @confirm="rotateCredentials"
     >
       <p>旧凭据按硬撤权策略立即失效，受影响节点上的连接会中断，需要重新导入订阅。</p>
-      <label class="checkbox"><input v-model="scope" type="radio" value="all_nodes" /> 全部节点</label>
-      <label class="checkbox"><input v-model="scope" type="radio" value="single_node" /> 单个节点</label>
-      <select v-if="scope === 'single_node'" v-model="nodeId" class="select">
-        <option value="">选择节点</option>
-        <option v-for="(node, index) in nodes.data.value ?? []" :key="node.id ?? node.node_id ?? index" :value="node.id ?? node.node_id">
-          {{ node.name ?? node.id ?? node.node_id }}
-        </option>
-      </select>
-      <p v-if="credDone" class="banner banner--info">轮换已提交；生效以节点回执为准。</p>
+
+      <RadioGroup v-model="scope" class="gap-2">
+        <div class="flex items-center gap-2">
+          <RadioGroupItem id="cred-scope-all" value="all_nodes" />
+          <Label for="cred-scope-all" class="font-normal">全部节点</Label>
+        </div>
+        <div class="flex items-center gap-2">
+          <RadioGroupItem id="cred-scope-single" value="single_node" />
+          <Label for="cred-scope-single" class="font-normal">单个节点</Label>
+        </div>
+      </RadioGroup>
+
+      <div v-if="scope === 'single_node'" class="grid gap-2">
+        <Label for="cred-node">节点</Label>
+        <!-- 这里刻意保留原生 select：选项值是后端节点 id（可能缺省），
+             需要一个空值占位项「选择节点」，reka 的 SelectItem 不接受空字符串值。 -->
+        <select
+          id="cred-node"
+          v-model="nodeId"
+          class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          <option value="">选择节点</option>
+          <option v-for="(node, index) in nodes.data.value ?? []" :key="node.id ?? node.node_id ?? index" :value="node.id ?? node.node_id">
+            {{ node.name ?? node.id ?? node.node_id }}
+          </option>
+        </select>
+      </div>
+
+      <Alert v-if="credDone" class="border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-900 dark:bg-sky-950/50 dark:text-sky-200">
+        <AlertDescription>轮换已提交；生效以节点回执为准。</AlertDescription>
+      </Alert>
     </ConfirmDialog>
   </div>
 </template>

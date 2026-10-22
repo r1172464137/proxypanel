@@ -7,6 +7,8 @@ import NotFoundView from './NotFoundView.vue'
 // 时，无法区分"功能还没实现"和"页面坏了"；而"返回首页"指向 "/" 会再重定向一次，
 // 观感像点了没反应。这里锁定：显示实际请求路径、按路径前缀区分两种文案、
 // 首页链接直接给目标路由、无站内历史时"返回上一页"退化成回首页。
+//
+// 断言全部走语义查询（可访问名 / 可见文案 / href），不断言自造 CSS 类名。
 
 const routerPush = vi.fn(async () => undefined)
 const routerBack = vi.fn()
@@ -25,11 +27,18 @@ vi.mock('@/stores/session', () => ({
 
 const stubs = {
   RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
-  AppIcon: { template: '<svg class="app-icon" />' },
 }
 
 function mountView() {
   return mount(NotFoundView, { global: { stubs } })
+}
+
+function links(wrapper: ReturnType<typeof mount>): string[] {
+  return wrapper.findAll('a').map((link) => link.attributes('href') ?? '')
+}
+
+function buttonByText(wrapper: ReturnType<typeof mount>, text: string) {
+  return wrapper.findAll('button').find((button) => button.text().includes(text))
 }
 
 describe('NotFoundView', () => {
@@ -49,26 +58,26 @@ describe('NotFoundView', () => {
   it('/admin 与 /me 下的未知路径提示"功能可能尚未开放"', () => {
     state.fullPath = '/admin/templates'
     let wrapper = mountView()
-    expect(wrapper.text()).toContain('该功能可能尚未开放')
+    expect(wrapper.find('h1').text()).toBe('该功能可能尚未开放')
     wrapper.unmount()
 
     state.fullPath = '/me/whatever'
     wrapper = mountView()
-    expect(wrapper.text()).toContain('该功能可能尚未开放')
+    expect(wrapper.find('h1').text()).toBe('该功能可能尚未开放')
     wrapper.unmount()
   })
 
   it('其它路径提示"该地址不存在"', () => {
     state.fullPath = '/typo-path'
     const wrapper = mountView()
-    expect(wrapper.text()).toContain('该地址不存在')
+    expect(wrapper.find('h1').text()).toBe('该地址不存在')
     wrapper.unmount()
   })
 
   it('返回首页直接给目标路由而不是 /', () => {
     state.fullPath = '/admin/templates'
     const wrapper = mountView()
-    const hrefs = wrapper.findAll('a').map((a) => a.attributes('href'))
+    const hrefs = links(wrapper)
     expect(hrefs).toContain('/admin/overview')
     // "/" 会再重定向一次，正是要避免的那个死循环观感
     expect(hrefs).not.toContain('/')
@@ -79,8 +88,8 @@ describe('NotFoundView', () => {
     state.fullPath = '/admin/templates'
     window.history.replaceState({ back: null }, '')
     const wrapper = mountView()
-    const backBtn = wrapper.findAll('button').find((b) => b.text().includes('返回上一页'))
-    expect(backBtn).toBeTruthy()
+    const backBtn = buttonByText(wrapper, '返回上一页')
+    expect(backBtn).toBeDefined()
     await backBtn!.trigger('click')
     await nextTick()
     expect(routerBack).not.toHaveBeenCalled()
@@ -92,7 +101,8 @@ describe('NotFoundView', () => {
     state.fullPath = '/admin/templates'
     window.history.replaceState({ back: '/admin/settings' }, '')
     const wrapper = mountView()
-    const backBtn = wrapper.findAll('button').find((b) => b.text().includes('返回上一页'))
+    const backBtn = buttonByText(wrapper, '返回上一页')
+    expect(backBtn).toBeDefined()
     await backBtn!.trigger('click')
     await nextTick()
     expect(routerBack).toHaveBeenCalled()
