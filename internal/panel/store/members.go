@@ -223,6 +223,9 @@ func (s *Store) UpdateMember(ctx context.Context, id string, expectedVersion int
 		if err := fn(cur); err != nil {
 			return err
 		}
+		if err := archivedGuard("member", before.Archived, cur.Archived); err != nil {
+			return err
+		}
 		if err := protectLastAdminTx(ctx, tx, &before, cur); err != nil {
 			return err
 		}

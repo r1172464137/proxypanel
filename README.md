@@ -1,68 +1,130 @@
-# Proxypanel
+# proxypanel
 
-私人朋友合租使用的代理管理平台：**Go 面板 + PostgreSQL + Redis + Vue 3/TypeScript + 自研 Go Agent + 独立官方 Xray 进程**。没有支付、订单、返利等商业系统。
+小圈子自用的代理管理面板：**Go 面板 + PostgreSQL + Redis + Vue 3 + 自研 Go Agent + 官方 Xray**。
+没有支付、订单、返利、邀请分佣这类商业系统 —— 就是给几个熟人分流量、发订阅、随时能撤权。
+
+> 私人项目，自用 + 少量朋友。不是商业机场系统，不提供服务承诺。
+
+## 它解决什么
+
+自己搭了节点给朋友用，手动发配置迟早出事：谁还剩多少流量、谁该断了、给了哪些节点、
+某个人是不是该踢了。这套东西就是把「谁能用哪个节点、用了多少、什么时候失效」
+变成面板上能看见、能一键改的状态，并且**撤权是真的立刻生效**，不是等下次重连。
 
 ## 能力
 
-- 管理员/成员角色、邀请、Cookie 会话与 CSRF、成员独立订阅令牌和 member×node 代理凭据。
-- 可复用订阅规则、节点组、连续继承与成员覆盖、批量预览/确认/幂等提交。
-- Agent 完整快照、配置校验、逐节点核心实例、硬撤权、离线到期、可靠计量队列和幂等账本。
-- 管理员运维页面、成员订阅/用量/凭据/账号页面；Xray、sing-box、Mihomo、v2rayN 输出。
-- 告警状态/恢复、持久通知 outbox、受限保留清理、恢复协调与本地 generation 明确接受。
+- **成员与订阅** — 管理员/成员两种角色，成员有自己的订阅令牌，一个订阅可挂多个节点组。
+- **按节点授权的凭据** — 每个（成员 × 节点）一条独立凭据；改一条不影响其他人。
+- **批量变更** — 先出影响预览（谁会被改成什么），再确认提交，幂等键防重复提交。
+- **硬撤权** — 停用成员/改凭据会真的重启该节点核心实例，已在连的会话也断。
+- **流量计量** — Agent 上报用量，面板做归属；漏报会重试，账本幂等不会重复计。
+- **订阅格式** — 输出 Xray、sing-box、Mihomo、v2rayN 四种。
+- **恢复协调** — 从备份恢复后先冻结写入，核对完再显式解除，避免旧状态把已撤销的人放回来。
+- **对外端口分离** — 节点在本机监听 20101，成员去连中转机的 443；端口转发由你自己配。
 
-**状态：主体实现、集中审查定点修复、Windows 本地真实链路/浏览器回归、Docker 生命周期与隔离恢复演练、三平台发布两轮校验已完成；尚未达到完整生产验收标准。** A15 客户端矩阵真实 30 格通过但 v2rayN GUI 未验收（`#10` 未完全满足）；执行边界存在一次真实的 WSL 启动（`#12` 非完全符合）；Linux/systemd、公网直连、真实 Telegram 送达与生产 RPO/RTO 仍未验收。逐条状态见 [最终验收状态与 A01–A16 索引](docs/verification/final-acceptance.md)，证据见 [持久证据索引](docs/verification/evidence/README.md)。
+## 组件
 
-## 开发与检查
+| 组件 | 作用 |
+|---|---|
+| `cmd/panel` | 面板：HTTP API、订阅分发、授权计算、审计 |
+| `cmd/agent` | 部署在节点机上：拉快照、跑 Xray 实例、上报用量 |
+| `web/` | 面板前端（Vue 3 + TypeScript + Tailwind + shadcn-vue） |
+| PostgreSQL 17 | 全部业务数据（含会话、账本、审计）；迁移带 checksum + advisory lock |
+| Redis 7 | 只做登录限流计数。`REDIS_URL` 留空时自动退化为进程内有界计数 |
+| Xray | 官方原版，Agent 只做配置生成与进程管理，不改核心 |
 
-Windows PowerShell 7，工具与缓存按本项目约定放在 `E:\SDK`：
+Agent 精确接受 **Xray 26.3.27** 与 **26.3.23**（闭合白名单），不会自动下载或自动升级。
 
-```powershell
-$savedPanelBash = $env:PANEL_BASH                    # 保存原值，结束时恢复
-. .\scripts\Use-DevEnvironment.ps1
-$env:PANEL_BASH = 'E:\SDK\Git\bin\bash.exe'          # 只用 Git Bash；禁止 WSL / System32 bash 启动器
-go test ./... -count=1 -timeout 120s
+## 快速开始
+
+需要 Docker 与 Docker Compose。完整说明见 [快速开始](docs/getting-started/quickstart.md)。
+
+```bash
+git clone https://github.com/r1172464137/proxypanel.git
+cd proxypanel
+
+# 生成 master key：它加密数据库里的凭据，丢了就再也解不开
+export PANEL_MASTER_KEY="$(openssl rand -base64 32)"
+
+cp deploy/docker-compose.example.yml docker-compose.yml
+docker compose up -d
+```
+
+首次启动提供管理员账号，之后就不要再传密码变量：
+
+```bash
+PANEL_ADMIN_USER=admin PANEL_ADMIN_PASSWORD='换成你自己的强密码' docker compose up -d
+```
+
+打开 `http://<你的IP>:8080`，登录 → 建服务器 → 建节点 → 建节点组 → 建订阅 → 建成员 →
+在服务器页面生成一次性注册码 → 把 Agent 接上。
+
+## 部署方式
+
+- **Docker 单栈**（面板 + PostgreSQL + Redis + Agent 都在容器里）：[deployment/docker.md](docs/deployment/docker.md)
+- **面板与 Agent 分开部署**（面板在一台，节点在另一批机器上）：[deployment/split-panel-agent.md](docs/deployment/split-panel-agent.md)
+- **生产注意**（TLS、反向代理、权限、不要暴露的端口）：[deployment/production.md](docs/deployment/production.md)
+
+## 运维
+
+- 备份与恢复、控制代际协调：[operations/backup-recovery.md](docs/operations/backup-recovery.md)
+- 维护任务、保留清理、告警：[operations/maintenance.md](docs/operations/maintenance.md)
+
+## 开发
+
+本项目在 **WSL2 / Linux** 上开发和验证。命令都是 bash。
+
+```bash
+# 后端
+go build ./...
 go vet ./...
-Push-Location web
+go test ./... -count=1 -p 1
+
+# 前端
+cd web
 npm ci
-npm run typecheck
-npm run test
+npx vue-tsc --noEmit
+npm test
 npm run build
-Pop-Location
-.\scripts\Invoke-IntegrationTests.ps1
-if ($null -eq $savedPanelBash) { Remove-Item Env:PANEL_BASH -ErrorAction SilentlyContinue } else { $env:PANEL_BASH = $savedPanelBash }
 ```
 
-真实数据库测试要求本地受限连接配置，不能使用任意数据库；隧道和测试在同一脚本生命周期内结束。首次浏览器验收在 `web` 执行 `npx playwright install chromium`，再设 `$env:PANEL_BROWSER_TEST='1'` 运行集成脚本。缺少可选数据库环境时 Go 用例会 **SKIP**，不是“已通过数据库测试”。
-
-启动面板、Vite、Agent 的具体配置见 [部署与开发启动](docs/deployment.md)。不提供默认管理员密码，不自动提交真实凭据。Agent 核心固定 **Xray 26.3.27**，并接受 **26.3.23**（闭合白名单，两者均已在隔离 Docker 中完成真实切换与回退），升级须显式更改兼容白名单并回归。
-
-## 发布产物
-
-已生成 `build/windows-amd64/`、`build/linux-amd64/`、`build/linux-arm64/`，包含 panel/agent、前端、迁移、配置与部署示例及 `SHA256SUMS`；每平台 **72 个文件 / 71 条 SHA256**，两轮构建的清单逐字节一致。`build/` 中**确切的** Linux amd64/arm64 发布二进制只做交叉构建、清单与 ELF 架构校验，未在目标平台运行（arm64 架构整体未运行；**Linux amd64 平台的功能验收由 Docker 内 staged 构建完成，其哈希与发布目录不同**）。Windows 发布件的运行证据仅 `agent -version`；Windows 上的真实核心与浏览器功能证据来自本地验收，不由发布件承担。核心 Xray 须另行从官方获取。
-
-```powershell
-.\scripts\Build-Release.ps1
-.\scripts\Test-Release.ps1
-```
-
-发布校验检查完整文件清单、SHA256、源码资源一致性和 PE/ELF 架构。重复构建已验证；输出仅覆盖脚本标记的目录。哈希清单使用 UTF-8 无 BOM、LF，可供 `sha256sum --check --strict SHA256SUMS` 校验。哈希校验不等同于发布者签名或目标系统运行验收。
+真实数据库测试需要独立的 PostgreSQL/Redis（不能用别人的库），配置见
+[开发环境](docs/development/setup.md)。缺少这些环境时相关用例会 **SKIP**，
+不是「已经用真实数据库测过」。
 
 ## 文档
 
-- [冻结实现契约](docs/specs/implementation-contract.md)：接口、授权、快照与计量语义。
-- [主执行计划](.pi/plan/合租代理管理平台完整计划-订阅管理-go-面板与自研节点端-20261020-2138.md)：完整范围与 A01–A16 验收。
-- [环境与工具](docs/development.md)、[隔离测试数据库](docs/test-databases.md)。
-- [部署/升级/卸载](docs/deployment.md)、[备份恢复](docs/recovery.md)。
-- [历史集成记录](docs/verification/integration.md)、[基础真实核心](docs/verification/foundation.md)。
-- [Agent 实现与测试](docs/verification/agent-implementation.md)、[后端实现](docs/verification/backend-implementation.md)、[前端实现](docs/verification/frontend-implementation.md)、[运维后台](docs/verification/maintenance.md)。
-- [最终验收状态与 A01–A16 索引](docs/verification/final-acceptance.md)、[持久脱敏证据索引](docs/verification/evidence/README.md)。
-- [Docker 生命周期（A13）](docs/verification/docker-lifecycle.md)、[Docker 隔离恢复（A14）](docs/verification/docker-recovery.md)、[客户端矩阵（A15）](docs/verification/client-matrix.md)。
+完整索引见 [docs/README.md](docs/README.md)。常看的几篇：
 
-## 安全与操作边界
+| 我想…… | 看这篇 |
+|---|---|
+| 最快跑起来 | [getting-started/quickstart.md](docs/getting-started/quickstart.md) |
+| 搞懂它怎么工作 | [design/architecture.md](docs/design/architecture.md) |
+| 调 API | [reference/api.md](docs/reference/api.md) |
+| 出了事怎么救 | [operations/backup-recovery.md](docs/operations/backup-recovery.md) |
+| 本地开发 | [development/setup.md](docs/development/setup.md) |
 
-- PostgreSQL 为权威，Redis 故障不允许绕过鉴权或丢账；Agent 不直接连接 PG/Redis。
-- 新控制 generation 不自动信任；恢复旧备份须先隔离并核对授权/账本，不得靠清空 Agent 状态目录绕过协调。
-- 节点配置/成员撤权可能重启该节点核心并中断同节点其他会话；不是零中断热更新承诺。
-- 原始 SSH 私钥、`.local`、环境秘密、依赖和构建目录被 Git 忽略；不要把日志、订阅链接或二维码当作可公开测试附件。
-- `192.168.5.203` 的授权范围为**本项目独立 Docker 应用测试**（自有容器/网络/卷/镜像 tag，CPU/内存受限，端口只绑回环，跨机只经受保护 SSH 隧道访问）。禁止改动、重启或接管该主机原有业务容器/服务，也不把它当作 Linux/systemd、宿主重启或公网节点验收环境。
-- 本机测试固定使用 Git Bash（`PANEL_BASH=E:\SDK\Git\bin\bash.exe`），禁止 WSL 探测/启动/停止；一次脚本自测曾真实启动 WSL，属执行边界不符合项，见 [执行边界事件](docs/verification/execution-boundary-incident.md)。
+`docs/archive/` 是历史记录（验收快照、交接、事故复盘、旧计划），不再维护，只作为决策出处保留。
+
+## 安全须知
+
+- **`PANEL_MASTER_KEY` 一旦丢失，数据库里的代理凭据无法恢复**。请和数据库一起备份。
+- 面板默认只监听回环；对外一律走 HTTPS 反向代理，别把 Agent 的 Stats 端口暴露到公网。
+- 不提供默认管理员密码，仓库里不含任何真实密钥、数据库凭据或 Agent 状态。
+- 订阅令牌等同于访问凭据，泄露后请立刻在成员页面轮换。
+
+## 已知边界
+
+- 在 WSL2 上完成了完整的功能与真实链路验证（含真实 Docker 栈、真实 Xray、真实客户端流量）；
+  宿主 Linux + systemd 的安装/升级/回滚没有在目标生产机验收。
+- v2rayN 的图形界面导入未验收（其无官方非 GUI 导入接口）；已验收的是配置能够正确生成并被加载。
+- 公网直连、真实 Telegram 送达、多节点大规模 SLA 需要在你自己的环境里实测。
+
+## 许可证
+
+私人项目，未附许可证文件。要复用请先开 issue 说一声。
+
+## 致谢
+
+- [Xray-core](https://github.com/XTLS/Xray-core) — 代理核心，本项目不修改它
+- [shadcn-vue](https://github.com/unovue/shadcn-vue) / [Reka UI](https://github.com/unovue/reka-ui) — 前端组件基础

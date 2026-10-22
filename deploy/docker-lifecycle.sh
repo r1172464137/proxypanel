@@ -149,7 +149,7 @@ require_stage() {
       exit 50
     }
     grep -q "  $rs_file\$" "$stage/SHA256SUMS" || {
-      echo "Refusing: $stage/SHA256SUMS does not list $rs_file (regenerate the upload set with scripts/Prepare-DockerLifecycle.ps1)" >&2
+      echo "Refusing: $stage/SHA256SUMS does not list $rs_file (regenerate the upload set; the release packaging script lives outside this repo now)" >&2
       exit 50
     }
   done

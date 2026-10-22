@@ -80,6 +80,23 @@ func (s *Store) CreateServer(ctx context.Context, v *domain.Server) (*domain.Ser
 }
 
 // UpdateServer applies fn under a row lock and writes back with a version bump.
+// archivedGuard 拒绝修改已归档（软删）的对象。
+//
+// 软删语义下对象行仍然存在，所以按 id 读写都能命中；如果不拦，DELETE 之后
+// 的 PATCH 仍会成功（实测 200，notes 真的被改了），等于"删了还能改"。
+// 并发下更明显：DELETE 与 PATCH 同时发出时两个都返回 200。
+//
+// 唯一的例外是把 archived 改回 false（恢复）。目前 HTTP 面不暴露这个字段
+// （PATCH 收到 archived 会按未知字段 400 拒绝，归档是终态），所以这条例外
+// 是给 store 层的未来调用方留的；它由 TestArchivedObjectsAreNotUpdatable
+// 直接对 store 验证，确保将来加恢复入口时不会被这个守卫误挡。
+func archivedGuard(kind string, wasArchived, nowArchived bool) error {
+	if !wasArchived || !nowArchived {
+		return nil
+	}
+	return domain.NotFound("%s is deleted", kind)
+}
+
 func (s *Store) UpdateServer(ctx context.Context, id string, expectedVersion int64, fn func(*domain.Server) error) (*domain.Server, error) {
 	var out *domain.Server
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
@@ -90,7 +107,11 @@ func (s *Store) UpdateServer(ctx context.Context, id string, expectedVersion int
 		if expectedVersion != 0 && cur.Version != expectedVersion {
 			return domain.Conflict(domain.CodeConflict, "server was modified by another request")
 		}
+		wasArchived := cur.Archived
 		if err := fn(cur); err != nil {
+			return err
+		}
+		if err := archivedGuard("server", wasArchived, cur.Archived); err != nil {
 			return err
 		}
 		cur.Version++
@@ -532,7 +553,11 @@ func (s *Store) UpdateNode(ctx context.Context, id string, expectedVersion int64
 			return domain.Conflict(domain.CodeConflict, "node was modified by another request")
 		}
 		oldServerID := cur.ServerID
+		wasArchived := cur.Archived
 		if err := fn(cur); err != nil {
+			return err
+		}
+		if err := archivedGuard("node", wasArchived, cur.Archived); err != nil {
 			return err
 		}
 		cur.Version++
@@ -791,7 +816,11 @@ func (s *Store) UpdateSubscription(ctx context.Context, id string, expectedVersi
 			return domain.Conflict(domain.CodeConflict, "subscription was modified by another request")
 		}
 		oldAnchor, oldTZ := cur.AnchorDay, cur.Timezone
+		wasArchived := cur.Archived
 		if err := fn(cur); err != nil {
+			return err
+		}
+		if err := archivedGuard("subscription", wasArchived, cur.Archived); err != nil {
 			return err
 		}
 		cur.Version++
