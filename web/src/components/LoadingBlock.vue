@@ -1,10 +1,23 @@
 <script setup lang="ts">
-withDefaults(defineProps<{ rows?: number; label?: string }>(), { rows: 4, label: '加载中' })
+import { computed } from 'vue'
+import { Skeleton } from '@/components/ui/skeleton'
+
+const props = withDefaults(defineProps<{ rows?: number; label?: string }>(), {
+  rows: 3,
+  label: '加载中',
+})
+
+const count = computed(() => Math.max(1, Math.trunc(props.rows)))
 </script>
 
 <template>
-  <div class="stack" role="status" :aria-label="label">
-    <div v-for="row in rows" :key="row" class="skeleton" :style="{ height: '18px', width: `${92 - row * 7}%` }" />
-    <span class="text-xs text-faint">{{ label }}…</span>
+  <div role="status" class="space-y-3">
+    <span class="sr-only" aria-live="polite">{{ label }}</span>
+    <Skeleton
+      v-for="row in count"
+      :key="row"
+      class="h-4"
+      :style="{ width: `${92 - row * 7}%` }"
+    />
   </div>
 </template>

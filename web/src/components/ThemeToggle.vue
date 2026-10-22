@@ -1,17 +1,24 @@
 <script setup lang="ts">
-import { toggleTheme, themeState } from '@/stores/theme'
+import { computed } from 'vue'
+import { Button } from '@/components/ui/button'
 import AppIcon from './AppIcon.vue'
+import { toggleTheme, themeState } from '@/stores/theme'
+
+/** 无 props：主题状态与切换动作都来自 stores/theme。 */
+const isDark = computed(() => themeState.theme === 'dark')
+const hint = computed(() => (isDark.value ? '切换到浅色主题' : '切换到深色主题'))
 </script>
 
 <template>
-  <button
+  <Button
     type="button"
-    class="btn btn--ghost btn--sm"
-    :aria-label="themeState.theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'"
-    :title="themeState.theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'"
+    variant="ghost"
+    size="sm"
+    aria-label="切换主题"
+    :title="hint"
     @click="toggleTheme"
   >
-    <AppIcon :name="themeState.theme === 'dark' ? 'sun' : 'moon'" :size="15" />
-    <span class="hide-sm">{{ themeState.theme === 'dark' ? '深色' : '浅色' }}</span>
-  </button>
+    <AppIcon :name="isDark ? 'sun' : 'moon'" :size="16" />
+    <span class="hidden sm:inline">{{ isDark ? '深色' : '浅色' }}</span>
+  </Button>
 </template>

@@ -6,6 +6,7 @@
  * 品牌色：珊瑚橙只作为 --chart-1 与强调色，主按钮走 shadcn 默认的黑/白。
  */
 @import 'tailwindcss';
+@import "tw-animate-css";
 
 /* 深色主题通过 <html class="dark"> 切换。 */
 @custom-variant dark (&:is(.dark *));
@@ -178,5 +179,15 @@
       Menlo,
       Consolas,
       monospace;
+  }
+}
+/* ---break---
+ */
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
   }
 }

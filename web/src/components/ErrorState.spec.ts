@@ -3,8 +3,14 @@ import { mount } from '@vue/test-utils'
 import ErrorState from './ErrorState.vue'
 import { ApiError } from '@/api/http'
 
+function alertOf(wrapper: ReturnType<typeof mount>) {
+  const alert = wrapper.find('[role="alert"]')
+  expect(alert.exists()).toBe(true)
+  return alert
+}
+
 describe('ErrorState', () => {
-  it('服务端错误消息按纯文本渲染，不执行 HTML', () => {
+  it('渲染 role=alert，并把服务端消息按纯文本展示', () => {
     const wrapper = mount(ErrorState, {
       props: {
         error: new ApiError(400, {
@@ -15,32 +21,58 @@ describe('ErrorState', () => {
         }),
       },
     })
+
+    const alert = alertOf(wrapper)
+    expect(alert.text()).toContain('<img src=x')
+    expect(alert.text()).toContain('字段 name 非法')
+    expect(alert.text()).toContain('VALIDATION_FAILED')
+    expect(alert.text()).toContain('req_1')
     expect(wrapper.html()).not.toContain('<img')
-    expect(wrapper.text()).toContain('<img src=x')
-    expect(wrapper.text()).toContain('字段 name 非法')
-    expect(wrapper.text()).toContain('VALIDATION_FAILED')
-    expect(wrapper.text()).toContain('req_1')
   })
 
-  it('不可重试错误不显示重试按钮；可重试错误显示', async () => {
-    const nonRetryable = mount(ErrorState, {
-      props: { error: new ApiError(403, { code: 'FORBIDDEN', message: '无权限', retryable: false }) },
-    })
-    expect(nonRetryable.find('button').exists()).toBe(false)
-
-    const retryable = mount(ErrorState, {
-      props: { error: new ApiError(503, { code: 'DB_UNAVAILABLE', message: '数据库不可用', retryable: true }) },
-    })
-    const button = retryable.find('button')
-    expect(button.exists()).toBe(true)
-    await button.trigger('click')
-    expect(retryable.emitted('retry')).toHaveLength(1)
-  })
-
-  it('展示中文错误提示（PREVIEW_REQUIRED 等）', () => {
+  it('展示中文错误提示与兜底标题', () => {
     const wrapper = mount(ErrorState, {
-      props: { error: new ApiError(409, { code: 'PREVIEW_REQUIRED', message: '需要预览' }) },
+      props: {
+        error: new ApiError(409, { code: 'PREVIEW_REQUIRED', message: '需要预览' }),
+      },
     })
-    expect(wrapper.text()).toContain('必须先生成预览并确认')
+
+    const alert = alertOf(wrapper)
+    expect(alert.text()).toContain('需要预览')
+    expect(alert.text()).toContain('必须先生成预览并确认')
+  })
+
+  it('默认显示“重试”按钮，点击后 emit retry', async () => {
+    const wrapper = mount(ErrorState, {
+      props: { error: new ApiError(503, { code: 'DB_UNAVAILABLE', message: '数据库不可用' }) },
+    })
+
+    const button = wrapper.get('button')
+    expect(button.text()).toContain('重试')
+    await button.trigger('click')
+    expect(wrapper.emitted('retry')).toHaveLength(1)
+  })
+
+  it('showRetry=false 时不显示重试按钮', () => {
+    const wrapper = mount(ErrorState, {
+      props: {
+        error: new ApiError(403, { code: 'FORBIDDEN', message: '无权限' }),
+        showRetry: false,
+      },
+    })
+
+    alertOf(wrapper)
+    expect(wrapper.findAll('button')).toHaveLength(0)
+  })
+
+  it('retryLabel 可自定义', () => {
+    const wrapper = mount(ErrorState, {
+      props: {
+        error: new ApiError(503, { code: 'DB_UNAVAILABLE', message: '数据库不可用' }),
+        retryLabel: '重新加载',
+      },
+    })
+
+    expect(wrapper.get('button').text()).toContain('重新加载')
   })
 })

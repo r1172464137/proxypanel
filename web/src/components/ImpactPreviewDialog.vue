@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { Loader2 } from 'lucide-vue-next'
 import { adminApi } from '@/api/endpoints'
 import type { BatchOperation, BatchPreview } from '@/api/types'
 import { batchOperationMeta, newIdempotencyKey, previewSummary, submitRequest } from '@/lib/batch'
 import { toApiError } from '@/lib/errors'
 import { formatDateTime, prettyJson } from '@/lib/format'
 import { pushToast } from '@/lib/toast'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
 import AppModal from './AppModal.vue'
 import ErrorState from './ErrorState.vue'
 import LoadingBlock from './LoadingBlock.vue'
@@ -91,77 +96,100 @@ function exceptionText(item: unknown): string {
   }
   return prettyJson(item)
 }
+
+// 纯展示用：把预览里的四个数字整理成表格行（不改动任何请求/提交逻辑）。
+const metricRows = computed(() => {
+  const current = preview.value
+  if (!current) return []
+  return [
+    {
+      key: 'members',
+      label: '影响成员',
+      value: `${current.affected_count} 名`,
+      note: props.memberIds.length ? `已选择 ${props.memberIds.length} 名` : '',
+    },
+    { key: 'nodes', label: '受影响节点', value: `${current.affected_nodes} 个`, note: '' },
+    { key: 'exceptions', label: '不可执行', value: `${current.exceptions.length} 项`, note: '' },
+    { key: 'warnings', label: '警告', value: `${current.warnings.length} 条`, note: '' },
+  ]
+})
 </script>
 
 <template>
   <AppModal :open="open" :title="title" size="lg" @close="emit('close')">
-    <div class="stack">
-      <p class="text-sm text-muted">{{ description || meta.description }}</p>
+    <div class="flex flex-col gap-4">
+      <p class="text-sm text-muted-foreground">{{ description || meta.description }}</p>
 
       <LoadingBlock v-if="loading" :rows="3" label="正在请求影响预览" />
       <ErrorState v-else-if="error" :error="error" retry-label="重新预览" @retry="runPreview" />
 
       <template v-else-if="preview">
-        <div class="banner banner--warn">
-          <div class="stack--tight">
-            <strong>预览结果（未提交）</strong>
+        <Alert>
+          <AlertTitle>预览结果（未提交）</AlertTitle>
+          <AlertDescription class="flex flex-col gap-1">
             <span>{{ previewSummary(preview) }}</span>
             <span class="text-xs">
               预览版本 {{ preview.version }} · 有效至
               <span :title="preview.expires_at">{{ formatDateTime(preview.expires_at) }}</span>
             </span>
-          </div>
-        </div>
+          </AlertDescription>
+        </Alert>
 
-        <dl class="dl">
-          <dt>影响成员</dt>
-          <dd class="num">{{ preview.affected_count }} 名<template v-if="memberIds.length">（已选择 {{ memberIds.length }} 名）</template></dd>
-          <dt>受影响节点</dt>
-          <dd class="num">{{ preview.affected_nodes }} 个</dd>
-          <dt>不可执行</dt>
-          <dd class="num">{{ preview.exceptions.length }} 项</dd>
-          <dt>警告</dt>
-          <dd class="num">{{ preview.warnings.length }} 条</dd>
-        </dl>
+        <Table>
+          <TableBody>
+            <TableRow v-for="row in metricRows" :key="row.key">
+              <TableCell class="w-40 text-sm text-muted-foreground">{{ row.label }}</TableCell>
+              <TableCell class="text-sm font-medium tabular-nums">
+                {{ row.value }}
+                <span v-if="row.note" class="ml-2 text-xs font-normal text-muted-foreground">{{ row.note }}</span>
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
 
-        <div v-if="preview.warnings.length" class="banner banner--warn">
-          <div>
-            <div class="banner__title">后果提示</div>
-            <ul>
+        <Alert v-if="preview.warnings.length">
+          <AlertTitle>后果提示</AlertTitle>
+          <AlertDescription>
+            <ul class="list-disc pl-4">
               <li v-for="(warning, index) in preview.warnings" :key="index">{{ warning }}</li>
             </ul>
-          </div>
-        </div>
+          </AlertDescription>
+        </Alert>
 
-        <div v-if="preview.exceptions.length" class="banner banner--danger">
-          <div>
-            <div class="banner__title">不可执行对象（提交时会被跳过或拒绝）</div>
-            <ul>
-              <li v-for="(item, index) in preview.exceptions" :key="index">{{ exceptionText(item) }}</li>
+        <Alert v-if="preview.exceptions.length" variant="destructive">
+          <AlertTitle>不可执行对象（提交时会被跳过或拒绝）</AlertTitle>
+          <AlertDescription>
+            <ul class="list-disc pl-4">
+              <li v-for="(item, index) in preview.exceptions" :key="index" class="break-all">
+                {{ exceptionText(item) }}
+              </li>
             </ul>
-          </div>
-        </div>
+          </AlertDescription>
+        </Alert>
 
-        <details>
-          <summary class="text-sm text-muted">查看服务端返回的完整预览数据</summary>
-          <pre class="code-block">{{ prettyJson(preview) }}</pre>
+        <details class="text-sm">
+          <summary class="cursor-pointer text-muted-foreground">查看服务端返回的完整预览数据</summary>
+          <pre
+            class="mt-2 max-h-60 overflow-auto rounded-md border border-border bg-muted/50 p-3 font-mono text-xs"
+          >{{ prettyJson(preview) }}</pre>
         </details>
 
-        <label class="checkbox">
-          <input v-model="confirmed" type="checkbox" />
-          我已确认以上影响范围（规则提交后立即生效，节点异步分发，可能中断连接）
-        </label>
+        <Label class="flex items-start gap-2 text-sm font-normal">
+          <input v-model="confirmed" type="checkbox" class="mt-1 size-4 accent-primary" />
+          <span>我已确认以上影响范围（规则提交后立即生效，节点异步分发，可能中断连接）</span>
+        </Label>
 
         <ErrorState v-if="submitError" :error="submitError" :show-retry="false" />
       </template>
     </div>
+
     <template #footer>
-      <button type="button" class="btn" :disabled="submitting" @click="emit('close')">取消</button>
-      <button type="button" class="btn" :disabled="loading || submitting" @click="runPreview">重新预览</button>
-      <button type="button" class="btn btn--primary" :disabled="!preview || !confirmed || submitting" @click="submit">
-        <span v-if="submitting" class="spinner" aria-hidden="true" />
+      <Button variant="outline" :disabled="submitting" @click="emit('close')">取消</Button>
+      <Button variant="outline" :disabled="loading || submitting" @click="runPreview">重新预览</Button>
+      <Button :disabled="!preview || !confirmed || submitting" @click="submit">
+        <Loader2 v-if="submitting" class="animate-spin" aria-hidden="true" />
         {{ submitting ? '提交中…' : '确认提交' }}
-      </button>
+      </Button>
     </template>
   </AppModal>
 </template>

@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import AppIcon from './AppIcon.vue'
-import { computed, ref } from 'vue'
+import { computed, ref, useId } from 'vue'
+import { Check, Copy, Eye, EyeOff } from 'lucide-vue-next'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { copyText } from '@/lib/clipboard'
 import { pushToast } from '@/lib/toast'
 
@@ -17,12 +20,16 @@ const props = withDefaults(
 
 const revealed = ref(false)
 const copied = ref(false)
+const fieldId = useId()
+
+const MASK_HEAD = 6
+const MASK_TAIL = 4
 
 const display = computed(() => {
   if (!props.mask || revealed.value) return props.value
   if (!props.value) return '—'
-  if (props.value.length <= 16) return `${props.value.slice(0, 4)}…`
-  return `${props.value.slice(0, 10)}…${props.value.slice(-4)}`
+  if (props.value.length <= MASK_HEAD + MASK_TAIL) return `${props.value.slice(0, MASK_HEAD)}…`
+  return `${props.value.slice(0, MASK_HEAD)}…${props.value.slice(-MASK_TAIL)}`
 })
 
 async function doCopy(): Promise<void> {
@@ -38,65 +45,50 @@ async function doCopy(): Promise<void> {
 </script>
 
 <template>
-  <div class="copy-field">
-    <div v-if="label || $slots.label" class="copy-field__label">
+  <div class="flex flex-col gap-2">
+    <Label v-if="label || $slots.label" :for="fieldId" class="text-sm font-medium">
       <slot name="label">{{ label }}</slot>
-    </div>
-    <div class="copy-field__row">
-      <code class="copy-field__value break-all">{{ display }}</code>
-      <div class="copy-field__actions">
-        <button
+    </Label>
+
+    <div class="flex items-start gap-2">
+      <Input
+        :id="fieldId"
+        readonly
+        :model-value="display"
+        :aria-label="label || undefined"
+        class="font-mono text-xs"
+      />
+      <div class="flex shrink-0 gap-1">
+        <Button
           v-if="revealable && mask"
           type="button"
-          class="btn btn--sm"
+          variant="outline"
+          size="sm"
           :aria-label="revealed ? '隐藏数值' : '显示数值'"
           @click="revealed = !revealed"
         >
-          <AppIcon :name="revealed ? 'eyeOff' : 'eye'" :size="14" />
+          <EyeOff v-if="revealed" aria-hidden="true" />
+          <Eye v-else aria-hidden="true" />
           <span>{{ revealed ? '隐藏' : '显示' }}</span>
-        </button>
-        <button type="button" class="btn btn--sm" :disabled="!value" @click="doCopy">
-          <AppIcon :name="copied ? 'check' : 'copy'" :size="14" />
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          :disabled="!value"
+          :aria-label="copied ? '已复制' : '复制'"
+          @click="doCopy"
+        >
+          <Check v-if="copied" aria-hidden="true" />
+          <Copy v-else aria-hidden="true" />
           <span>{{ copied ? '已复制' : '复制' }}</span>
-        </button>
+        </Button>
       </div>
     </div>
-    <p v-if="warning" class="text-xs text-muted">{{ warning }}</p>
-    <p v-else-if="mask" class="text-xs text-muted">默认脱敏显示；此值等同于凭据，请勿转发到不可信渠道。</p>
+
+    <p v-if="warning" class="text-xs text-muted-foreground">{{ warning }}</p>
+    <p v-else-if="mask" class="text-xs text-muted-foreground">
+      默认脱敏显示；此值等同于凭据，请勿转发到不可信渠道。
+    </p>
   </div>
 </template>
-
-<style scoped>
-.copy-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.copy-field__label {
-  font-size: var(--text-sm);
-  font-weight: 500;
-}
-
-.copy-field__row {
-  display: flex;
-  gap: var(--space-2);
-  align-items: flex-start;
-  background: var(--muted);
-  border: 1px solid var(--border);
-  border-radius: 0;
-  padding: var(--space-2) var(--space-3);
-}
-
-.copy-field__value {
-  flex: 1;
-  min-width: 0;
-  padding-top: 4px;
-}
-
-.copy-field__actions {
-  display: flex;
-  gap: var(--space-1);
-  flex-shrink: 0;
-}
-</style>

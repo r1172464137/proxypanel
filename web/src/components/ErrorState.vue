@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { describeError } from '@/lib/errors'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { errorHint, errorText, errorTitle, errorCode, toApiError } from '@/lib/errors'
 import AppIcon from './AppIcon.vue'
 
 // Vue 会把未传入的 Boolean prop 转为 false；显式默认 true，避免“可重试但无按钮”。
@@ -10,39 +12,38 @@ const props = withDefaults(defineProps<{ error: unknown; retryLabel?: string; sh
 })
 const emit = defineEmits<{ retry: [] }>()
 
-const view = computed(() => describeError(props.error))
+const message = computed(() => errorText(props.error))
+const title = computed(() => errorTitle(props.error))
+const hint = computed(() => errorHint(props.error))
+const code = computed(() => errorCode(props.error))
+const requestId = computed(() => toApiError(props.error).requestId)
 </script>
 
 <template>
-  <div class="banner banner--danger" role="alert">
-    <span class="banner__icon" aria-hidden="true">
-      <AppIcon name="alert" :size="16" />
-    </span>
-    <div class="stack--tight" style="flex: 1">
-      <div class="banner__title">{{ view.title }}</div>
-      <!-- 服务端 message 只作为纯文本渲染，绝不使用 v-html -->
-      <p class="break-all">{{ view.message }}</p>
-      <p v-if="view.hint" class="text-sm text-muted">{{ view.hint }}</p>
-      <p class="text-xs text-faint">
-        错误码：<span class="mono">{{ view.code }}</span>
-        <template v-if="view.requestId"> · 请求编号：<span class="mono">{{ view.requestId }}</span></template>
-      </p>
+  <Alert variant="destructive" role="alert" class="flex flex-col gap-3 sm:flex-row sm:items-start">
+    <AppIcon name="alert" :size="16" class="mt-0.5 hidden sm:block" />
+    <div class="flex-1 space-y-1">
+      <AlertTitle>{{ title }}</AlertTitle>
+      <AlertDescription>
+        <!-- 服务端 message 只作为纯文本渲染，绝不使用 v-html -->
+        <p class="break-all">{{ message }}</p>
+        <p v-if="hint" class="mt-1 text-muted-foreground">{{ hint }}</p>
+        <p class="mt-1 text-xs text-muted-foreground">
+          错误码：<span class="font-mono">{{ code }}</span>
+          <template v-if="requestId"> · 请求编号：<span class="font-mono">{{ requestId }}</span></template>
+        </p>
+      </AlertDescription>
     </div>
-    <button
-      v-if="showRetry !== false && view.retryable"
+    <Button
+      v-if="showRetry"
       type="button"
-      class="btn btn--sm"
+      variant="outline"
+      size="sm"
+      class="shrink-0"
       @click="emit('retry')"
     >
-      <AppIcon name="refresh" :size="14" />
-      <span>{{ retryLabel ?? '重试' }}</span>
-    </button>
-  </div>
+      <AppIcon name="refresh" :size="14" aria-hidden="true" />
+      <span>{{ retryLabel }}</span>
+    </Button>
+  </Alert>
 </template>
-
-<style scoped>
-.banner__icon {
-  color: var(--danger);
-  padding-top: 1px;
-}
-</style>

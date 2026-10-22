@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, useId, watch } from 'vue'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { jsonEqual, parseJsonObject, stringifyJson, type JsonObject } from '@/lib/json'
 
 const props = withDefaults(defineProps<{ modelValue: JsonObject; label?: string; hint?: string }>(), {
@@ -10,6 +13,7 @@ const emit = defineEmits<{ 'update:modelValue': [JsonObject]; 'update:error': [s
 
 const text = ref(stringifyJson(props.modelValue))
 const error = ref('')
+const fieldId = useId()
 
 function apply(value: string): void {
   text.value = value
@@ -43,27 +47,26 @@ function formatText(): void {
     emit('update:modelValue', parsed.value)
   }
 }
-
-function onInput(event: Event): void {
-  apply((event.target as HTMLTextAreaElement).value)
-}
 </script>
 
 <template>
-  <div class="field">
-    <div class="row row--between">
-      <label>{{ label }}</label>
-      <button type="button" class="btn btn--sm" @click="formatText">格式化</button>
+  <div class="flex flex-col gap-2">
+    <div class="flex items-center justify-between gap-2">
+      <Label :for="fieldId">{{ label }}</Label>
+      <Button type="button" variant="outline" size="sm" @click="formatText">格式化</Button>
     </div>
-    <textarea
-      class="textarea textarea--json"
+    <Textarea
+      :id="fieldId"
+      :model-value="text"
       spellcheck="false"
       :aria-invalid="error ? 'true' : 'false'"
-      :value="text"
-      @input="onInput"
+      class="min-h-40 font-mono text-xs"
+      @update:model-value="apply(String($event))"
     />
-    <p v-if="error" class="field__help" style="color: var(--danger)" role="alert">{{ error }}</p>
-    <p v-if="hint" class="field__help">{{ hint }}</p>
-    <p v-else class="field__help">原生 JSON 编辑器：未在结构化表单中出现的键会原样保留并提交。</p>
+    <p v-if="error" class="text-xs text-destructive" role="alert">{{ error }}</p>
+    <p v-if="hint" class="text-xs text-muted-foreground">{{ hint }}</p>
+    <p v-else class="text-xs text-muted-foreground">
+      原生 JSON 编辑器：未在结构化表单中出现的键会原样保留并提交。
+    </p>
   </div>
 </template>

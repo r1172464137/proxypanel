@@ -3,6 +3,15 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppIcon from './AppIcon.vue'
 import ThemeToggle from './ThemeToggle.vue'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+} from '@/components/ui/sheet'
+import { cn } from '@/lib/utils'
 import { logout, sessionState } from '@/stores/session'
 import type { IconName } from '@/lib/icons'
 
@@ -69,6 +78,19 @@ const memberNav: NavSection[] = [{ title: '我的', links: [...myAccountLinks] }
 
 const nav = computed(() => (sessionState.user?.role === 'admin' ? adminNav : memberNav))
 const title = computed(() => (typeof route.meta.title === 'string' ? route.meta.title : '代理面板'))
+const roleLabel = computed(() => (sessionState.user?.role === 'admin' ? '管理员' : '成员'))
+
+const navLinkClass =
+  'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring'
+const navLinkActiveClass = 'bg-sidebar-accent text-sidebar-accent-foreground'
+const sectionTitleClass =
+  'px-2.5 pt-4 pb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground'
+
+/** 当前路径是否落在该入口下（含子路由，例如 /admin/servers/:id/runtime）。 */
+function isActive(to: string): boolean {
+  const path = route.path ?? route.fullPath.split(/[?#]/)[0] ?? ''
+  return path === to || path.startsWith(`${to}/`)
+}
 
 watch(
   () => route.fullPath,
@@ -77,13 +99,21 @@ watch(
   },
 )
 
-/** 关闭抽屉并把焦点还给触发按钮，键盘用户不会丢焦点。 */
+/** 关闭抽屉；焦点归还在 onCloseAutoFocus 里做（此时焦点陷阱已解除）。 */
 function closeDrawer(): void {
   drawerOpen.value = false
-  menuButton.value?.focus()
 }
 
-/** 抽屉是临时覆盖层：Escape 关闭即可，不额外引入焦点陷阱。 */
+/**
+ * Sheet 关闭时把焦点还给汉堡按钮，键盘用户不会丢焦点。
+ * 必须 preventDefault，否则 reka 的 FocusScope 会把焦点丢回 body。
+ */
+function onCloseAutoFocus(event: Event): void {
+  event.preventDefault()
+  window.setTimeout(() => menuButton.value?.focus(), 0)
+}
+
+/** Sheet 自带 Esc/遮罩关闭，这里兜底处理键盘用户从外部按 Esc 的情况。 */
 function onKeydown(event: KeyboardEvent): void {
   if (event.key === 'Escape' && drawerOpen.value) closeDrawer()
 }
@@ -103,47 +133,93 @@ async function signOut(): Promise<void> {
 </script>
 
 <template>
-  <div class="app-shell">
-    <div v-if="drawerOpen" class="sidebar-backdrop" @click="closeDrawer" />
+  <div class="flex min-h-svh bg-background text-foreground">
+    <!-- 桌面侧栏：≥1024px 常驻 -->
     <aside
       id="app-sidebar"
-      class="sidebar"
-      :class="{ 'sidebar--open': drawerOpen }"
       aria-label="主导航"
+      class="sticky top-0 hidden h-svh w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground lg:flex"
     >
-      <div class="sidebar__brand">
-        <span class="sidebar__seal" aria-hidden="true">代</span>
-        <div class="sidebar__brand-text">
-          <strong>代理面板</strong>
-          <span>私人合租运维</span>
+      <div class="flex h-16 shrink-0 items-center gap-3 border-b border-sidebar-border px-4">
+        <span
+          class="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary text-sm font-semibold text-primary-foreground"
+          aria-hidden="true"
+        >代</span>
+        <div class="flex min-w-0 flex-col leading-tight">
+          <strong class="truncate text-sm font-semibold">代理面板</strong>
+          <span class="truncate text-xs text-muted-foreground">私人合租运维</span>
         </div>
       </div>
-      <nav class="sidebar__nav" aria-label="页面导航">
+
+      <nav aria-label="页面导航" class="flex-1 overflow-y-auto px-2 py-3">
         <template v-for="section in nav" :key="section.title">
-          <div class="sidebar__section">{{ section.title }}</div>
+          <h2 :class="sectionTitleClass">{{ section.title }}</h2>
           <router-link
             v-for="link in section.links"
             :key="link.to"
             :to="link.to"
-            class="sidebar__link"
+            :aria-current="isActive(link.to) ? 'page' : undefined"
+            :class="cn(navLinkClass, isActive(link.to) && navLinkActiveClass)"
           >
             <AppIcon :name="link.icon" :size="16" />
-            <span>{{ link.label }}</span>
+            <span class="truncate">{{ link.label }}</span>
           </router-link>
         </template>
       </nav>
-      <div class="sidebar__footer">
-        <strong>{{ sessionState.user?.username }}</strong>
-        <span>{{ sessionState.user?.role === 'admin' ? '管理员' : '成员' }}</span>
+
+      <div class="shrink-0 border-t border-sidebar-border px-4 py-3">
+        <strong class="block truncate text-sm font-medium">{{ sessionState.user?.username }}</strong>
+        <span class="text-xs text-muted-foreground">{{ roleLabel }}</span>
       </div>
     </aside>
 
-    <div class="main">
-      <header class="topbar">
+    <!-- 移动端抽屉：<1024px，由顶部汉堡按钮打开 -->
+    <Sheet v-model:open="drawerOpen">
+      <SheetContent
+        side="left"
+        class="flex w-72 flex-col gap-0 p-0"
+        @close-auto-focus="onCloseAutoFocus"
+      >
+        <div class="flex h-16 shrink-0 items-center gap-3 border-b border-border px-4">
+          <span
+            class="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary text-sm font-semibold text-primary-foreground"
+            aria-hidden="true"
+          >代</span>
+          <div class="flex min-w-0 flex-col leading-tight">
+            <SheetTitle class="truncate text-sm font-semibold">代理面板</SheetTitle>
+            <SheetDescription class="truncate text-xs">私人合租运维</SheetDescription>
+          </div>
+        </div>
+        <nav aria-label="页面导航" class="flex-1 overflow-y-auto px-2 py-3">
+          <template v-for="section in nav" :key="section.title">
+            <h2 :class="sectionTitleClass">{{ section.title }}</h2>
+            <router-link
+              v-for="link in section.links"
+              :key="link.to"
+              :to="link.to"
+              :aria-current="isActive(link.to) ? 'page' : undefined"
+              :class="cn(navLinkClass, isActive(link.to) && navLinkActiveClass)"
+            >
+              <AppIcon :name="link.icon" :size="16" />
+              <span class="truncate">{{ link.label }}</span>
+            </router-link>
+          </template>
+        </nav>
+        <div class="shrink-0 border-t border-border px-4 py-3">
+          <strong class="block truncate text-sm font-medium">{{ sessionState.user?.username }}</strong>
+          <span class="text-xs text-muted-foreground">{{ roleLabel }}</span>
+        </div>
+      </SheetContent>
+    </Sheet>
+
+    <div class="flex min-w-0 flex-1 flex-col">
+      <header
+        class="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-2 border-b border-border bg-background/95 px-3 backdrop-blur sm:px-4 lg:px-6"
+      >
         <button
           ref="menuButton"
           type="button"
-          class="btn btn--ghost btn--icon hide-desktop"
+          class="-ml-1 inline-flex size-9 items-center justify-center rounded-md text-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
           aria-label="打开导航"
           aria-controls="app-sidebar"
           :aria-expanded="drawerOpen ? 'true' : 'false'"
@@ -151,33 +227,22 @@ async function signOut(): Promise<void> {
         >
           <AppIcon name="menu" :size="18" />
         </button>
-        <span class="topbar__title">{{ title }}</span>
-        <div class="topbar__spacer" />
+        <span class="truncate text-sm font-medium text-foreground">{{ title }}</span>
+        <div class="flex-1" />
         <ThemeToggle />
-        <div class="topbar__user">
-          <span class="badge badge--accent badge--pill hide-sm">{{ sessionState.user?.role === 'admin' ? '管理员' : '成员' }}</span>
-          <span class="hide-sm">{{ sessionState.user?.username }}</span>
+        <div class="hidden items-center gap-2 sm:flex">
+          <Badge variant="secondary">{{ roleLabel }}</Badge>
+          <span class="max-w-40 truncate text-sm text-muted-foreground">{{ sessionState.user?.username }}</span>
         </div>
-        <button type="button" class="btn btn--sm" :disabled="signingOut" @click="signOut">
+        <Button size="sm" :disabled="signingOut" @click="signOut">
           <AppIcon name="logout" :size="15" />
           <span>{{ signingOut ? '退出中…' : '退出登录' }}</span>
-        </button>
+        </Button>
       </header>
-      <main class="content content--wide">
+
+      <main class="mx-auto w-full max-w-[1440px] flex-1 px-4 py-6 sm:px-6 lg:px-8">
         <slot />
       </main>
     </div>
   </div>
 </template>
-
-<style scoped>
-.hide-desktop {
-  display: none;
-}
-
-@media (max-width: 960px) {
-  .hide-desktop {
-    display: inline-flex;
-  }
-}
-</style>

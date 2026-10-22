@@ -1,14 +1,23 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
+
+type Tone = 'ok' | 'warn' | 'danger' | 'info' | 'muted' | 'accent'
 
 const props = defineProps<{
   status?: string | boolean | null
   label?: string
-  tone?: 'ok' | 'warn' | 'danger' | 'info' | 'muted' | 'accent'
+  tone?: Tone
 }>()
 
+/**
+ * 状态 → 文案 / 色调的唯一映射表。
+ * 新增后端状态时在这里补充；未知状态回落到 muted，不改变组件接口。
+ */
 const LABELS: Record<string, string> = {
   active: '正常',
+  ok: '正常',
   enabled: '已启用',
   disabled: '已停用',
   maintenance: '维护中',
@@ -21,6 +30,8 @@ const LABELS: Record<string, string> = {
   dispatched: '已下发',
   applying: '应用中',
   succeeded: '已生效',
+  applied: '已生效',
+  rollback_applied: '已回滚',
   failed: '失败',
   timeout: '超时',
   superseded: '已被取代',
@@ -47,12 +58,14 @@ const LABELS: Record<string, string> = {
   paused: '已暂停',
 }
 
-const TONES: Record<string, 'ok' | 'warn' | 'danger' | 'info' | 'muted' | 'accent'> = {
+const TONES: Record<string, Tone> = {
   active: 'ok',
+  ok: 'ok',
   enabled: 'ok',
   online: 'ok',
   healthy: 'ok',
   succeeded: 'ok',
+  applied: 'ok',
   running: 'ok',
   accepted: 'ok',
   verified: 'ok',
@@ -64,6 +77,7 @@ const TONES: Record<string, 'ok' | 'warn' | 'danger' | 'info' | 'muted' | 'accen
   queued: 'info',
   unused: 'info',
   maintenance: 'warn',
+  rollback_applied: 'warn',
   paused: 'warn',
   paused_by_admin: 'warn',
   expired: 'warn',
@@ -87,14 +101,48 @@ const TONES: Record<string, 'ok' | 'warn' | 'danger' | 'info' | 'muted' | 'accen
   duplicate: 'muted',
 }
 
-const key = computed(() => (typeof props.status === 'boolean' ? String(props.status) : String(props.status ?? 'unknown')))
-const tone = computed(() => props.tone ?? TONES[key.value] ?? 'muted')
-const text = computed(() => props.label ?? LABELS[key.value] ?? (props.status === true ? '是' : props.status === false ? '否' : key.value))
+const key = computed(() => {
+  if (typeof props.status === 'boolean') return props.status ? 'true' : 'false'
+  return String(props.status ?? 'unknown')
+})
+
+const tone = computed<Tone>(() => {
+  if (props.tone) return props.tone
+  if (typeof props.status === 'boolean') return props.status ? 'ok' : 'danger'
+  return TONES[key.value] ?? 'muted'
+})
+
+const text = computed(() => {
+  if (props.label) return props.label
+  if (typeof props.status === 'boolean') return props.status ? '是' : '否'
+  return LABELS[key.value] ?? key.value
+})
+
+const variant = computed(() => {
+  if (tone.value === 'danger') return 'destructive' as const
+  if (tone.value === 'muted') return 'secondary' as const
+  return 'outline' as const
+})
+
+const toneClass = computed(() => {
+  switch (tone.value) {
+    case 'ok':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300'
+    case 'warn':
+      return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300'
+    case 'info':
+      return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-300'
+    case 'accent':
+      return 'border-transparent bg-brand text-brand-foreground hover:bg-brand/90'
+    default:
+      return ''
+  }
+})
 </script>
 
 <template>
-  <span class="badge" :class="`badge--${tone}`">
-    <span class="dot" :class="`dot--${tone === 'muted' ? '' : tone === 'accent' ? 'ok' : tone}`" />
-    {{ text }}
-  </span>
+  <Badge :variant="variant" :class="cn('gap-1.5 whitespace-nowrap', toneClass)">
+    <span class="size-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />
+    <span>{{ text }}</span>
+  </Badge>
 </template>
