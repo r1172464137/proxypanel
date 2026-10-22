@@ -203,6 +203,14 @@ func Validate(n Node) []Issue {
 	securityRaw, _ := n.StreamSettings.String("security")
 	security := strings.ToLower(strings.TrimSpace(securityRaw))
 
+	// REALITY 是 Xray 的 VLESS 专属安全层：其他协议在核心侧没有对应入站实现。
+	// 这里必须拒绝，否则节点会通过校验并落库，但永远渲染不出可加载的配置 ——
+	// 只在下发给 Agent 时才失败，留下一条"看起来正常、实际起不来"的记录。
+	// （EndpointFor 里有一份同样的检查，用于导出路径。）
+	if security == "reality" && proto != VLESS {
+		add("stream_settings.security", "REALITY 只能用于 VLESS 入站，当前协议是 %s", proto)
+	}
+
 	for _, key := range streamSubObjects {
 		if n.StreamSettings.Has(key) {
 			if _, ok := n.StreamSettings.Sub(key); !ok {

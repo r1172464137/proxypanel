@@ -200,11 +200,11 @@ async function rotateToken(): Promise<void> {
             <CardTitle class="text-base">状态</CardTitle>
           </CardHeader>
           <CardContent>
-            <dl class="grid grid-cols-[6.5rem_1fr] gap-x-4 gap-y-3 text-sm">
+            <dl class="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-x-4 gap-y-3 text-sm">
               <dt class="text-muted-foreground">用户名</dt>
-              <dd>
-                {{ data.username }}
-                <span class="ml-1 font-mono text-xs text-muted-foreground">{{ data.id }}</span>
+              <dd class="min-w-0">
+                <span class="break-all">{{ data.username }}</span>
+                <span class="ml-1 break-all font-mono text-xs text-muted-foreground">{{ data.id }}</span>
               </dd>
               <dt class="text-muted-foreground">角色</dt>
               <dd>{{ data.role === 'admin' ? '管理员' : '成员' }}</dd>
@@ -240,9 +240,9 @@ async function rotateToken(): Promise<void> {
             <CardTitle class="text-base">用量与周期</CardTitle>
           </CardHeader>
           <CardContent>
-            <dl class="grid grid-cols-[6.5rem_1fr] gap-x-4 gap-y-3 text-sm">
+            <dl class="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-x-4 gap-y-3 text-sm">
               <dt class="text-muted-foreground">订阅</dt>
-              <dd class="font-mono">{{ data.subscription_id ?? '未绑定' }}</dd>
+              <dd class="break-all font-mono">{{ data.subscription_id ?? '未绑定' }}</dd>
               <dt class="text-muted-foreground">有效期</dt>
               <dd>
                 <span :title="utcLabel(data.expires_at)">{{ formatDateTime(data.expires_at) }}</span>

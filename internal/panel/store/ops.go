@@ -655,9 +655,17 @@ func (s *Store) Overview(ctx context.Context) (domain.Object, error) {
 const coreInstanceCols = `ci.id, ci.server_id, ci.agent_id, ci.node_id, n.name, ci.generation,
 	ci.config_revision, ci.state, ci.last_started_at, ci.applied_at, ci.last_error, ci.updated_at`
 
+// ListCoreInstances 列出核心实例。
+//
+// 必须排除归档节点：节点删除是"归档"，归档后它的实例行仍留在 core_instances，
+// 而 ListNodes 已经按 NOT archived 过滤。不过滤会让运维列表越用越长
+// （实测一次全量测试后就从 5 条涨到 83 条，全是已归档节点的 stopped 实例），
+// 真实实例被淹没在里面。
 func (s *Store) ListCoreInstances(ctx context.Context, limit int) ([]domain.CoreInstance, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT `+coreInstanceCols+` FROM core_instances ci
-		JOIN nodes n ON n.id=ci.node_id ORDER BY lower(n.name) LIMIT $1`, clampLimit(limit))
+		JOIN nodes n ON n.id=ci.node_id
+		WHERE NOT n.archived
+		ORDER BY lower(n.name) LIMIT $1`, clampLimit(limit))
 	if err != nil {
 		return nil, dbErr(err)
 	}

@@ -232,6 +232,15 @@ func EndpointFor(node domain.Node) (Endpoint, []Issue) {
 		}
 	}
 
+	// REALITY 是 Xray 的 VLESS 专属传输安全层。其他协议（VMess/Trojan/SS）
+	// 在核心侧没有对应的入站实现，配置能存进去但永远无法加载。
+	// 必须在创建/更新时就拒绝，而不是等到下发给 Agent 才失败 ——
+	// 否则会留下一条"看起来正常、实际永远起不来"的节点记录。
+	if ep.Security == "reality" && ep.Protocol != VLESS {
+		add("stream_settings.security",
+			"REALITY 只能用于 VLESS 入站，当前协议是 "+ep.Protocol)
+	}
+
 	switch ep.Security {
 	case "reality":
 		rs, hasRS := stream.Sub("realitySettings")

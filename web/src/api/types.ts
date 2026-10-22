@@ -343,11 +343,35 @@ export type BatchOperation =
   | 'update_subscription'
   | 'update_node_group'
 
+/**
+ * 批量预览里的单个成员影响。
+ *
+ * 服务端会给出 before/after 快照与后果码。**前端必须把 consequences 翻成
+ * 中文并逐条展示** —— 预览的意义就是让管理员在提交前看清"这个人会变成
+ * 什么样"，只显示汇总数字等于没有预览。
+ */
+export interface PreviewItem {
+  member_id: string
+  username: string
+  before?: Record<string, unknown>
+  after?: Record<string, unknown>
+  consequences?: string[]
+  blocked?: boolean
+  blocked_reason?: string
+  over_quota_after?: boolean
+  has_access_after?: boolean
+  nodes_added?: number
+  nodes_removed?: number
+  expiring?: boolean
+}
+
 export interface BatchPreview {
   id: string
   version: number
   affected_count: number
   affected_nodes: number
+  /** 逐成员影响明细。可能为空数组（例如只改节点组时没有成员级变化）。 */
+  items?: PreviewItem[]
   exceptions: unknown[]
   warnings: string[]
   expires_at: string

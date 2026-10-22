@@ -107,8 +107,15 @@ func (s *Server) rotateCredentials(w http.ResponseWriter, r *http.Request, membe
 			return
 		}
 		nodeIDs = []string{in.NodeID}
-	default:
+	case "all_nodes", "":
+		// 空 scope 等价于全部节点（向后兼容既有调用）。
 		nodeIDs = res.Decision.AllowedNodeIDs
+	default:
+		// 未知 scope 必须拒绝：以前落进 default 会静默按"全部节点"处理，
+		// 运维误传一个拼错的 scope 就会轮换全部凭据、立即打断所有在线连接。
+		s.writeError(w, r, domain.Validation("scope must be \"all_nodes\" or \"single_node\" (got %q)", in.Scope).
+			WithFieldErrors(map[string]string{"scope": "must be all_nodes or single_node"}))
+		return
 	}
 	byID := map[string]domain.Node{}
 	for _, n := range res.Evidence.Nodes {

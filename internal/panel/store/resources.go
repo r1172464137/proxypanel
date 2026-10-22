@@ -836,12 +836,66 @@ func (s *Store) syncSubscriptionCyclesTx(ctx context.Context, tx *sql.Tx, subID 
 
 // DeleteSubscription archives a subscription; bound members must be migrated
 // first (enforced by the handler via BoundMembers).
+// DeleteSubscription physically removes a subscription.
+//
+// 这里以前是"软删"（只把 Archived 置 true），导致三个问题：
+//   - 界面按钮叫"删除"、确认框也写"将删除"，但数据其实还在；
+//   - 归档的订阅仍出现在"目标订阅"下拉里，可以被选为新绑定的目标；
+//   - 归档订阅仍占用节点组引用，使节点组永远删不掉，且没有任何入口能清理。
+//
+// 现在改成真删除。两个引用关系由数据库保证：
+//   - subscription_node_groups.subscription_id 是 ON DELETE CASCADE，
+//     删除订阅会自动解除与节点组的关联，节点组随后可删；
+//   - members.subscription_id 没有级联，所以仍有成员绑定时删不掉 ——
+//     这正是我们要的行为：先解绑成员，再删订阅。
+//
+// 已归档的订阅同样适用（归档只是一种标记，不影响能否删除）。
 func (s *Store) DeleteSubscription(ctx context.Context, id string) (*domain.Subscription, error) {
-	return s.UpdateSubscription(ctx, id, 0, func(v *domain.Subscription) error {
-		v.Archived = true
-		v.AllowNewBindings = false
-		return nil
-	})
+	// 先取出快照用于返回，并在同一事务里校验引用。
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, dbErr(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	cur, err := scanSubscription(tx.QueryRowContext(ctx,
+		`SELECT `+subscriptionCols+` FROM subscriptions WHERE id=$1`, id))
+	if err != nil {
+		if de, ok := err.(*domain.Error); ok && de.Code == domain.CodeNotFound {
+			return nil, domain.NotFound("subscription not found")
+		}
+		return nil, err
+	}
+	groupIDs, err := s.subscriptionGroupIDs(ctx, tx, id)
+	if err != nil {
+		return nil, err
+	}
+	cur.NodeGroupIDs = groupIDs
+
+	var bound int
+	if err := tx.QueryRowContext(ctx,
+		`SELECT count(*) FROM members WHERE subscription_id = $1 AND NOT archived`, id).Scan(&bound); err != nil {
+		return nil, dbErr(err)
+	}
+	if bound > 0 {
+		return nil, domain.Conflict(domain.CodeNodeInUse,
+			"subscription still has %d bound member(s)", bound)
+	}
+	// 归档成员不该再持有订阅引用：它们已经失去访问权，只是为审计/账本保留记录。
+	// 这里先解除关联，否则外键会永久阻止删除订阅 —— 而成员删除本身也是归档，
+	// 两者叠加就形成"谁都无法清理"的死循环。
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE members SET subscription_id = NULL WHERE subscription_id = $1 AND archived`, id); err != nil {
+		return nil, dbErr(err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM subscriptions WHERE id = $1`, id); err != nil {
+		return nil, dbErr(err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, dbErr(err)
+	}
+	return cur, nil
 }
 
 // ─── settings & control state ──────────────────────────────────────────────

@@ -29,6 +29,8 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 
 const list = usePagedList<MemberRecord>((cursor) => adminApi.members.list({ limit: 50, cursor }))
 const subscriptions = ref<SubscriptionRecord[]>([])
+// 可被选作绑定目标的订阅（排除已归档）。
+const bindableSubscriptions = ref<SubscriptionRecord[]>([])
 const nodes = ref<NodeRecord[]>([])
 const referenceError = ref<unknown>(null)
 const filter = ref('')
@@ -41,7 +43,10 @@ onMounted(async () => {
       adminApi.subscriptions.list({ limit: 200 }),
       adminApi.nodes.list({ limit: 200 }),
     ])
+    // subscriptions 保留全部（含归档），用于把成员上的 subscription_id 映射成名字；
+    // 下拉里只列可绑定的（未归档），避免把已归档的订阅选成新绑定目标。
     subscriptions.value = subPage.items
+    bindableSubscriptions.value = subPage.items.filter((item) => !item.archived)
     nodes.value = nodePage.items
   } catch (caught) {
     referenceError.value = caught
@@ -485,7 +490,7 @@ const columns = [
             <Label for="member-sub">订阅</Label>
             <select id="member-sub" v-model="form.subscription_id" :class="selectClass">
               <option value="">不绑定</option>
-              <option v-for="sub in subscriptions" :key="sub.id" :value="sub.id">{{ sub.name }}</option>
+              <option v-for="sub in bindableSubscriptions" :key="sub.id" :value="sub.id">{{ sub.name }}</option>
             </select>
           </div>
           <div class="space-y-1.5">

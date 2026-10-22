@@ -70,11 +70,49 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, token string, expires t
 	})
 }
 
+// clientIP 返回用于限流的客户端地址。
+//
+// 面板部署在 nginx 之后时，RemoteAddr 永远是反代（容器里是 127.0.0.1），
+// 直接用它当限流键会让**全站共享一个桶**（10 次/分钟），任何人被锁都会
+// 连带锁住其他人。实测 Redis 键一直是 `pp:rl:login:127.0.0.1:admin`。
+//
+// 但也不能无条件相信 X-Forwarded-For —— 客户端可以自带这个头来绕过限流。
+// 折中做法与业界一致：**只有当直连方是可信代理（回环或私有网段）时才采信
+// XFF**，且取最右一项（离我们最近的那跳由我们自己的 nginx 写入）。
+// 我们的 nginx 用 `proxy_set_header X-Forwarded-For $remote_addr`（覆盖而非
+// 追加），所以最右项就是真实客户端地址。
 func clientIP(r *http.Request) string {
+	remote := r.RemoteAddr
 	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		return host
+		remote = host
 	}
-	return r.RemoteAddr
+	if !isTrustedProxy(remote) {
+		// 直连（或来自不可信来源）：忽略任何 XFF，防止伪造绕过限流。
+		return remote
+	}
+	xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For"))
+	if xff == "" {
+		return remote
+	}
+	parts := strings.Split(xff, ",")
+	candidate := strings.TrimSpace(parts[len(parts)-1])
+	if ip := net.ParseIP(candidate); ip != nil {
+		return candidate
+	}
+	return remote
+}
+
+// isTrustedProxy 判断直连方是否是我们自己的反向代理。
+// 回环 + RFC1918 私有网段 + 链路本地都视为可信（容器/内网反代）。
+func isTrustedProxy(host string) bool {
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() {
+		return true
+	}
+	return false
 }
 
 func (s *Server) loginPayload(m *domain.Member, csrf string) map[string]any {
@@ -88,6 +126,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := decodeJSON(r, &in); err != nil {
 		s.writeError(w, r, err)
+		return
+	}
+	// 空字段是入参问题，应当在鉴权之前就以 400 拒绝（而不是落到统一的 401 分支）。
+	// 注意顺序：先做字段非空校验，再做限流，避免用空用户名消耗配额。
+	if strings.TrimSpace(in.Username) == "" || in.Password == "" {
+		s.writeError(w, r, domain.Validation("username and password are required").
+			WithFieldErrors(map[string]string{"username": "required", "password": "required"}))
 		return
 	}
 	if s.RateLimiter != nil {

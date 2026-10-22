@@ -33,7 +33,9 @@ const revokeError = ref('')
 onMounted(async () => {
   void list.refresh()
   try {
+    // 只列可绑定的订阅：已归档的订阅不能再作为新邀请的预绑定目标。
     subscriptions.value = (await adminApi.subscriptions.list({ limit: 200 })).items
+      .filter((item) => !item.archived)
   } catch {
     subscriptions.value = []
   }

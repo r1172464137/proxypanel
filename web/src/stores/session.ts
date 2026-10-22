@@ -29,6 +29,20 @@ export function clearSession(): void {
   setCsrfToken(null)
 }
 
+/**
+ * 把会话状态直接标成"未登录"，不发起任何网络请求。
+ *
+ * 公开页（/login、/redeem）不需要会话信息。以前 App.vue 无条件调
+ * ensureSession()，未登录访问公开页时会打 /auth/session 拿到 401，
+ * 浏览器把这记进 console（fetch 层无法阻止 4xx 被记录），每个页面 4 条噪音。
+ */
+export function markAnonymous(): void {
+  sessionState.status = 'anonymous'
+  sessionState.user = null
+  sessionState.error = null
+  setCsrfToken(null)
+}
+
 export async function ensureSession(force = false): Promise<void> {
   if (!force && sessionState.status === 'ready') return
   if (inflight) return inflight

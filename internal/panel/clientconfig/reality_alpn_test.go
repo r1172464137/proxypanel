@@ -30,7 +30,7 @@ const realityBase = `"realitySettings":{"serverName":"reality.example.test","fin
 // tls-only rule left open.
 func TestWSRealityALPNIsHTTP11(t *testing.T) {
 	stream := `{"network":"ws","security":"reality","wsSettings":{"path":"/ws","headers":{"Host":"cdn.example.test"}},` + realityBase + `}`
-	ep := endpointFrom(t, protocol.VMess, stream, `{"server_name":"reality.example.test","alpn":["h2","http/1.1"]}`, 443)
+	ep := endpointFrom(t, protocol.VLESS, stream, `{"server_name":"reality.example.test","alpn":["h2","http/1.1"]}`, 443)
 	if ep.Security != "reality" {
 		t.Fatalf("endpoint security = %q, want reality (the test must exercise the REALITY path)", ep.Security)
 	}
@@ -60,7 +60,7 @@ func TestWSRealityALPNIsHTTP11(t *testing.T) {
 // httpupgrade over REALITY is the same HTTP/1.1 Upgrade and must follow the rule.
 func TestHTTPUpgradeRealityALPNIsHTTP11(t *testing.T) {
 	stream := `{"network":"httpupgrade","security":"reality","httpupgradeSettings":{"path":"/up","host":"cdn.example.test"},` + realityBase + `}`
-	ep := endpointFrom(t, protocol.VMess, stream, `{"server_name":"reality.example.test","alpn":["h2"]}`, 443)
+	ep := endpointFrom(t, protocol.VLESS, stream, `{"server_name":"reality.example.test","alpn":["h2"]}`, 443)
 
 	// Mihomo has no httpupgrade transport. Render refuses explicitly instead of
 	// emitting a proxy it cannot carry, so that is asserted separately.
@@ -105,7 +105,12 @@ func TestNonUpgradeTransportsKeepServerALPN(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			ep := endpointFrom(t, protocol.VMess, tc.stream, tc.client, 443)
+			// REALITY 只能配 VLESS（校验已强制），非 reality 的 case 仍用 VMess
+			proto := protocol.VMess
+			if name == "tcp-reality" {
+				proto = protocol.VLESS
+			}
+			ep := endpointFrom(t, proto, tc.stream, tc.client, 443)
 			got := exportedALPN(t, NodeConfig{Endpoint: ep, Credential: uuid})
 			kept := 0
 			for _, format := range []string{FormatXray, FormatSingbox, FormatMihomo, FormatV2rayN} {

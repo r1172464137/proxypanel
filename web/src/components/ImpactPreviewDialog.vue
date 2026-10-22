@@ -11,7 +11,15 @@ import { pushToast } from '@/lib/toast'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Badge } from '@/components/ui/badge'
+import {
+  describeBlockReason,
+  describeConsequences,
+  describeSnapshotChanges,
+  type ConsequenceText,
+} from '@/lib/batchConsequences'
+import type { PreviewItem } from '@/api/types'
 import AppModal from './AppModal.vue'
 import ErrorState from './ErrorState.vue'
 import LoadingBlock from './LoadingBlock.vue'
@@ -92,12 +100,37 @@ function exceptionText(item: unknown): string {
     const record = item as Record<string, unknown>
     const label = record.member_id ?? record.node_id ?? record.id ?? record.object_id
     const reason = record.reason ?? record.message ?? record.code
-    if (label || reason) return `${String(label ?? '对象')}：${String(reason ?? '不可执行')}`
+    if (label || reason) {
+      return `${String(label ?? '对象')}：${describeBlockReason(reason ? String(reason) : null)}`
+    }
   }
   return prettyJson(item)
 }
 
 // 纯展示用：把预览里的四个数字整理成表格行（不改动任何请求/提交逻辑）。
+// 每个成员的后果条目（已翻成中文）。
+function consequencesOf(item: PreviewItem): ConsequenceText[] {
+  return describeConsequences(item.consequences)
+}
+
+// before/after 的关键字段差异（人话）。
+function changesOf(item: PreviewItem): string[] {
+  return describeSnapshotChanges(item.before, item.after)
+}
+
+function toneClass(tone: ConsequenceText['tone']): string {
+  switch (tone) {
+    case 'danger':
+      return 'text-destructive'
+    case 'warn':
+      return 'text-amber-600 dark:text-amber-400'
+    case 'ok':
+      return 'text-emerald-600 dark:text-emerald-400'
+    default:
+      return 'text-muted-foreground'
+  }
+}
+
 const metricRows = computed(() => {
   const current = preview.value
   if (!current) return []
@@ -146,6 +179,61 @@ const metricRows = computed(() => {
             </TableRow>
           </TableBody>
         </Table>
+
+        <!-- 逐成员明细：预览的核心价值在这里——只给汇总数字等于没有预览。
+             服务端返回 before/after 快照与 consequences 码，这里翻成中文并列出来。 -->
+        <div v-if="preview.items?.length" class="space-y-2">
+          <h3 class="text-sm font-medium">逐个成员的影响</h3>
+          <div class="max-h-80 overflow-auto rounded-md border border-border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead class="w-40">成员</TableHead>
+                  <TableHead>会发生什么</TableHead>
+                  <TableHead class="w-24 text-right">节点数</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow v-for="item in preview.items" :key="item.member_id">
+                  <TableCell class="font-medium">
+                    {{ item.username || item.member_id }}
+                    <Badge v-if="item.blocked" variant="destructive" class="ml-1">不可执行</Badge>
+                  </TableCell>
+                  <TableCell class="text-sm">
+                    <ul v-if="consequencesOf(item).length" class="list-disc pl-4">
+                      <li
+                        v-for="(c, ci) in consequencesOf(item)"
+                        :key="ci"
+                        :class="toneClass(c.tone)"
+                      >{{ c.label }}</li>
+                    </ul>
+                    <ul v-if="changesOf(item).length" class="list-disc pl-4 text-muted-foreground">
+                      <li v-for="(change, ci) in changesOf(item)" :key="`c${ci}`">{{ change }}</li>
+                    </ul>
+                    <span v-if="item.blocked && item.blocked_reason" class="text-destructive">
+                      {{ describeBlockReason(item.blocked_reason) }}
+                    </span>
+                    <span
+                      v-if="!consequencesOf(item).length && !changesOf(item).length"
+                      class="text-muted-foreground"
+                    >
+                      无变化
+                    </span>
+                  </TableCell>
+                  <TableCell class="text-right tabular text-sm">
+                    <template v-if="typeof item.nodes_removed === 'number' && item.nodes_removed > 0">
+                      <span class="text-destructive">-{{ item.nodes_removed }}</span>
+                    </template>
+                    <template v-else-if="typeof item.nodes_added === 'number' && item.nodes_added > 0">
+                      <span class="text-emerald-600 dark:text-emerald-400">+{{ item.nodes_added }}</span>
+                    </template>
+                    <span v-else class="text-muted-foreground">—</span>
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+        </div>
 
         <Alert v-if="preview.warnings.length">
           <AlertTitle>后果提示</AlertTitle>

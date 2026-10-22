@@ -340,11 +340,15 @@ func (s *Store) applyPreview(ctx context.Context, tx *sql.Tx, plan *Preview, now
 			if err := protectLastAdminTx(ctx, tx, &beforeMember, m); err != nil {
 				return nil, err
 			}
-			if !active {
-				m.ProxyEnabled = false
-			}
-			if _, err := tx.ExecContext(ctx, `UPDATE members SET active=$2, proxy_enabled=$3, version=version+1,
-				updated_at=now() WHERE id=$1`, m.ID, m.Active, m.ProxyEnabled); err != nil {
+			// 只改 active。**不要**顺带把 proxy_enabled 置 false：
+			//   - 单成员 PATCH 路径从来不这么做，两条路径必须语义一致；
+			//   - 而这里一旦关了 proxy_enabled，恢复 active=true 时没有任何
+			//     对应逻辑把它打开，成员会永久处于 proxy_paused（订阅输出 403），
+			//     界面也不提示，只能逐个手动重开。
+			// 撤权职责属于 proxy_enabled 字段本身（有一个独立开关），
+			// 不该由 active 隐式代办。
+			if _, err := tx.ExecContext(ctx, `UPDATE members SET active=$2, version=version+1,
+				updated_at=now() WHERE id=$1`, m.ID, m.Active); err != nil {
 				return nil, dbErr(err)
 			}
 			if !active {
