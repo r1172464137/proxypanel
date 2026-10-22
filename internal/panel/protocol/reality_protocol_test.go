@@ -122,6 +122,7 @@ func toProtocolNode(n domain.Node) Node {
 		Listen:           n.Listen,
 		Host:             n.Host,
 		Port:             n.Port,
+		ExternalPort:     n.ExternalPort,
 		StreamSettings:   n.StreamSettings,
 		ProtocolSettings: n.ProtocolSettings,
 		ClientSettings:   n.ClientSettings,

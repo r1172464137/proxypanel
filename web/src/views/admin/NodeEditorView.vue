@@ -547,7 +547,7 @@ const cipherValue = computed({
             <p v-if="errorFor('node-host')" class="text-xs text-destructive">{{ errorFor('node-host') }}</p>
           </div>
           <div class="space-y-1.5">
-            <Label for="node-port">对外端口</Label>
+            <Label for="node-port">监听端口</Label>
             <Input
               id="node-port"
               v-model="draft.port"
@@ -556,6 +556,24 @@ const cipherValue = computed({
               :class="errorFor('node-port') ? 'border-destructive focus-visible:ring-destructive' : ''"
             />
             <p v-if="errorFor('node-port')" class="text-xs text-destructive">{{ errorFor('node-port') }}</p>
+            <p class="text-xs text-muted-foreground">节点在本机实际监听的端口。</p>
+          </div>
+          <div class="space-y-1.5">
+            <Label for="node-external-port">对外端口（可选）</Label>
+            <Input
+              id="node-external-port"
+              v-model="draft.external_port"
+              inputmode="numeric"
+              placeholder="留空表示与监听端口相同"
+              :aria-invalid="Boolean(errorFor('external_port'))"
+              :class="errorFor('external_port') ? 'border-destructive focus-visible:ring-destructive' : ''"
+            />
+            <p v-if="errorFor('external_port')" class="text-xs text-destructive">{{ errorFor('external_port') }}</p>
+            <p class="text-xs text-muted-foreground">
+              成员客户端实际连接的端口。用于「对外 443 → 本机实际 20101」这类中转：
+              客户端连「对外地址 + 这里填的端口」，本机仍监听上面的监听端口。
+              端口转发需要你在中转机上自行配置（nginx stream / iptables 等），面板不代管。
+            </p>
           </div>
           <div class="space-y-1.5">
             <Label for="node-listen">监听地址</Label>

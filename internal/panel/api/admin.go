@@ -205,11 +205,14 @@ func (s *Server) handleListNodes(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Name             string        `json:"name"`
-		ServerID         string        `json:"server_id"`
-		Enabled          *bool         `json:"enabled"`
-		Host             string        `json:"host"`
-		Port             int           `json:"port"`
+		Name     string `json:"name"`
+		ServerID string `json:"server_id"`
+		Enabled  *bool  `json:"enabled"`
+		Host     string `json:"host"`
+		Port     int    `json:"port"`
+		// ExternalPort 可选：客户端连接的端口，用于「对外 443 → 实际 20101」。
+		// 不传或传 0 表示与 Port 相同。
+		ExternalPort     int           `json:"external_port"`
 		Listen           string        `json:"listen"`
 		Protocol         string        `json:"protocol"`
 		Flow             string        `json:"flow"`
@@ -237,14 +240,16 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 		listen = "0.0.0.0"
 	}
 	stream, ps, key, issues := protocol.Sanitize(protocol.Node{Protocol: in.Protocol, Flow: in.Flow,
-		Cipher: in.Cipher, Listen: listen, Host: in.Host, Port: in.Port, StreamSettings: in.StreamSettings,
+		Cipher: in.Cipher, Listen: listen, Host: in.Host, Port: in.Port, ExternalPort: in.ExternalPort,
+		StreamSettings:   in.StreamSettings,
 		ProtocolSettings: in.ProtocolSettings, ClientSettings: in.ClientSettings, ServerKey: in.ServerKey})
 	if len(issues) > 0 {
 		s.writeError(w, r, fieldErrors(issues))
 		return
 	}
 	node := &domain.Node{ID: newID(ids.Node), ServerID: in.ServerID, Name: in.Name, Enabled: enabled,
-		Host: in.Host, Port: in.Port, Listen: listen, Protocol: in.Protocol, Flow: in.Flow, Cipher: in.Cipher,
+		Host: in.Host, Port: in.Port, ExternalPort: in.ExternalPort, Listen: listen,
+		Protocol: in.Protocol, Flow: in.Flow, Cipher: in.Cipher,
 		StreamSettings: stream, ProtocolSettings: ps, ClientSettings: in.ClientSettings,
 		SortOrder: in.SortOrder, ServerKey: key}
 	if err := ensureRealityKeys(node); err != nil {
@@ -275,12 +280,14 @@ func (s *Server) handleGetNode(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Version          int64         `json:"version"`
-		Name             *string       `json:"name"`
-		ServerID         *string       `json:"server_id"`
-		Enabled          *bool         `json:"enabled"`
-		Host             *string       `json:"host"`
-		Port             *int          `json:"port"`
+		Version  int64   `json:"version"`
+		Name     *string `json:"name"`
+		ServerID *string `json:"server_id"`
+		Enabled  *bool   `json:"enabled"`
+		Host     *string `json:"host"`
+		Port     *int    `json:"port"`
+		// 传 0 表示清除对外端口（退回与 port 相同）。
+		ExternalPort     *int          `json:"external_port"`
 		Listen           *string       `json:"listen"`
 		Protocol         *string       `json:"protocol"`
 		Flow             *string       `json:"flow"`
@@ -310,6 +317,9 @@ func (s *Server) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 		}
 		if in.Port != nil {
 			n.Port = *in.Port
+		}
+		if in.ExternalPort != nil {
+			n.ExternalPort = *in.ExternalPort
 		}
 		if in.Listen != nil {
 			n.Listen = *in.Listen

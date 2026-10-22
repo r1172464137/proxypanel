@@ -104,7 +104,8 @@ func EndpointFor(node domain.Node) (Endpoint, []Issue) {
 		Name:     node.Name,
 		Protocol: strings.ToLower(strings.TrimSpace(node.Protocol)),
 		Address:  strings.TrimSpace(node.Host),
-		Port:     node.Port,
+		// 客户端连的是「对外端口」；未设置时退回实际监听端口。
+		Port:     clientPort(node),
 		Network:  normNetwork(networkRaw),
 		Security: normSecurity(func() string { s, _ := stream.String("security"); return s }()),
 		Flow:     strings.TrimSpace(node.Flow),
@@ -415,4 +416,15 @@ func pemCertSHA256(pemText string) (string, bool) {
 		sum := sha256.Sum256(block.Bytes)
 		return hex.EncodeToString(sum[:]), true
 	}
+}
+
+// clientPort 返回写进成员配置的端口。
+//
+// ExternalPort 用于「对外 443 → 实际监听 20101」这类中转：服务端仍监听 Port，
+// 但客户端要连 ExternalPort。转发本身由运维在机器上配置，面板不代管。
+func clientPort(node domain.Node) int {
+	if node.ExternalPort > 0 {
+		return node.ExternalPort
+	}
+	return node.Port
 }

@@ -29,6 +29,8 @@ export interface NodeDraft {
   enabled: boolean
   host: string
   port: string
+  /** 对外端口（客户端连接的）；留空表示与 port 相同。 */
+  external_port: string
   listen: string
   protocol: NodeProtocol
   flow: string
@@ -49,6 +51,7 @@ export function emptyNodeDraft(): NodeDraft {
     enabled: true,
     host: '',
     port: '443',
+    external_port: '',
     listen: '0.0.0.0',
     protocol: 'vless',
     flow: '',
@@ -70,6 +73,7 @@ export function draftFromNode(node: NodeRecord): NodeDraft {
     enabled: node.enabled !== false,
     host: node.host ?? '',
     port: String(node.port ?? ''),
+    external_port: node.external_port ? String(node.external_port) : '',
     listen: node.listen ?? '',
     protocol: (node.protocol ?? 'vless') as NodeProtocol,
     flow: node.flow ?? '',
@@ -418,6 +422,7 @@ export function buildNodeWrite(draft: NodeDraft, options: { omitServerKey?: bool
     enabled: draft.enabled,
     host: draft.host.trim(),
     port: Number(draft.port),
+    external_port: draft.external_port.trim() ? Number(draft.external_port) : 0,
     listen: draft.listen.trim(),
     protocol: draft.protocol,
     flow: draft.flow.trim(),

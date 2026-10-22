@@ -33,12 +33,14 @@ func (i Issue) String() string { return i.Field + ": " + i.Message }
 
 // Node is the writable node projection validated by the panel.
 type Node struct {
-	Protocol         string
-	Flow             string
-	Cipher           string
-	Listen           string
-	Host             string
-	Port             int
+	Protocol string
+	Flow     string
+	Cipher   string
+	Listen   string
+	Host     string
+	Port     int
+	// ExternalPort 是客户端连接的端口；0 表示与 Port 相同。
+	ExternalPort     int
 	StreamSettings   domain.Object
 	ProtocolSettings domain.Object
 	ClientSettings   domain.Object
@@ -174,6 +176,15 @@ func Validate(n Node) []Issue {
 	}
 	if n.Port < 1 || n.Port > 65535 {
 		add("port", "port must be between 1 and 65535")
+	}
+	// 对外端口用于「对外 443 → 实际监听 20101」：可选，填了就必须是合法端口，
+	// 且不能与实际监听端口相同（相同就没有分离的意义，容易让运维误以为配错了）。
+	if n.ExternalPort != 0 {
+		if n.ExternalPort < 1 || n.ExternalPort > 65535 {
+			add("external_port", "external_port must be between 1 and 65535")
+		} else if n.ExternalPort == n.Port {
+			add("external_port", "external_port 与实际监听端口相同，没有分离意义；不需要时请留空")
+		}
 	}
 	if strings.TrimSpace(n.Host) == "" {
 		add("host", "client facing host is required")

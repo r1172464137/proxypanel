@@ -159,12 +159,16 @@ type Server struct {
 }
 
 type Node struct {
-	ID               string    `json:"id"`
-	Name             string    `json:"name"`
-	ServerID         string    `json:"server_id"`
-	Enabled          bool      `json:"enabled"`
-	Host             string    `json:"host"`
-	Port             int       `json:"port"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	ServerID string `json:"server_id"`
+	Enabled  bool   `json:"enabled"`
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	// ExternalPort 是客户端连接的端口；0/NULL 表示与 Port 相同。
+	// 用于「对外 443 → 实际监听 20101」这类中转场景：转发由运维在机器上配，
+	// 面板只负责把对外地址写进成员配置。
+	ExternalPort     int       `json:"external_port,omitempty"`
 	Listen           string    `json:"listen"`
 	Protocol         string    `json:"protocol"`
 	Flow             string    `json:"flow"`
@@ -240,12 +244,12 @@ type Member struct {
 	UpdatedAt            time.Time   `json:"updated_at"`
 
 	// Derived values (computed per request, never stored).
-	UsedBytes           int64     `json:"used_bytes"`
-	EffectiveQuotaBytes *int64    `json:"effective_quota_bytes"`
-	AccessReasons       []string  `json:"access_reasons"`
-	ProxyAccess         string    `json:"proxy_access"`
-	AllowedNodeIDs      []string  `json:"allowed_node_ids"`
-	PasswordHash        string    `json:"-"`
+	UsedBytes           int64    `json:"used_bytes"`
+	EffectiveQuotaBytes *int64   `json:"effective_quota_bytes"`
+	AccessReasons       []string `json:"access_reasons"`
+	ProxyAccess         string   `json:"proxy_access"`
+	AllowedNodeIDs      []string `json:"allowed_node_ids"`
+	PasswordHash        string   `json:"-"`
 }
 
 type Template struct {
@@ -353,20 +357,20 @@ type Session struct {
 }
 
 type Task struct {
-	ID         string     `json:"id"`
-	Kind       string     `json:"kind"`
-	AgentID    string     `json:"agent_id"`
-	NodeID     string     `json:"node_id"`
-	MemberID   string     `json:"member_id"`
-	BatchID    string     `json:"batch_id"`
-	State      string     `json:"state"`
-	Attempts   int        `json:"attempts"`
-	MaxAttempts int       `json:"max_attempts"`
-	LastError  string     `json:"last_error"`
-	AvailableAt time.Time `json:"available_at"`
-	LockedAt   *time.Time `json:"locked_at"`
-	CreatedAt  time.Time  `json:"created_at"`
-	UpdatedAt  time.Time  `json:"updated_at"`
+	ID          string     `json:"id"`
+	Kind        string     `json:"kind"`
+	AgentID     string     `json:"agent_id"`
+	NodeID      string     `json:"node_id"`
+	MemberID    string     `json:"member_id"`
+	BatchID     string     `json:"batch_id"`
+	State       string     `json:"state"`
+	Attempts    int        `json:"attempts"`
+	MaxAttempts int        `json:"max_attempts"`
+	LastError   string     `json:"last_error"`
+	AvailableAt time.Time  `json:"available_at"`
+	LockedAt    *time.Time `json:"locked_at"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
 type Event struct {
@@ -397,14 +401,14 @@ type AuditLog struct {
 }
 
 type Settings struct {
-	Timezone          string    `json:"timezone"`
-	RetentionDays     int       `json:"retention_days"`
-	TelegramEnabled   bool      `json:"telegram_enabled"`
-	TelegramChatID    string    `json:"telegram_chat_id"`
-	TelegramTokenSet  bool      `json:"telegram_token_set"`
-	TemplateDefaults  Object    `json:"template_defaults"`
-	Version           int64     `json:"version"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	Timezone         string    `json:"timezone"`
+	RetentionDays    int       `json:"retention_days"`
+	TelegramEnabled  bool      `json:"telegram_enabled"`
+	TelegramChatID   string    `json:"telegram_chat_id"`
+	TelegramTokenSet bool      `json:"telegram_token_set"`
+	TemplateDefaults Object    `json:"template_defaults"`
+	Version          int64     `json:"version"`
+	UpdatedAt        time.Time `json:"updated_at"`
 
 	// TelegramToken is write-only; it is never returned by the API.
 	TelegramToken string `json:"-"`
@@ -443,27 +447,25 @@ type UsageRow struct {
 }
 
 type Batch struct {
-	ID            string     `json:"id"`
-	PreviewID     string     `json:"preview_id"`
-	Operation     string     `json:"operation"`
-	State         string     `json:"state"`
-	IdempotencyKey string    `json:"idempotency_key"`
-	CreatedBy     string     `json:"created_by"`
-	CreatedAt     time.Time  `json:"created_at"`
-	CompletedAt   *time.Time `json:"completed_at"`
-	Results       []BatchItem `json:"results"`
-	Summary       Object     `json:"summary"`
+	ID             string      `json:"id"`
+	PreviewID      string      `json:"preview_id"`
+	Operation      string      `json:"operation"`
+	State          string      `json:"state"`
+	IdempotencyKey string      `json:"idempotency_key"`
+	CreatedBy      string      `json:"created_by"`
+	CreatedAt      time.Time   `json:"created_at"`
+	CompletedAt    *time.Time  `json:"completed_at"`
+	Results        []BatchItem `json:"results"`
+	Summary        Object      `json:"summary"`
 }
 
 type BatchItem struct {
-	ID        string `json:"id"`
-	BatchID   string `json:"batch_id"`
-	MemberID  string `json:"member_id"`
-	NodeID    string `json:"node_id"`
-	AgentID   string `json:"agent_id"`
-	State     string `json:"state"`
-	TaskID    string `json:"task_id"`
-	Error     string `json:"error"`
+	ID       string `json:"id"`
+	BatchID  string `json:"batch_id"`
+	MemberID string `json:"member_id"`
+	NodeID   string `json:"node_id"`
+	AgentID  string `json:"agent_id"`
+	State    string `json:"state"`
+	TaskID   string `json:"task_id"`
+	Error    string `json:"error"`
 }
-
-

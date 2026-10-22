@@ -83,6 +83,8 @@ export interface RegistrationCode {
 
 export interface NodeRecord {
   id: string
+  /** 客户端连接的端口；为空表示与 port 相同（用于「对外 443 → 实际 20101」）。 */
+  external_port?: number
   version: number
   name: string
   server_id: string
@@ -111,6 +113,8 @@ export interface NodeWrite {
   enabled: boolean
   host: string
   port: number
+  /** 客户端连接的端口（对外端口）；0 表示与 port 相同。 */
+  external_port?: number
   listen: string
   protocol: NodeProtocol
   flow?: string | null

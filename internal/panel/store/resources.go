@@ -355,17 +355,21 @@ func (s *Store) DeleteNodeGroup(ctx context.Context, id string) error {
 
 // ─── nodes ─────────────────────────────────────────────────────────────────
 
-const nodeCols = `id, server_id, name, enabled, host, port, listen, protocol, flow, cipher, server_key_enc,
+const nodeCols = `id, server_id, name, enabled, host, port, external_port, listen, protocol, flow, cipher, server_key_enc,
 	stream_settings, protocol_settings, client_settings, sort_order, archived, version, created_at, updated_at`
 
 func scanNode(row interface{ Scan(...any) error }, decrypt func([]byte) (string, error)) (*domain.Node, error) {
 	var v domain.Node
 	var keyEnc []byte
 	var stream, ps, cs []byte
-	if err := row.Scan(&v.ID, &v.ServerID, &v.Name, &v.Enabled, &v.Host, &v.Port, &v.Listen, &v.Protocol,
+	var externalPort sql.NullInt64
+	if err := row.Scan(&v.ID, &v.ServerID, &v.Name, &v.Enabled, &v.Host, &v.Port, &externalPort, &v.Listen, &v.Protocol,
 		&v.Flow, &v.Cipher, &keyEnc, &stream, &ps, &cs, &v.SortOrder, &v.Archived, &v.Version,
 		&v.CreatedAt, &v.UpdatedAt); err != nil {
 		return nil, dbErr(err)
+	}
+	if externalPort.Valid {
+		v.ExternalPort = int(externalPort.Int64)
 	}
 	v.StreamSettings = scanObject(stream)
 	v.ProtocolSettings = scanObject(ps)
@@ -485,8 +489,9 @@ func (s *Store) CreateNode(ctx context.Context, v *domain.Node, coreInstanceID s
 	}
 	err = s.inTx(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO nodes (`+nodeCols+`)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,false,1,now(),now())`,
-			v.ID, v.ServerID, v.Name, v.Enabled, v.Host, v.Port, v.Listen, v.Protocol, v.Flow, v.Cipher,
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,false,1,now(),now())`,
+			v.ID, v.ServerID, v.Name, v.Enabled, v.Host, v.Port, nullableExternalPort(v.ExternalPort), v.Listen,
+			v.Protocol, v.Flow, v.Cipher,
 			keyEnc, encodeObject(v.StreamSettings), encodeObject(v.ProtocolSettings), encodeObject(v.ClientSettings),
 			v.SortOrder); err != nil {
 			return dbErr(err)
@@ -532,10 +537,11 @@ func (s *Store) UpdateNode(ctx context.Context, id string, expectedVersion int64
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE nodes SET name=$2,server_id=$3,enabled=$4,host=$5,port=$6,listen=$7,
-			protocol=$8,flow=$9,cipher=$10,server_key_enc=$11,stream_settings=$12,protocol_settings=$13,
-			client_settings=$14,sort_order=$15,archived=$16,version=$17,updated_at=$18 WHERE id=$1`,
-			cur.ID, cur.Name, cur.ServerID, cur.Enabled, cur.Host, cur.Port, cur.Listen, cur.Protocol, cur.Flow,
+		if _, err := tx.ExecContext(ctx, `UPDATE nodes SET name=$2,server_id=$3,enabled=$4,host=$5,port=$6,external_port=$7,
+			listen=$8,protocol=$9,flow=$10,cipher=$11,server_key_enc=$12,stream_settings=$13,protocol_settings=$14,
+			client_settings=$15,sort_order=$16,archived=$17,version=$18,updated_at=$19 WHERE id=$1`,
+			cur.ID, cur.Name, cur.ServerID, cur.Enabled, cur.Host, cur.Port, nullableExternalPort(cur.ExternalPort),
+			cur.Listen, cur.Protocol, cur.Flow,
 			cur.Cipher, keyEnc, encodeObject(cur.StreamSettings), encodeObject(cur.ProtocolSettings),
 			encodeObject(cur.ClientSettings), cur.SortOrder, cur.Archived, cur.Version, cur.UpdatedAt); err != nil {
 			return dbErr(err)
@@ -1033,4 +1039,13 @@ func (s *Store) NodeGroupUsage(ctx context.Context, groupID string) (int, error)
 	var n int
 	err := s.DB.QueryRowContext(ctx, `SELECT count(*) FROM subscription_node_groups WHERE node_group_id=$1`, groupID).Scan(&n)
 	return n, dbErr(err)
+}
+
+// nullableExternalPort 把「未设置」的对外端口写成 NULL 而不是 0，
+// 这样数据库里只有真正的端口值，检查约束也不需要为 0 开特例。
+func nullableExternalPort(port int) any {
+	if port <= 0 {
+		return nil
+	}
+	return port
 }

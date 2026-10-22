@@ -28,6 +28,7 @@ func fieldErrors(issues []protocol.Issue) *domain.Error {
 func protocolNode(n *domain.Node) protocol.Node {
 	return protocol.Node{
 		Protocol: n.Protocol, Flow: n.Flow, Cipher: n.Cipher, Listen: n.Listen, Host: n.Host, Port: n.Port,
+		ExternalPort:   n.ExternalPort,
 		StreamSettings: n.StreamSettings, ProtocolSettings: n.ProtocolSettings,
 		ClientSettings: n.ClientSettings, ServerKey: n.ServerKey,
 	}
