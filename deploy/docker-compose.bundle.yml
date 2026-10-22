@@ -1,0 +1,114 @@
+# proxypanel 一体化部署：PostgreSQL + Redis + 面板，单个 compose 文件。
+#
+# 与 deploy/docker-compose.example.yml 的区别：
+#   * 数据库与缓存在这里和面板一起管理（示例来自行部署外部实例）；
+#   * 面板直接监听 0.0.0.0，便于从局域网访问，不经过宿主 nginx。
+#
+# 首次使用：
+#   cp .env.example .env && ${EDITOR:-vi} .env      # 填四个必填值
+#   docker compose up -d
+#   docker compose logs -f panel
+#
+# 三个密码（PG_PASSWORD / REDIS_PASSWORD / PANEL_MASTER_KEY）生成一次后必须固定保存：
+# PANEL_MASTER_KEY 是加密成员凭据的钥匙，丢失后数据库里的密码与 UUID 无法恢复。
+name: proxypanel
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: proxypanel
+      POSTGRES_PASSWORD: "${PG_PASSWORD:?set PG_PASSWORD in .env}"
+      POSTGRES_DB: proxypanel
+      # 面板与数据库同机同网络，容器间不需要 TLS；不要为此把数据卷放到公网。
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C.UTF-8"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U proxypanel -d proxypanel"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    # 不发布端口：只有同 compose 网络的 panel 能连。需要本机 psql 时再临时
+    # 取消下一行注释（务必保持 127.0.0.1 前缀）。
+    # ports:
+    #   - "127.0.0.1:5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - "--requirepass"
+      - "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}"
+      # 登录限流是短生命周期数据：给出上限并禁止驱逐，避免把限流计数挤掉
+      # 之后悄悄放开爆破窗口。
+      - "--maxmemory"
+      - "192mb"
+      - "--maxmemory-policy"
+      - "noeviction"
+      - "--appendonly"
+      - "yes"
+      - "--appendfsync"
+      - "everysec"
+    volumes:
+      - redisdata:/data
+    environment:
+      REDIS_PASSWORD: "${REDIS_PASSWORD}"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    # 同上：不发布端口。
+
+  panel:
+    image: "ghcr.io/r1172464137/proxypanel-panel:${PANEL_TAG:-latest}"
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgres://proxypanel:${PG_PASSWORD}@postgres:5432/proxypanel?sslmode=disable"
+      REDIS_URL: "redis://default:${REDIS_PASSWORD}@redis:6379/0"
+      PANEL_MASTER_KEY: "${PANEL_MASTER_KEY:?set PANEL_MASTER_KEY in .env}"
+      # 面板自己终止 TLS，容器的网络命名空间是独立的，所以监听 0.0.0.0。
+      PANEL_LISTEN: "0.0.0.0:8443"
+      PANEL_TLS_CERT: "/certs/fullchain.pem"
+      PANEL_TLS_KEY: "/certs/privkey.pem"
+      # 必须与浏览器实际访问的地址一致：它决定 CSRF 与订阅链接里的主机名。
+      PANEL_PUBLIC_URL: "${PANEL_PUBLIC_URL:?set PANEL_PUBLIC_URL in .env}"
+      PANEL_MIGRATIONS_DIR: "/app/migrations"
+      # 仅在用户表为空时创建管理员；首次登录成功后可以从 .env 删掉这两个值。
+      PANEL_ADMIN_USER: "${PANEL_ADMIN_USER:-admin}"
+      PANEL_ADMIN_PASSWORD: "${PANEL_ADMIN_PASSWORD:-}"
+    volumes:
+      - ./certs:/certs:ro
+    ports:
+      # 只发布到内网网卡：203 有公网 IP，绑定 0.0.0.0 会让面板对全网可达。
+      # 容器内的 PANEL_LISTEN 仍是 0.0.0.0（容器网络命名空间独立），
+      # 外网能否访问由此处的宿主侧绑定决定。
+      # 需要从本机 curl 时把 IP 换成 127.0.0.1，或用
+      #   docker compose port panel 8443
+      - "${PANEL_BIND_IP:-192.168.5.203}:8443:8443"
+    healthcheck:
+      # 面板是 HTTPS，自签证书下必须跳过校验；这里只验证进程活着并能应答。
+      test: ["CMD-SHELL", "wget -q -O- --no-check-certificate https://127.0.0.1:8443/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  pgdata:
+  redisdata:
