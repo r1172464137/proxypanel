@@ -94,6 +94,18 @@ const routes: RouteRecordRaw[] = [
     meta: { role: 'admin', title: '邀请' },
   },
   {
+    path: '/admin/templates',
+    name: 'admin-templates',
+    component: () => import('@/views/admin/TemplatesView.vue'),
+    meta: { role: 'admin', title: '模板' },
+  },
+  {
+    path: '/admin/batches',
+    name: 'admin-batches',
+    component: () => import('@/views/admin/BatchListView.vue'),
+    meta: { role: 'admin', title: '批量任务' },
+  },
+  {
     path: '/admin/batches/:id',
     name: 'admin-batch-detail',
     component: () => import('@/views/admin/BatchDetailView.vue'),

@@ -155,6 +155,7 @@ func (s *Server) mountAdmin(mux *http.ServeMux) {
 	admin("GET /api/v1/admin/usage", s.handleAdminUsage, false)
 	admin("POST /api/v1/admin/batches/preview", s.handleBatchPreview, true)
 	admin("POST /api/v1/admin/batches", s.handleBatchSubmit, true)
+	admin("GET /api/v1/admin/batches", s.handleListBatches, false)
 	admin("GET /api/v1/admin/batches/{id}", s.handleGetBatch, false)
 	admin("GET /api/v1/admin/events", s.handleAdminEvents, false)
 	admin("POST /api/v1/admin/events/{id}/ack", s.handleAckEvent, true)

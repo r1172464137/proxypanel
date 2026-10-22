@@ -686,6 +686,96 @@ func (s *Store) GetBatch(ctx context.Context, id string) (*BatchSubmitResult, er
 	return &BatchSubmitResult{Batch: batch, Results: items, Summary: sum}, nil
 }
 
+// ListBatches returns batches newest first, for the admin batch history page.
+//
+// The frontend had a batch *detail* route and a batch list route, but the list
+// endpoint did not exist: GET /api/v1/admin/batches answered 405, so the history
+// page had nothing to render. Per-batch state counters are computed in one extra
+// query (not N+1) and merged into Summary the same way GetBatch does, so the list
+// and the detail page cannot disagree.
+func (s *Store) ListBatches(ctx context.Context, limit int) ([]domain.Batch, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT id, preview_id, operation, state, idempotency_key, created_by,
+		created_at, completed_at, summary FROM batches ORDER BY created_at DESC LIMIT $1`, clampLimit(limit))
+	if err != nil {
+		return nil, dbErr(err)
+	}
+	defer rows.Close()
+	out := make([]domain.Batch, 0, 16)
+	for rows.Next() {
+		var b domain.Batch
+		var completed sql.NullTime
+		var summaryRaw []byte
+		if err := rows.Scan(&b.ID, &b.PreviewID, &b.Operation, &b.State, &b.IdempotencyKey,
+			&b.CreatedBy, &b.CreatedAt, &completed, &summaryRaw); err != nil {
+			return nil, dbErr(err)
+		}
+		b.CreatedAt = utc(b.CreatedAt)
+		if completed.Valid {
+			t := completed.Time.UTC()
+			b.CompletedAt = &t
+		}
+		b.Summary = scanObject(summaryRaw)
+		out = append(out, b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, dbErr(err)
+	}
+	if len(out) == 0 {
+		return out, nil
+	}
+
+	ids := make([]string, len(out))
+	for i := range out {
+		ids[i] = out[i].ID
+	}
+	counts, err := s.batchStateCounts(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		sum := out[i].Summary
+		if sum == nil {
+			sum = domain.NewObject()
+		}
+		c, ok := counts[out[i].ID]
+		if !ok {
+			c = map[string]int{}
+		}
+		total := 0
+		for state, n := range c {
+			_ = sum.Set(state, n)
+			total += n
+		}
+		_ = sum.Set("total", total)
+		out[i].Summary = sum
+	}
+	return out, nil
+}
+
+// batchStateCounts returns per-batch item counts grouped by state. One query for
+// the whole page so the list view stays a constant number of round trips.
+func (s *Store) batchStateCounts(ctx context.Context, ids []string) (map[string]map[string]int, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT batch_id, state, count(*) FROM batch_items
+		WHERE batch_id = ANY($1) GROUP BY batch_id, state`, ids)
+	if err != nil {
+		return nil, dbErr(err)
+	}
+	defer rows.Close()
+	out := map[string]map[string]int{}
+	for rows.Next() {
+		var id, state string
+		var n int
+		if err := rows.Scan(&id, &state, &n); err != nil {
+			return nil, dbErr(err)
+		}
+		if out[id] == nil {
+			out[id] = map[string]int{}
+		}
+		out[id][state] = n
+	}
+	return out, dbErr(rows.Err())
+}
+
 func countState(items []domain.BatchItem, state string) int {
 	n := 0
 	for _, it := range items {

@@ -23,6 +23,15 @@ const drawerOpen = ref(false)
 const signingOut = ref(false)
 const menuButton = ref<HTMLButtonElement | null>(null)
 
+// 账户自身的 5 个视图：成员侧栏与管理员侧栏共用，避免两处各写一份后漂移。
+const myAccountLinks: NavSection['links'] = [
+  { label: '我的订阅', to: '/me/subscription', icon: 'subscription' },
+  { label: '我的用量', to: '/me/usage', icon: 'usage' },
+  { label: '凭据', to: '/me/credentials', icon: 'key' },
+  { label: '账户状态', to: '/me/status', icon: 'status' },
+  { label: '账号安全', to: '/me/security', icon: 'shield' },
+]
+
 const adminNav: NavSection[] = [
   { title: '概览', links: [{ label: '总览', to: '/admin/overview', icon: 'overview' }] },
   {
@@ -51,21 +60,12 @@ const adminNav: NavSection[] = [
     ],
   },
   { title: '系统', links: [{ label: '设置', to: '/admin/settings', icon: 'settings' }] },
-  { title: '成员端', links: [{ label: '我的订阅视图', to: '/me/subscription', icon: 'eye' }] },
+  // 管理员看的是自己的账户视图，与上方"成员"（管理他人）是两回事，
+  // 所以标题写"我的账户"，并给出全部 5 个入口而不是只给订阅。
+  { title: '我的账户', links: [...myAccountLinks] },
 ]
 
-const memberNav: NavSection[] = [
-  {
-    title: '我的',
-    links: [
-      { label: '我的订阅', to: '/me/subscription', icon: 'subscription' },
-      { label: '我的用量', to: '/me/usage', icon: 'usage' },
-      { label: '凭据', to: '/me/credentials', icon: 'key' },
-      { label: '状态', to: '/me/status', icon: 'status' },
-      { label: '账号安全', to: '/me/security', icon: 'shield' },
-    ],
-  },
-]
+const memberNav: NavSection[] = [{ title: '我的', links: [...myAccountLinks] }]
 
 const nav = computed(() => (sessionState.user?.role === 'admin' ? adminNav : memberNav))
 const title = computed(() => (typeof route.meta.title === 'string' ? route.meta.title : '代理面板'))

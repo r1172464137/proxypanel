@@ -90,6 +90,20 @@ func (s *Server) handleGetBatch(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleListBatches returns the batch history newest first.
+//
+// The batch history page needs this: without it GET /api/v1/admin/batches fell
+// through to the {id} pattern's method set and answered 405, so the page could
+// only show an error.
+func (s *Server) handleListBatches(w http.ResponseWriter, r *http.Request) {
+	items, err := s.Store.ListBatches(r.Context(), 200)
+	if err != nil {
+		s.writeError(w, r, err)
+		return
+	}
+	s.writeList(w, items, nil)
+}
+
 // previewRequired rejects a direct edit that would silently change access for
 // bound members (contract: PATCH must ask for the preview flow).
 func previewRequired(w http.ResponseWriter, r *http.Request, detail string) {
