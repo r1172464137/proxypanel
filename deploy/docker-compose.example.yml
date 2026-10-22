@@ -2,12 +2,12 @@
 #
 # 组成：
 #   postgres / redis  —— 面板依赖，只在内网可达
-#   panel             —— 本仓库构建的面板镜像，自己终止 TLS
+#   panel             —— API + 可选 SPA；TLS 由宿主机 nginx 终止
 #   agent             —— 节点端，仅在有节点的主机上启用
 #
-# 网页（SPA）不由面板提供：把 CI 产出的 web-dist 交给现有 nginx / OpenResty，
-# 由它托管静态文件，并把 /api 与 /sub 反代到 https://127.0.0.1:8443 。
-# 探针和契约见 docs/deployment.md 与 deploy/nginx.conf.example。
+# 默认由面板托管 SPA；也可设 PANEL_WEB_ROOT=，让宿主 nginx 读取 web-dist。
+# 宿主 nginx 反代至 http://127.0.0.1:8081，见 deploy/nginx.conf.example。
+# example 包含可选 Agent（profile=node），bundle 则只包含面板与数据库。
 name: proxypanel
 
 services:
@@ -46,7 +46,7 @@ services:
       - "127.0.0.1:6379:6379"
 
   panel:
-    image: ghcr.io/CHANGE_ME/proxypanel-panel:latest
+    image: ghcr.io/r1172464137/proxypanel-panel:${PANEL_TAG:-latest}
     restart: unless-stopped
     depends_on:
       postgres:
@@ -59,31 +59,34 @@ services:
       # 32 字节随机值，base64 编码。生成一次后固定保存：它是加密成员凭据的钥匙，
       # 丢失后数据库里的密码 / UUID 无法恢复，也不能每次启动重新生成。
       PANEL_MASTER_KEY: "${PANEL_MASTER_KEY:?set PANEL_MASTER_KEY}"
-      # 不要在 compose 里覆盖 PANEL_LISTEN / PANEL_TLS_*：
-      # 镜像里已经跑着一个 nginx（deploy/nginx.container.conf）在 8443 上终止 TLS，
-      # 面板本身固定监听 127.0.0.1:8080 由它反代。这两个进程由 entrypoint 一起拉起，
-      # 如果在这里把 PANEL_LISTEN 改成 0.0.0.0:8443，面板会和 nginx 抢端口，
-      # entrypoint 等不到 /healthz 就直接退出。
       PANEL_PUBLIC_URL: "${PANEL_PUBLIC_URL:?set PANEL_PUBLIC_URL}"
-      PANEL_MIGRATIONS_DIR: "/app/migrations"
+      # 镜像已内置 PANEL_LISTEN=0.0.0.0:8080 与 PANEL_TRUST_REVERSE_PROXY=true，
+      # 容器内不跑 nginx —— TLS 与反代由**宿主机** nginx 负责（deploy/nginx.conf.example）。
+      # 不要在这里设 PANEL_TLS_CERT/PANEL_TLS_KEY：那是"面板自己开 TLS"的另一条路径，
+      # 与反向代理终止 TLS 互斥，设了之后宿主机 nginx 用 http:// 反代会握手失败。
+      #
+      # 前端归属二选一：
+      #   不设置变量 → 面板托管 SPA；显式空值 → 只提供 API。
+      # 单连字符（不是 :-）保留用户设置的空字符串。
+      PANEL_WEB_ROOT: "${PANEL_WEB_ROOT-/usr/share/proxypanel/web}"
+      #
       # 仅首次启动需要（用户表为空时才会创建管理员）；首次登录成功后删掉这两行。
       PANEL_ADMIN_USER: "${PANEL_ADMIN_USER:-admin}"
       PANEL_ADMIN_PASSWORD: "${PANEL_ADMIN_PASSWORD:-}"
-    volumes:
-      # 给容器内的 nginx 用（它不是给面板进程读的）。privkey 必须 root 可读。
-      - /etc/proxypanel/certs:/certs:ro
     ports:
-      # 只发布到回环，由宿主上的 nginx 反代。不要直接暴露到公网。
-      - "127.0.0.1:8443:8443"
+      # 只发布到宿主回环，由宿主机 nginx 反代。不要直接暴露到公网。
+      # 左边是宿主端口（nginx 的 upstream 指向它），右边是容器内的 8080。
+      - "127.0.0.1:8081:8080"
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O- --no-check-certificate https://127.0.0.1:8443/healthz || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8080/healthz || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
 
   # 只在真正承载节点的机器上启用这一段。
   agent:
-    image: ghcr.io/CHANGE_ME/proxypanel-agent:latest
+    image: ghcr.io/r1172464137/proxypanel-agent:${PANEL_TAG:-latest}
+    profiles: [node]
     restart: unless-stopped
     environment:
       # Agent 只接受 https 的 panel_url（纯 http 仅限回环调试）。

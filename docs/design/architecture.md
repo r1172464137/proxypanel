@@ -4,7 +4,7 @@
 
 ```
                         ┌──────────────────────────────────────────┐
-   浏览器 / 成员  ──TLS──▶│  面板 cmd/panel                          │
+   宿主 nginx  ──HTTP──▶│  面板 cmd/panel（单 Go 进程）             │
                         │  · HTTP API（/api/v1/**、/sub/{token}）  │
                         │  · 授权计算：谁能用哪个节点、还剩多少     │
                         │  · 订阅渲染：xray / sing-box / mihomo / v2rayN
@@ -30,6 +30,18 @@
                     │  20101 / 20102 / ...  │
                     └───────────────────────┘
 ```
+
+## HTTP 与 SPA 部署边界
+
+浏览器与 Agent 通过宿主 nginx 的 HTTPS 入口访问面板。Docker 镜像无 nginx 或入口脚本，
+Go 在容器内监听 `0.0.0.0:8080`，只发布到宿主 `127.0.0.1:8081`；裸进程默认监听
+`127.0.0.1:8080`。反代模式允许非回环监听，但必须限制明文可达范围和容器网络成员，
+来源 IP 校验不能代替隔离。DEV 仍强制回环，不能作为普通 Docker bridge 试用模式。
+
+镜像默认 `PANEL_WEB_ROOT=/usr/share/proxypanel/web`，Go 同时托管 SPA；显式设空则
+API-only，由宿主 nginx 托管 dist。裸进程未配此变量也为 API-only。
+两者推荐同源 HTTPS；详细配置见 [Docker 部署](../deployment/docker.md)。
+这是当前代码架构说明，**不是本次新镜像已验证的声明**。
 
 ## 为什么是 Agent 拉，而不是面板推
 
@@ -57,7 +69,8 @@
 直到运维确认面板侧状态无误后显式执行：
 
 ```bash
-bin/proxypanel-agent -config /etc/proxypanel/agent.json -accept-generation <精确值>
+GENERATION='REPLACE_WITH_EXACT_GENERATION'
+bin/proxypanel-agent -config /etc/proxypanel/agent.json -accept-generation "$GENERATION"
 ```
 
 这条设计是为了挡住「从旧备份恢复后，已经被踢掉的人又被放回来」。代价是恢复模式

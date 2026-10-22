@@ -1,214 +1,235 @@
 # Docker 部署
 
-这篇讲怎么把这套东西真的跑在服务器上：选哪种编排、每个环境变量是什么、数据在哪个卷里、怎么升级和备份。面向已经决定自建、需要长期维护的人。只想先看一眼的话看 [快速开始](../getting-started/quickstart.md)。
+当前 `deploy/Dockerfile.panel` **不含 nginx 或入口脚本**，只启动 `/app/panel` 一个 Go 进程。
+默认同时提供 API 与 SPA，TLS 由宿主机 nginx 终止：
+
+```text
+浏览器 / Agent ──HTTPS:443──▶ 宿主 nginx
+                              └──HTTP──▶ 宿主 127.0.0.1:8081 ──端口发布──▶ 容器 0.0.0.0:8080
+```
+
+容器监听所有接口是为了接受 Docker bridge 转发，不等于允许公网直连。
+宿主发布地址必须保持回环，容器网络不要接入不可信服务。
+正式会话 Cookie 带 `Secure`，浏览器入口必须使用 HTTPS。
+
+**不要用 `PANEL_DEV=true` 做 Docker 本机试用。** main 在 DEV 模式下强制回环监听，
+镜像的 `0.0.0.0:8080` 会被拒绝；改为容器回环又无法通过 bridge 端口发布访问。
+源码本机开发另见 [开发环境](../development/setup.md)。
 
 ## 两种编排
 
-仓库里有两个 compose 文件，区别不只是「数据库在不在里面」：
+以 YAML 的实际服务定义为准：
 
 | | `deploy/docker-compose.bundle.yml` | `deploy/docker-compose.example.yml` |
 |---|---|---|
-| 组成 | PostgreSQL + Redis + 面板 | PostgreSQL + Redis + 面板 + Agent |
-| 面板镜像 | `ghcr.io/r1172464137/proxypanel-panel`（镜像内 nginx + 面板，`deploy/Dockerfile.panel`；没发布就用这个 Dockerfile 自建） | 自己提供，模板里是 `ghcr.io/CHANGE_ME/...` 占位 |
-| TLS 谁终止 | 镜像里的 nginx，只对外 8443 | 面板自己（`PANEL_TLS_CERT` / `PANEL_TLS_KEY`） |
-| 前端静态文件 | 镜像内 nginx 托管 | 宿主 nginx 托管 `web/dist` |
-| 面板发布地址 | `${PANEL_BIND_IP}:8443` | `127.0.0.1:8443` |
-| PostgreSQL / Redis 端口 | 不发布 | 发布到 `127.0.0.1`（方便本机 `psql`） |
-| 适用 | 一台机器、一个对外端口，最省事 | 已有宿主 nginx / 外部数据库 / 要接 Agent 容器 |
+| 服务 | PostgreSQL + Redis + 面板 | PostgreSQL + Redis + 面板；Agent 在 `node` profile 中，默认不启动 |
+| 面板镜像 | `ghcr.io/r1172464137/proxypanel-panel:${PANEL_TAG:-latest}` | 同左 |
+| 面板发布 | `${PANEL_BIND_IP:-127.0.0.1}:${PANEL_PORT:-8081}:8080` | `127.0.0.1:8081:8080` |
+| PostgreSQL / Redis | 不发布宿主端口；Redis 开 AOF | 发布到宿主回环 5432 / 6379；Redis 未启用 AOF |
+| 前端 | Go 默认托管 SPA，或显式设空 `PANEL_WEB_ROOT` | 同左 |
+| TLS | 宿主 nginx | 宿主 nginx |
 
-**一体化（bundle）是默认推荐。** 面板镜像里已经放好 nginx：它在容器内 `0.0.0.0:8443` 终止 TLS、托管 SPA、把 `/api` 与 `/sub` 反代给回环上的面板进程。这样对外只有一个端口，反代头只可能由同容器内的 nginx 产生，信任边界没有变大。
+example **不是外部数据库版**。改用外部实例需要自行修改 DSN、移除不再使用的服务及
+`depends_on`，跨机数据库链路也要单独配置安全传输。example 启用 Agent 前需要准备
+配置、核心目录、私有 CA 挂载和代理端口；核对好后用 `docker compose --profile node up -d`，
+或只启用已配置好的 Agent 服务。
+
+首次部署推荐 bundle，操作见 [HTTPS 快速开始](../getting-started/quickstart.md)。
+将 compose 复制到仓库根目录的 `docker-compose.yml`，在同目录管理 `.env` 并执行
+`docker compose ...`，避免混淆环境文件及相对路径。已有部署不要随意更换项目名或目录，
+以免连接到另一组数据卷。
+
+## 镜像与构建
+
+当前架构已完成 amd64 本地镜像构建和隔离运行验证，见[部署烟测](../development/deployment-smoke.md)。这不是 GHCR 已发布状态的证明。
+不要假定现有 `latest` 或旧标签已经移除了 nginx；选择包含这些改动的明确标签/摘要，
+并在上线前核对镜像环境变量、入口与实际行为。
+
+当前 CI 已改为新架构的构建和 SPA/API-only 冒烟逻辑，但**配置已更新不等于执行已通过**，
+也不能据旧 CI 验收推断新镜像已发布。若自行构建，使用仓库现有的
+[`deploy/Dockerfile.panel`](../../deploy/Dockerfile.panel)，**不需要额外 Dockerfile**。
+例如在仓库根目录为 amd64 构建（需要 Go、Docker；arm64 相应替换架构）：
 
 ```bash
-cp deploy/docker-compose.bundle.yml docker-compose.yml
-cp deploy/.env.bundle.example .env
-mkdir -p certs    # 放 fullchain.pem / privkey.pem
-docker compose up -d
+mkdir -p bin/amd64
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false \
+  -o bin/amd64/panel ./cmd/panel
+docker build --build-arg TARGETARCH=amd64 -f deploy/Dockerfile.panel \
+  -t proxypanel-panel:local .
 ```
 
-`./certs` 与 `.env` 都是相对 compose 文件所在目录解析的，所以把 compose 复制到仓库根目录、在根目录执行最省事。
+构建上下文必须有 `bin/<arch>/panel`、`migrations/` 和前端**源码** `web/`；Dockerfile
+的 Node 阶段自行执行 `npm ci` 与 `npm run build`，不依赖宿主预先生成 `web/dist`。
+为避免上下文过大，不要携带不需要的 `web/node_modules`、历史构建产物或秘密文件。
+在复制出的 compose 中把 `panel.image` 改成 `proxypanel-panel:local` 后再启动；
+`PANEL_TAG` 只替换 bundle 的远程镜像标签，不能把它变成本地镜像名。
+本地镜像不要执行下文的 `docker compose pull panel`，升级时重新构建即可。
 
-### 分体示例的注意事项
+## 宿主机 nginx 与前端归属
 
-`docker-compose.example.yml` 里的面板环境变量是给**纯 API 镜像**写的：
+参考 [`deploy/nginx.conf.example`](../../deploy/nginx.conf.example)，替换域名与证书路径，
+确认 upstream 为宿主 `127.0.0.1:8081`，根据 nginx 版本调整 HTTP/2 语法，再执行
+`nginx -t` 和 reload。模板不是生产验收记录，不可未经检查直接上线。
+
+### 方案 A：Go 托管 SPA（默认）
+
+镜像默认 `PANEL_WEB_ROOT=/usr/share/proxypanel/web`，Go 从该目录提供 SPA，
+宿主 nginx 对 `/` 全量反代到 `http://127.0.0.1:8081` 即可。前后端随同一镜像发布，
+宿主机不用保存 dist。Go 对 SPA 路由返回 `index.html` 并设 `Cache-Control: no-store`；
+缺失的带扩展名资源返回 404，保留 `/api/`、`/sub/`、`/healthz`、`/readyz` 的路由语义。
+
+### 方案 B：API-only，宿主 nginx 托管 dist
+
+Compose 的环境映射采用：
 
 ```yaml
-PANEL_LISTEN: "0.0.0.0:8443"
-PANEL_TLS_CERT: "/certs/fullchain.pem"
-PANEL_TLS_KEY: "/certs/privkey.pem"
+PANEL_WEB_ROOT: "${PANEL_WEB_ROOT-/usr/share/proxypanel/web}"
 ```
 
-而发布的 `proxypanel-panel` 镜像里 `PANEL_LISTEN=127.0.0.1:8080`、`PANEL_TRUST_REVERSE_PROXY=true` 由镜像 `ENV` 固定，入口脚本会先等 `http://127.0.0.1:8080/healthz` 应答。**把上面三行套到发布镜像上，容器会启动超时退出**（面板在 8443 上开了 TLS，入口脚本等不到 8080），即使面板先起来，镜像里的 nginx 也会和它抢 8443。
+这里是**单连字符**，不是 `:-`：变量未定义时使用镜像目录，显式空值则关闭 Go 静态托管。
+在 `.env` 中写：
 
-两种正确做法：
-
-**A. 用发布镜像 + 宿主 nginx** —— 保留镜像默认值，只发布回环端口，宿主 nginx 再反代一次：
-
-```yaml
-services:
-  panel:
-    image: ghcr.io/r1172464137/proxypanel-panel:latest
-    environment:
-      DATABASE_URL: "postgres://proxypanel:${PG_PASSWORD}@postgres:5432/proxypanel?sslmode=disable"
-      REDIS_URL: "redis://default:${REDIS_PASSWORD}@redis:6379/0"
-      PANEL_MASTER_KEY: "${PANEL_MASTER_KEY:?set PANEL_MASTER_KEY}"
-      PANEL_PUBLIC_URL: "${PANEL_PUBLIC_URL:?set PANEL_PUBLIC_URL}"
-      # 不要覆盖 PANEL_LISTEN / PANEL_TRUST_REVERSE_PROXY / PANEL_TLS_*
-    volumes:
-      - /etc/proxypanel/certs:/certs:ro
-    ports:
-      - "127.0.0.1:8443:8443"
+```dotenv
+PANEL_WEB_ROOT=
 ```
 
-宿主 nginx 用 `proxy_pass https://127.0.0.1:8443;`（需要 `proxy_ssl_server_name on;` 与自签证书的 `proxy_ssl_verify off;` 或把 CA 配进去）。
+`.env` 只是 Compose 插值来源，不会自动把任意变量传进容器；复制出的旧 compose
+若尚未映射该变量，需要先在 `panel.environment` 添加上述一行，或直接设 `PANEL_WEB_ROOT: ""`。
+改 `.env` 后需 `docker compose up -d panel` 重建容器环境，单纯 restart 不够。
 
-**B. 自建纯 API 镜像** —— 按 [split-panel-agent.md](../deployment/split-panel-agent.md) 步骤 3 的 Dockerfile 片段构建一个只有 `panel` 的镜像，然后原样使用 example 里的 `PANEL_LISTEN` + `PANEL_TLS_*`，宿主 nginx 托管 `web/dist`。仓库里没有这个 Dockerfile 文件，需要自己建。
+在源码根目录构建并同步前端到宿主：
+
+```bash
+(cd web && npm ci && npm run build)
+sudo mkdir -p /var/www/proxypanel
+sudo rsync -a --delete web/dist/ /var/www/proxypanel/
+```
+
+也可以不安装 Node，直接从同版面板镜像导出前端：
+
+```bash
+cid=$(docker create proxypanel-panel:local)
+mkdir -p web-export
+docker cp "$cid:/usr/share/proxypanel/web/." web-export/
+docker rm "$cid"
+sudo mkdir -p /var/www/proxypanel
+sudo rsync -a --delete web-export/ /var/www/proxypanel/
+```
+
+这里只删除 `docker create` 创建的临时未启动容器，不会停止面板服务。
+
+按 nginx 模板的 B 段**替换** A 的 `location /`，设置 `root /var/www/proxypanel`，
+保留模板中 A/B 共用的 `/api/`、`/sub/`、`/healthz`、`/readyz` 反代 location，
+不要重复定义相同 location。
+`/assets/` 缺失文件必须返回 404，SPA 路由回落到 `index.html`；HTML 不缓存，
+只有带内容哈希的资源可长期缓存。dist 必须与 API 版本匹配。
+
+两种方案都推荐让前端和 API 保持同一 HTTPS origin（协议、主机、端口一致），
+无需 CORS，使用默认会话策略。`SameSite` 判断的是 site，不是 origin；不能简单地说
+所有跨 origin 请求都会被 Strict Cookie 拒绝。真跨域的实现边界见
+[分离部署](split-panel-agent.md#方案-b跨域的当前边界)。
+
+### 反代头与信任边界
+
+nginx 应覆盖写入 `X-Forwarded-For $remote_addr`，而不是透传客户端头；同时传递
+`Host` 和 `X-Forwarded-Proto $scheme`。当前 `clientIP()` 根据 TCP 直连方是否为
+回环、私网或链路本地地址决定是否读取 XFF，并取最右侧合法 IP；这**不是可配置的
+精确代理白名单**，也不由 `PANEL_TRUST_REVERSE_PROXY` 开关控制。
+该开关主要允许使用反代终止 TLS 的明文传输路径，代码没有根据 X-Forwarded-Proto
+动态切换 Cookie Secure；Secure 由 `PANEL_DEV` 决定。
+
+来源 IP 处理不能代替网络隔离：宿主端口只绑回环，并限制容器网络成员。
+不能保证绕过 nginx 的请求一定保留公网源地址（Docker 转发可能改变对端），
+不可信私网对端尤其可能伪造 XFF。不要将面板明文端口暴露给它们。
 
 ## 环境变量
 
-面板进程读取的全部变量（`cmd/panel/main.go`）。「默认值」是代码里的默认；compose 模板可能覆盖，见上表。
+默认列为**裸 Go 进程**默认值；镜像/Compose 覆盖另行注明，事实来源为
+`cmd/panel/main.go`、Dockerfile 与两份 compose。
 
-| 变量 | 必需 | 默认值 | 作用 |
+| 变量 | 必需 | 裸进程默认 | 作用 / 镜像覆盖 |
 |---|---|---|---|
-| `DATABASE_URL` | **是** | 无 | PostgreSQL 连接串。为空或不合法时面板直接启动失败 |
-| `REDIS_URL` | 否 | 空 | Redis 连接串，只用于登录限流计数。为空时退化为进程内**有界**本地限流，`/readyz` 报 `redis=disabled` 但仍是 `ok` |
-| `PANEL_MASTER_KEY` | **是** | 无 | 加密代理凭据的密钥。32 字节的 base64/hex，或 ≥32 字符的字符串；长度不符直接启动失败 |
-| `PANEL_LISTEN` | 否 | `127.0.0.1:8080` | 监听地址。`PANEL_DEV=true` 或 `PANEL_TRUST_REVERSE_PROXY=true` 时必须是回环地址 |
-| `PANEL_PUBLIC_URL` | 否（强烈建议） | 空 → `http://` + `PANEL_LISTEN` | 只用于拼订阅链接（`/sub/<token>`）。填错成员会拿到打不开的地址 |
-| `PANEL_MIGRATIONS_DIR` | 否 | `migrations` | SQL 迁移目录，镜像里是 `/app/migrations` |
-| `PANEL_DEV` | 否 | `false` | 开发模式：允许回环明文 HTTP、Cookie 不带 `Secure`。生产不要开 |
-| `PANEL_TRUST_REVERSE_PROXY` | 否 | `false` | 信任前置代理的转发的头。开启时 `PANEL_LISTEN` 必须是回环，否则启动失败 |
-| `PANEL_TLS_CERT` / `PANEL_TLS_KEY` | 否 | 空 | 面板自己终止 TLS。**必须成对**给出，且文件可读。设置后不再走「反代 + 明文回环」那条路 |
-| `PANEL_ADMIN_USER` | 否 | 空 | 仅在**成员表为空**时用于创建第一个管理员。两个都得非空才会创建 |
-| `PANEL_ADMIN_PASSWORD` | 否 | 空 | 同上。至少 10 位，否则启动失败 |
-| `PANEL_ALLOWED_ORIGINS` | 否 | 空 | 逗号分隔的允许来源。为空时不发任何 CORS 头（同源部署的正确形态） |
-| `PANEL_COOKIE_SAMESITE` | 否 | `strict` | `strict` / `lax` / `none`。`none` 不能与 `PANEL_DEV=true` 同时用（启动会报错） |
-| `PANEL_COOKIE_DOMAIN` | 否 | 空 | 会话 Cookie 的 Domain，例如 `.example.com`。留空 = 仅当前主机 |
+| `DATABASE_URL` | 是 | 无 | PostgreSQL DSN；为空或无效会启动失败 |
+| `REDIS_URL` | 否 | 空 | 登录限流；未配置则使用进程内有界计数 |
+| `PANEL_MASTER_KEY` | 是 | 无 | 32 字节 base64/hex，或 ≥32 字符；生成一次固定保存 |
+| `PANEL_LISTEN` | 否 | `127.0.0.1:8080` | 镜像设为 `0.0.0.0:8080`，当前 bridge 编排保持此值 |
+| `PANEL_PUBLIC_URL` | 否 | 空 | 空时订阅 URL 回退为 `http://` + LISTEN；Compose 强制填写正确的 HTTPS 入口 |
+| `PANEL_MIGRATIONS_DIR` | 否 | `migrations` | 镜像设 `/app/migrations` |
+| `PANEL_WEB_ROOT` | 否 | 空（API-only） | 镜像及 Compose 默认 `/usr/share/proxypanel/web`；显式空关闭 SPA |
+| `PANEL_DEV` | 否 | `false` | 强制回环监听、Cookie 去 Secure；仅裸进程本机开发，不用于本篇 Docker bridge 部署 |
+| `PANEL_TRUST_REVERSE_PROXY` | 否 | `false` | 允许反代终止 TLS 的明文监听；镜像设 `true`，不再强制回环 |
+| `PANEL_TLS_CERT` / `PANEL_TLS_KEY` | 否 | 空 | 成对提供则 Go 自己开 TLS，可监听任意地址；优先于反代路径。本文 HTTP upstream 不应设置它们 |
+| `PANEL_ADMIN_USER` / `PANEL_ADMIN_PASSWORD` | 否 | 空 | 仅 members 表为空时创建管理员；密码至少 10 位。Compose 用户名默认 admin，不提供默认密码 |
+| `PANEL_ALLOWED_ORIGINS` | 否 | 空 | CORS 精确 origin 白名单；同源部署保持空 |
+| `PANEL_COOKIE_SAMESITE` | 否 | `strict` | `strict` / `lax` / `none`；`none` 不允许与 DEV 同用 |
+| `PANEL_COOKIE_DOMAIN` | 否 | 空 | 默认 host-only；一般无需扩大到父域 |
 
-传输模式的三选一（代码里的判定顺序）：
+传输判定顺序：成对 TLS 文件 → 反代终止 TLS → DEV 开发；三者均不满足时拒绝明文。
+**DEV 的回环校验独立执行**，即使同时设了 TLS 或信任反代也不能绕过。
+设置非空 `PANEL_WEB_ROOT` 时，启动会检查目录及 `index.html`，不可用则退出。
 
-1. 设了 `PANEL_TLS_CERT`+`PANEL_TLS_KEY` → 面板自己终止 TLS，监听任意地址；
-2. 否则 `PANEL_TRUST_REVERSE_PROXY=true` → 明文回环，TLS 由反代终止；
-3. 否则 `PANEL_DEV=true` → 明文回环（开发用）。
+Compose 必填：`PG_PASSWORD`、`REDIS_PASSWORD`、`PANEL_MASTER_KEY`、`PANEL_PUBLIC_URL`。
+`${VAR:?}` 只检查非空，不会阻止 `CHANGE_ME` 占位值，首次启动必须全部替换，且设置
+`PANEL_ADMIN_PASSWORD`。bundle 的 `PANEL_TAG` 默认 `latest`，`PANEL_BIND_IP` 默认
+`127.0.0.1`，`PANEL_PORT` 默认 `8081`；example 的发布端口写死为 8081，不读取 `PANEL_PORT`。
+密码进入 DSN，建议像快速开始一样用随机 hex，避免 URL 特殊字符编码问题。
 
-三者都不满足时面板拒绝启动：`refusing cleartext HTTP in production`。
+Agent 超时覆盖（Go duration，非法值忽略）：`PROXYPANEL_XRAY_READINESS_TIMEOUT`（30s）、
+`PROXYPANEL_XRAY_VALIDATION_TIMEOUT`（30s）、`PROXYPANEL_XRAY_STOP_TIMEOUT`（15s）、
+`PROXYPANEL_XRAY_ROLLBACK_TIMEOUT`（60s）；其余配置在 `agent.json`。
 
-compose 层面（不是面板进程读取的）：
+## 数据与备份
 
-| 变量 | 必需 | 默认值 | 作用 |
-|---|---|---|---|
-| `PG_PASSWORD` | **是** | 无（`${PG_PASSWORD:?...}`） | PostgreSQL 密码，同时用于 `DATABASE_URL` |
-| `REDIS_PASSWORD` | **是** | 无 | Redis 密码（`--requirepass`），同时用于 `REDIS_URL` |
-| `PANEL_TAG` | 否 | `latest` | 面板镜像标签（`latest` / `main` / `sha-<短哈希>` / `v1.2.3`）。生产建议钉版本 |
-| `PANEL_BIND_IP` | 否 | `192.168.5.203` | 仅 bundle：宿主侧绑定地址。**这是本项目测试机的内网 IP，必须改** |
-| `NGINX_TLS_CERT` / `NGINX_TLS_KEY` | 否 | `/certs/fullchain.pem`、`/certs/privkey.pem` | 仅发布镜像：容器内 nginx 读的证书路径 |
-| `SSL_CERT_FILE` | 否 | 系统默认 | 仅 Agent 容器：面板用私有 CA 时指向挂载进来的 CA 文件 |
-
-Agent 还有四个可选的超时覆盖（Go duration 语法，非法值忽略），默认值足够；只有嵌套虚拟化等慢机器才需要调大：
-
-| 变量 | 默认值 | 作用 |
+| 卷 | 内容 | 丢失后果 |
 |---|---|---|
-| `PROXYPANEL_XRAY_READINESS_TIMEOUT` | `30s` | 启动后等 Xray 管理 API 应答的预算 |
-| `PROXYPANEL_XRAY_VALIDATION_TIMEOUT` | `30s` | 一次 `xray -test` 的预算 |
-| `PROXYPANEL_XRAY_STOP_TIMEOUT` | `15s` | 停止一个核心实例的预算 |
-| `PROXYPANEL_XRAY_ROLLBACK_TIMEOUT` | `60s` | 整次回滚（校验 + 启动 + 等就绪）的预算 |
+| `pgdata` | 全部业务状态、会话、账本、审计、凭据密文 | 必须恢复数据库备份 |
+| `redisdata` | 登录限流计数 | 丢失限流窗口；不丢会话或账本 |
+| `agentstate`（仅 example） | Agent 身份、快照、计量基线、未上传队列 | 需重新注册，未上传用量不可恢复 |
 
-### 为什么 `PANEL_MASTER_KEY` 必须固定保存
-
-它派生出的密钥用来加解密 `credentials.secret_enc`（每个「成员 × 节点」的密码 / UUID）。这个值不是启动校验用的口令，换掉不会报错，只会让已有密文解不开：
-
-- 面板照常启动、成员照常登录（登录密码存的是哈希，与 master key 无关）；
-- 订阅输出里少了节点、Agent 拿不到这些用户的凭据，现象是「配置在，但连不上」；
-- 唯一恢复方式是轮换全部凭据，成员要重新导入订阅。
-
-所以：**生成一次，和数据库备份放在一起**。不要写进镜像、不要每次启动重新生成。
-
-## 卷与数据
-
-| 卷（compose 名） | 容器路径 | 里面是什么 | 丢了会怎样 |
-|---|---|---|---|
-| `pgdata` | `/var/lib/postgresql/data` | 全部业务状态：成员、订阅、节点组、授权决定、凭据密文、用量账本、审计 | **丢不得**。这是唯一权威数据源 |
-| `redisdata` | `/data` | 登录限流计数（bundle 里开了 AOF，example 里没开） | 可以丢。丢的只是限流窗口，不会踢会话、不会丢账 |
-| `agentstate` | `/var/lib/proxypanel-agent` | Agent 身份 token、最后一次可信快照/授权、计量基线、未上传用量队列 | **丢不得**。丢了要重新注册，且未上传的用量会产生不可恢复缺口 |
-
-外加两个文件，它们不在卷里但同样丢不得：
-
-- `PANEL_MASTER_KEY`（在 `.env` 或密码管理器里）—— 没有它 `pgdata` 里的密文是废数据；
-- `certs/fullchain.pem` + `certs/privkey.pem` —— 丢了重新申请，但证书轮换期间 Agent 会因为信任根变化连不上。
-
-注意 docker 命名卷默认属主是 root。Agent 镜像以 uid 65532 运行，用命名卷挂状态目录时如果写不进去，改成 bind mount 并 `chown 65532:65532`（快速开始里就是这么做的）。
+最小恢复集合是数据库 dump + `PANEL_MASTER_KEY`，分开加密保存但必须能配对取得。
+密钥丢失或改动会使原代理凭据无法解密，只能全部轮换；账号密码哈希不受影响。
+Agent 状态需停 Agent 后一致备份完整目录，不能只复制 SQLite 主文件。
+证书只在宿主 nginx 管理，不需要挂进面板容器。完整恢复步骤见
+[备份与恢复](../operations/backup-recovery.md)，不能直接恢复旧库后对外开放。
 
 ## 健康检查
 
-| 端点 | 检查什么 | 返回 |
-|---|---|---|
-| `GET /healthz` | 什么都不检查，只证明 HTTP 进程能应答 | `200`，`data.status=ok` |
-| `GET /readyz` | ping PostgreSQL；再查 Redis（有连接才查） | PostgreSQL 不通 → `503`；Redis 不可用 → `200`，`data.status=degraded` 且 `data.redis=unavailable`；都正常 → `200`，`status=ok, postgres=ok, redis=ok` |
+| 端点 | 行为 |
+|---|---|
+| `/healthz` | 进程能应答即 200，不检查依赖；用于容器存活探针 |
+| `/readyz` | PostgreSQL 不通返回 503；Redis 不可用仍可返回 200，但 `data.status=degraded`；未配 Redis 时为 `redis=disabled` |
 
-用哪个：
+容器 HEALTHCHECK 为 `http://127.0.0.1:8080/healthz`（容器内回环 HTTP），宿主探测为：
 
-- 容器 / systemd 的存活探针用 `/healthz`（数据库短暂抖动不该重启面板）；
-- 负载均衡摘流量、监控告警用 `/readyz`；
-- 没配 `REDIS_URL` 时 `/readyz` 报 `redis=disabled` 是预期状态（进程内回退限流），不是故障。
+```bash
+curl -fsS http://127.0.0.1:8081/healthz; echo
+curl -fsS http://127.0.0.1:8081/readyz; echo
+curl -fsS https://panel.example.com/readyz; echo
+```
 
-两个端点都在 8443 上（发布镜像内），`/healthz` 不需要认证。自签证书下探针要跳过校验，compose 里的 `wget --no-check-certificate` 就是这个原因。
+监控必须读取就绪响应体，不能只看 HTTP 200。探针成功也不等于 HTTPS Cookie 登录、
+SPA 刷新和真实 Agent 流量已验收。
 
 ## 升级
 
-面板启动时会自动跑迁移：按文件名顺序应用未执行的 `.sql`，全程持有 PostgreSQL advisory lock，并校验每个已应用文件的 checksum。改了已经应用过的 SQL 文件，启动会直接失败而不是静默重放。
+在管理原部署的 compose / `.env` 所在目录执行：
 
 ```bash
-cd proxypanel
-
-# 1. 先备份（见下一节），确认备份文件能读
-# 2. 换镜像
-sed -i 's/^PANEL_TAG=.*/PANEL_TAG=v1.2.3/' .env
+# 先备份数据库与 master key，并验证备份能读；然后把 PANEL_TAG 改为目标版本
+# （本地镜像改为重新构建，不执行 pull）
 docker compose pull panel
 docker compose up -d panel
-
-# 3. 看启动与迁移（在容器内探，不受 PANEL_BIND_IP 影响）
-docker compose logs -f panel
-docker compose exec panel wget -q -O- --no-check-certificate https://127.0.0.1:8443/readyz; echo
+docker compose logs --tail=100 panel
+curl -fsS http://127.0.0.1:8081/readyz; echo
 ```
 
-要停服务吗：
+迁移在启动时自动运行，带 checksum + advisory lock；已应用 SQL 不可修改，只能新增迁移。
+单实例重建期间控制面短暂不可用，Agent 按最后可信快照运行。
+**镜像回退不等于数据库回退**：旧二进制可能不认识新 schema。若必须恢复数据库，
+按 [恢复协调流程](../operations/backup-recovery.md) 核对授权，防止已撤销成员复活。
 
-- 单实例：不用先停，`up -d` 会重建容器。代价是重启窗口内登录和 API 不可用（通常几十秒，含迁移时间），节点上的 Agent 会继续按最后一次快照跑，流量不断。
-- 迁移较重或多副本：先 `docker compose stop panel`，升级完再 `start`。多副本同时启动是安全的（advisory lock 串行化），但会让不可用窗口变长。
+## 验证边界
 
-**镜像回退 ≠ 数据库回退。** 迁移是单向的，仓库里没有 down migration。把 `PANEL_TAG` 改回旧值、旧二进制不认识新 schema 时面板会启动失败；此时唯一出路是恢复备份，而恢复备份会让已被撤销的成员复活——处理方式见 [production.md](production.md#升级与回滚)。想保住回滚能力，就在升级前先做一份可验证的备份。
-
-## 备份
-
-最小可恢复集合 = **数据库 dump + master key**。两个分开存，但必须成对拿得到。
-
-```bash
-cd proxypanel
-STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-
-# 数据库（custom 格式，可选择性还原）
-docker compose exec -T postgres pg_dump -U proxypanel --format=custom proxypanel > "backup-${STAMP}.dump"
-ls -l "backup-${STAMP}.dump"
-
-# master key：和 dump 分开放，但两者要能对上同一个时间点
-grep '^PANEL_MASTER_KEY=' .env > "masterkey-${STAMP}.txt"
-```
-
-要点：
-
-- **不要**在面板运行时直接复制 `pgdata` 目录当备份（可能拿到撕裂的页），要么 `pg_dump`，要么停库后做文件系统快照；
-- **不要**只备份数据库不备份 master key：那堆密文没有 key 就是废数据；
-- Agent 的状态目录单独备份（先停 Agent，确认核心被停，再整体复制），里面有未上传的用量队列；
-- 恢复顺序与「先隔离、核对授权、再解除恢复门禁」的完整流程见 [operations/backup-recovery.md](../operations/backup-recovery.md)。恢复完成后**必须**走一次恢复协调模式，否则旧备份会把已撤销的人放回来。
-
-还原到独立目标验证（不要覆盖生产库）：
-
-```bash
-docker compose exec -T postgres createdb -U proxypanel verify_restore
-docker compose exec -T postgres pg_restore -U proxypanel -d verify_restore --no-owner < "backup-${STAMP}.dump"
-docker compose exec postgres psql -U proxypanel -d verify_restore -c 'select count(*) from members;'
-docker compose exec -T postgres dropdb -U proxypanel verify_restore
-```
-
-## 已验证到什么程度
-
-在真实的 Docker 栈上跑通过：面板 + PostgreSQL + Redis + 真实 Agent + 真实官方 Xray + 真实客户端流量（含撤权重连、计量与账本、容器内升级/回滚、隔离环境备份还原演练）。宿主 Linux + systemd 的安装、升级、回滚**没有**在目标生产机上验收；公网直连、多节点规模下的 SLA 也没有实测。相关操作在 [production.md](production.md) 里按「需要你自己验证」标注。
+历史真实 Docker / Xray / 客户端验收见 [测试基线](../development/testing.md#已验证的结果参考基线)。
+本次新镜像另做了真实构建、两种托管模式的 nginx 模板检查、HTTPS 登录、真实 Chromium 刷新与会话验证，见[部署烟测](../development/deployment-smoke.md)。nginx 以隔离容器模拟外置代理，未修改生产宿主 nginx；本轮未重跑 Agent 数据面，CI 发布状态也需单独确认。
+Linux 宿主 systemd 安装/升级/回滚与多机生产规模也不在既有验收范围内。

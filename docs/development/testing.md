@@ -107,7 +107,10 @@ python3 /path/to/e2e-node-ledger.py
 
 ## 已验证的结果（参考基线）
 
-在 WSL2 + 真实 Docker 栈上跑过：
+以下是历史 WSL2 + 真实 Docker 栈的参考记录，**不是本次无 nginx、单 Go 进程新镜像的验证结果**。
+新镜像另有 amd64 构建与两种托管模式的 HTTPS/Chromium 运行验证，见[部署烟测](deployment-smoke.md)。该验证不替代生产宿主 nginx 或 Agent 数据面验收。
+
+历史基线：
 
 | 项目 | 结果 |
 |---|---|

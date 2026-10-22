@@ -1,8 +1,8 @@
 # 产品规格：合租代理管理平台（页面 / 流程 / 状态 / 继承 / 周期 / 批量）
 
 - 文件性质：**详细规格草案**，由产品负责人按冻结计划
-  `.pi/plan/合租代理管理平台完整计划-订阅管理-go-面板与自研节点端-20261020-2138.md`（下称“计划”）细化。
-- 状态：**待主负责人核对并冻结**。本文不冻结接口字段、不代替 `api-proposal.md`，也不代表任何功能已实现。
+  原内部计划《合租代理管理平台完整计划-订阅管理-go-面板与自研节点端-20261020-2138》（下称“计划”，未随当前仓库分发）细化。
+- 状态：**详细规格草案，不是当前实现清单**。本文不冻结接口字段，也不代表任何功能已实现；现行接口见 [实现契约](implementation-contract.md) 与 [HTTP API](../reference/api.md)。
 - 冲突处理：本文与计划冲突时以计划为准；本文未覆盖处不得据本文推断为“已排除”。
 - 不做版本裁剪：计划 `§3 F01–F12` 全部纳入，本文不给“第一版/第二版”分级。
 - 秘密值：本文所有示例中的密码、令牌、UUID、私钥一律是形如 `__REDACTED__`、`<opaque>`、`00000000-0000-7000-8000-000000000000` 的占位，禁止写入真实值。
@@ -169,7 +169,7 @@
 
 ## 6. 业务状态
 
-状态值用于页面展示与判定；接口字段名以 `api-proposal.md` 为准（待冻结）。
+下列状态值为产品草案语义，不保证已实现；实际接口字段名以 [HTTP API](../reference/api.md) 和代码为准。
 
 ### 6.1 成员账户状态（`account_status`）
 
@@ -387,7 +387,7 @@ next_boundary(boundary_utc, anchor_day, tz):
 1. `preview_id` 必须存在且未过期（建议 TTL 10 分钟）。
 2. `rules_version` / `member_set_digest` 变化 → 409 `PREVIEW_STALE`，要求重新预览。
 3. 已用量等动态值在提交时重算：若**结论**（谁超额、谁失去权限）未变，仅数值变化 → 允许提交并记录提示；若结论改变 → 409 `PREVIEW_CONCLUSION_CHANGED`，要求重新确认。
-4. 幂等键：同键同指纹 → 返回原结果；同键异指纹 → 409 拒绝（见 `§5.4`、`acceptance.md` AC-BATCH）。
+4. 幂等键：同键同指纹 → 返回原结果；同键异指纹 → 409 拒绝（见 `§5.4` 及 [历史验收规格](../archive/specs-acceptance.md) AC-BATCH）。
 5. 业务规则变更 + 任务/outbox + 审计在**同一 PostgreSQL 事务**提交。
 
 ### 9.4 结果展示
@@ -463,7 +463,7 @@ next_boundary(boundary_utc, anchor_day, tz):
 
 ### 13.3 REST / Agent 契约的分工
 
-- 本文只定义业务语义；字段、错误码、版本与幂等标识形状见 `api-proposal.md`（**提案**，由主负责人冻结）。
+- 本文只定义产品草案语义；现行字段、错误码、版本与幂等标识见 [实现契约](implementation-contract.md) 和 [HTTP API](../reference/api.md)，不再引用旧 API 提案。
 - “规则提交”与“Agent 应用回执”是两个可独立失败的状态：规则提交成功不代表节点生效（`§6.5`）。
 
 ---
@@ -472,9 +472,9 @@ next_boundary(boundary_utc, anchor_day, tz):
 
 | 需要 | 文件 |
 | --- | --- |
-| 逐功能测试场景与判定 | `docs/specs/acceptance.md` |
-| REST/Agent 结构与样例 | `docs/specs/api-proposal.md` |
-| 数据库事实与连接边界 | `docs/test-databases.md`（只读引用，本文不改） |
+| 逐功能测试场景与判定 | [历史验收规格](../archive/specs-acceptance.md)，现行验证边界见 [测试](../development/testing.md) |
+| REST/Agent 结构与样例 | [实现契约](implementation-contract.md)、[HTTP API](../reference/api.md) |
+| 数据库事实与连接边界 | [测试数据库](../operations/test-databases.md) |
 
 ---
 
@@ -491,7 +491,7 @@ next_boundary(boundary_utc, anchor_day, tz):
 | D7 | 可选功能：每人限速（跨节点语义）、共享池、设备限制、中转、费用分摊、专项探测、管理员 TOTP | 未纳入默认范围 | 若纳入需补规格与验收 | **用户** |
 | D8 | 60 秒兜底策略在“仅能拒新连接”的核心上的取舍（实例重建的可用性代价） | 需实测后决定 | A06/A10 判定 | 负责人实测 + 用户接受影响 |
 
-本文不预设 D1/D2 的结论，也不因缺环境而降低 `acceptance.md` 的判定标准。
+以上为草案形成时的待决项，不预设其结论；现行实现与验证范围以 [实现契约](implementation-contract.md)、[测试](../development/testing.md) 为准，不因缺环境降低验证标准。
 
 ## 16. 明确不做（重申，不因本文遗漏而失效）
 

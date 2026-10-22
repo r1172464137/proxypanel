@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"strings"
@@ -35,6 +36,9 @@ type Config struct {
 	// CookieSameSite 控制会话 Cookie 的 SameSite 策略：lax（默认，同站）
 	// 或 none（跨站部署必须）。none 要求 Secure。
 	CookieSameSite http.SameSite
+	// WebRoot 是前端构建产物的目录。为空表示面板只提供 API，
+	// 静态文件交给外部 nginx；非空则面板同时托管 SPA（见 static.go）。
+	WebRoot string
 	// CookieDomain 允许同主域的子域共享会话（如 .example.com）。默认空。
 	CookieDomain string
 }
@@ -108,6 +112,23 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/admin/recovery-mode/exit",
 		s.requireUser(s.requireAdmin(s.requireCSRF(s.handleExitRecovery))))
 	s.mountAdmin(mux)
+
+	// SPA 兜底。ServeMux 的模式优先级保证具体路由（/api/v1/...、/sub/{token}、
+	// /healthz、/readyz）永远先于 "/" 匹配，所以它只接住剩下的路径。
+	//
+	// 这里不让 Handler() 返回错误，是因为配置错误应该在启动时直接失败：
+	// 调用方（cmd/panel）在构造 Server 之前就校验 WebRoot，见 static.go。
+	if s.Cfg.WebRoot != "" {
+		static, err := newStaticHandler(s.Cfg.WebRoot)
+		if err != nil {
+			// 走到这里说明调用方没先校验。退化成"不托管静态文件"并留日志线索，
+			// 比 panic 好 —— 但正常情况下启动阶段就该被拦下。
+			log.Printf("web root %q unusable, SPA serving disabled: %v", s.Cfg.WebRoot, err)
+		} else {
+			mux.Handle("GET /", static)
+		}
+	}
+
 	// CORS 在最外层：预检请求必须在鉴权之前应答，否则跨域写请求永远过不了。
 	return parseAllowedOrigins(s.Cfg.AllowedOrigins).middleware(s.withRequestID(mux))
 }

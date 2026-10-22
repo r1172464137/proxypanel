@@ -1,303 +1,137 @@
-# 前后端分开部署教程
+# 分离部署：前端托管与节点 Agent
 
-## 0. 同源还是跨域
+“分离”有两件独立的事：前端 dist 可由宿主 nginx 托管；Agent 应运行在真正承载节点的机器上。
+面板仍是单个 Go 进程，不需要另造 API Dockerfile，也不需要在面板容器内运行 nginx。
 
-**推荐同源**：静态文件放别处，但统一由同一个入口对外。这样不需要配 CORS，
-Cookie 用默认的 `SameSite=Strict` 就够。
+**推荐同源 HTTPS**：无论谁托管静态文件，浏览器看到的前端与 `/api/` 都通过同一入口。
+这样无需 CORS，使用默认 host-only、`SameSite=Strict`、Secure 会话 Cookie。
+`SameSite` 判断 site 而不是 origin；跨 origin 不必然跨 site，但会引入额外的请求与 Cookie 配置。
 
-代码确实支持真跨域，但要多配三处，且暴露面更大：
+## 方案 A：静态分离 + 统一入口
 
-| 项 | 现状 |
+```text
+浏览器 ──HTTPS:443──▶ 宿主 nginx（TLS 终止）
+                      ├── /、/assets/        → 宿主 dist
+                      └── /api/、/sub/、探针 → 宿主 127.0.0.1:8081
+                                               └──容器 Go 0.0.0.0:8080（API-only）
+节点机 Agent ──HTTPS──▶ 同一个域名的 /api/v1/agent/**
+```
+
+### 步骤 1 · 启动面板 API-only
+
+使用现有 [`deploy/Dockerfile.panel`](../../deploy/Dockerfile.panel) 构建的镜像。
+它没有 nginx 或入口脚本，默认从 `/usr/share/proxypanel/web` 托管 SPA；只要把
+`PANEL_WEB_ROOT` 显式设为空，即可关闭静态托管，**无需另建 Dockerfile**。
+
+Compose 应映射：
+
+```yaml
+PANEL_WEB_ROOT: "${PANEL_WEB_ROOT-/usr/share/proxypanel/web}"
+```
+
+在 `.env` 写 `PANEL_WEB_ROOT=`（单连字符默认值保留显式空），然后
+`docker compose up -d panel` 重建容器。旧 compose 若未映射该变量，单改 `.env` 不生效，
+需添加上述映射或直接设置 `PANEL_WEB_ROOT: ""`。
+保持镜像的 `PANEL_LISTEN=0.0.0.0:8080`、`PANEL_TRUST_REVERSE_PROXY=true`，
+只发布 `127.0.0.1:8081:8080`，并设置正确的 `PANEL_PUBLIC_URL=https://panel.example.com`。
+数据库、密钥、初始管理员与镜像版本选择见 [Docker 部署](docker.md)。
+不要启用 DEV，也不要给这个 HTTP upstream 配置 `PANEL_TLS_CERT` / `PANEL_TLS_KEY`。
+
+若使用裸进程/systemd，则监听 `127.0.0.1:8080`、显式 `PANEL_WEB_ROOT=`，
+nginx upstream 相应改为宿主 8080；反代模式本身已不强制回环，但宿主仍应限制可达面。
+
+### 步骤 2 · 构建与同步前端
+
+在源码根目录执行：
+
+```bash
+(cd web && npm ci && npm run build)
+sudo mkdir -p /var/www/proxypanel
+sudo rsync -a --delete web/dist/ /var/www/proxypanel/
+```
+
+前后端必须使用配套版本。`web/dist` 不是源码目录，nginx 用户应能读取全部构建产物。
+静态文件也可放独立存储/CDN，但最终保持统一入口；不要把带凭据的 API 或订阅响应缓存进去。
+
+### 步骤 3 · 配置宿主 nginx
+
+参考 [`deploy/nginx.conf.example`](../../deploy/nginx.conf.example) 的 B 方案：
+
+- upstream 为宿主 `127.0.0.1:8081`，协议是 **HTTP**，TLS 只在宿主终止。
+- 用 B 的静态 `location /` **替换** A 的全量反代，而不是叠加；root 指向 `/var/www/proxypanel`。
+- `/assets/` 使用 `try_files $uri =404`，带哈希资源可以长缓存。
+- SPA 路由回落至 `index.html`，HTML 必须 `no-store`。
+- `/api/` 反代到 Go，保留公共 `/sub/`（不记日志、不缓存）、`/healthz`、`/readyz`。
+- 保留模板 A/B 共用的 `/api/`、`/sub/` 和探针 location，不重复定义相同路由。
+- 覆盖 `X-Forwarded-For $remote_addr`，同时传递 Host 与协议头，不透传客户端伪造来源。
+- 替换域名与证书路径，按宿主 nginx 版本调整语法，执行 `nginx -t` 后 reload。
+
+Go 的来源 IP 校验不是网络隔离替代品：它信任回环、私网及链路本地 TCP 对端提供的 XFF，
+并非精确代理白名单。面板明文端口只能给宿主反代与受信容器网络访问，不能开放给局域网或公网。
+
+### 步骤 4 · 验证
+
+下面是部署方需执行的检查，不是本次新镜像已验收记录：
+
+```bash
+curl -fsS https://panel.example.com/healthz; echo
+curl -fsS https://panel.example.com/readyz; echo
+curl -s -o /dev/null -w '%{http_code}\n' https://panel.example.com/admin/members  # SPA 200
+curl -s -o /dev/null -w '%{http_code}\n' https://panel.example.com/assets/does-not-exist.js  # 404
+curl -s -o /dev/null -w '%{http_code}\n' https://panel.example.com/api/v1/admin/members  # 未登录 401
+```
+
+私有 CA 使用 `--cacert`，不要用 `-k` 作为证书验收。
+在浏览器完成登录、获取 session、CSRF 写请求、刷新子路由与退出；检查 Cookie。
+`/readyz` 的 Redis 故障可能返回 200 + degraded，应检查响应体。
+
+## Agent 部署在节点机
+
+Agent 只通过面板 HTTPS 主动注册、轮询、上报，不直接连接 PostgreSQL/Redis。
+面板所在机无需运行 Agent，除非该机本身也承载节点；bundle 不包含 Agent。
+example 的 Agent 服务位于 `node` profile，默认不启动；它仍需配置状态目录、核心与 CA 挂载、
+节点端口。核对后使用 `docker compose --profile node up -d` 启用，或单独部署 Agent。
+
+1. 在面板创建该节点机的服务器档案、节点与授权，生成一次性注册码。
+2. 在节点机准备官方白名单版本 Xray，核对 SHA256。Agent 镜像不内置核心，不自动下载。
+3. `agent.json` 中 `panel_url` 填同一入口 `https://panel.example.com`，无需单开 Agent 管理端口。
+4. 配置和核心路径按实际运行环境填写；容器配置文件必须允许 uid/gid 65532 读取，状态目录必须可写。
+5. 私有 CA 挂进 Agent 容器并设 `SSL_CERT_FILE`，公共 CA 一般无需额外挂载。
+6. 只发布节点代理端口，禁止发布 Xray Stats 管理端口。状态目录不可随意删除。
+7. 注册后确认心跳、实例、修订收敛，再打真实客户端流量并核对用量。
+
+完整命令见 [快速开始](../getting-started/quickstart.md#6-接上-agent)，
+宿主 systemd 方式与权限布局见 [生产部署](production.md)。
+
+## 方案 B：跨域的当前边界
+
+代码已经有部分配置能力，但不能把它写成“只改几个环境变量即可可靠跨域登录”：
+
+| 项目 | 当前实现 |
 |---|---|
-| 前端 API 基址 | 默认相对路径；设 `API_BASE` 后请求发往指定 origin，`credentials` 自动切 `include`（`web/src/api/http.ts`） |
-| 后端 CORS | 配 `PANEL_ALLOWED_ORIGINS`（逗号分隔）才发 `Access-Control-Allow-Origin`，且带凭据时不会用 `*`（`internal/panel/api/cors.go`） |
-| 会话 Cookie | `PANEL_COOKIE_SAMESITE` 可设 `strict`（默认）/`lax`/`none`；`none` 必须配 `Secure`，与 `PANEL_DEV=true` 互斥 |
-| Cookie 域 | `PANEL_COOKIE_DOMAIN`，前后端在不同子域时必须设父域 |
-
-跨域的代价：CSRF 靠双提交令牌（`X-CSRF-Token` vs 会话）而不比对 Origin，
-所以 `SameSite=none` 会让 Cookie 在跨站请求里也发送，风险面比同源大。
-**能同源就别跨域。**
-
----
-
-## 方案 A · 静态分离 + 统一入口（推荐，零代码改动）
-
-### 架构
-
-```
-浏览器
-  │  https://panel.example.com
-  ▼
-统一入口（nginx / CDN / 云负载均衡）
-  ├── /                 → 静态文件（对象存储 / CDN / 独立 nginx）
-  ├── /assets/          → 静态文件（长缓存）
-  ├── /api/             → 面板 127.0.0.1:8080
-  ├── /sub/             → 面板（订阅输出，不记日志）
-  └── /healthz,/readyz  → 面板
-```
-
-浏览器只看到一个域名，所以同源、Cookie、CSRF 全部正常。
-
-### 步骤 1 · 构建前端
-
-```bash
-cd web
-npm ci
-npm run build          # 产物：web/dist/
-```
-
-产物约 58 个文件、190 KB（gzip 73 KB）。
-
-### 步骤 2 · 把 dist 放到任意静态位置
-
-三种都行：
-
-| 方式 | 说明 |
-|---|---|
-| 对象存储（S3 / OSS / COS） | 上传 `dist/*`，开启静态网站托管 |
-| 独立 nginx / Caddy | 拷到 `/usr/share/panel-web` |
-| 另一台机器 / CDN 回源 | 同上 |
-
-**关键**：SPA 必须把未知路径回落到 `index.html`，否则刷新 `/admin/members` 会 404：
-
-```nginx
-location / {
-    try_files $uri $uri/ /index.html;
-}
-```
-
-对象存储对应配置是「错误文档 → index.html，状态码 200」。
-
-### 步骤 3 · 部署纯 API 面板
-
-现有 `deploy/Dockerfile.panel` 是 **nginx + 面板二合一**，分开部署时不需要内置 nginx。
-另建一个纯 API 镜像：
-
-```dockerfile
-FROM alpine:3.23
-RUN apk add --no-cache ca-certificates tzdata && update-ca-certificates
-WORKDIR /app
-ARG TARGETARCH
-COPY bin/${TARGETARCH}/panel /app/panel
-COPY migrations /app/migrations
-RUN chmod 0755 /app/panel
-USER 65532:65532
-EXPOSE 8080
-ENTRYPOINT ["/app/panel"]
-```
-
-环境变量：
-
-```bash
-PANEL_LISTEN=127.0.0.1:8080          # 由统一入口反代；容器网络内可用 0.0.0.0:8080
-PANEL_TRUST_REVERSE_PROXY=true       # 必须；此时面板强制要求回环监听
-PANEL_PUBLIC_URL=https://panel.example.com   # 用户浏览器实际访问的地址
-PANEL_MASTER_KEY=<32 字节 base64>    # 生成一次后固定保存
-DATABASE_URL=postgres://...
-REDIS_URL=redis://...
-PANEL_MIGRATIONS_DIR=/app/migrations
-```
-
-**`PANEL_PUBLIC_URL` 很重要**：订阅链接由它拼出来（`handlers.go:233`），填错会导致成员拿到打不开的订阅地址。
-
-### 步骤 4 · 统一入口配置
-
-```nginx
-upstream panel_api {
-    server 127.0.0.1:8080;          # 或 docker compose 的服务名，如 panel:8080
-    keepalive 16;
-}
-
-server {
-    listen 443 ssl;
-    server_name panel.example.com;
-
-    ssl_certificate     /etc/ssl/panel/fullchain.pem;
-    ssl_certificate_key /etc/ssl/panel/privkey.pem;
-
-    root /usr/share/panel-web;      # 步骤 2 的 dist
-    index index.html;
-    client_max_body_size 4m;
-    server_tokens off;
-
-    add_header X-Content-Type-Options nosniff always;
-    add_header Referrer-Policy no-referrer always;
-    add_header X-Frame-Options DENY always;
-
-    # 订阅令牌是 bearer 凭据：不记日志、不缓存
-    location /sub/ {
-        access_log off;
-        proxy_pass http://panel_api;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-Proto https;
-        add_header Cache-Control no-store always;
-    }
-
-    location /api/ {
-        proxy_pass http://panel_api;
-        proxy_http_version 1.1;
-        proxy_set_header Connection "";
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-Proto https;
-        # 限流按连接来源 IP，不能盲信客户端自带的 X-Forwarded-For
-        proxy_set_header X-Forwarded-For $remote_addr;
-        add_header Cache-Control no-store always;
-        proxy_read_timeout 120s;
-    }
-
-    location = /healthz { proxy_pass http://panel_api/healthz; }
-    location = /readyz  { proxy_pass http://panel_api/readyz; }
-
-    # 带指纹的构建产物可长缓存
-    location /assets/ {
-        try_files $uri =404;
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
-
-    # SPA 路由回落
-    location / {
-        try_files $uri $uri/ /index.html;
-        add_header Cache-Control no-store always;
-    }
-
-    location ~ /\. { deny all; }
-}
-```
-
-### 步骤 5 · 验证
-
-```bash
-# 静态
-curl -I https://panel.example.com/
-curl -I https://panel.example.com/assets/index-xxxx.js
-
-# API（401 说明到达面板鉴权层，不是 nginx 404）
-curl -o /dev/null -w '%{http_code}\n' https://panel.example.com/api/v1/admin/members
-curl -o /dev/null -w '%{http_code}\n' https://panel.example.com/healthz
-
-# SPA 刷新
-curl -o /dev/null -w '%{http_code}\n' https://panel.example.com/admin/members   # 应 200
-
-# 登录闭环
-curl -X POST https://panel.example.com/api/v1/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"..."}' -c /tmp/ck -w '\n%{http_code}\n'
-```
-
-### 步骤 6 · Agent 仍然连同一个域名
-
-Agent 用的 `panel_url` 填 `https://panel.example.com` 即可，它会走统一入口的 `/api/`。
-不需要额外开端口，也不需要改 Agent 代码。
-
----
-
-## 方案 B · 真·跨域（前端 a.com，后端 b.com）
-
-如果确实要两个域名，**必须改代码**，共四处：
-
-### B1 · 后端加 CORS 中间件
-
-`internal/panel/api/` 新增（并在 `Handler()` 里包一层）：
-
-```go
-func corsMiddleware(next http.Handler, allowOrigin string) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// 注意：带 Credentials 时 Allow-Origin 不能是 "*"，浏览器会拒绝
-		if allowOrigin != "" && r.Header.Get("Origin") == allowOrigin {
-			w.Header().Set("Access-Control-Allow-Origin", allowOrigin)
-			w.Header().Set("Access-Control-Allow-Credentials", "true")
-			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PATCH,PUT,DELETE,OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-CSRF-Token, Idempotency-Key")
-		}
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-```
-
-环境变量：`PANEL_ALLOWED_ORIGINS=https://app.example.com`
-
-### B2 · Cookie 改 SameSite=None
-
-`handlers.go:52-55` 与 `handlers.go:136`：
-
-```go
-SameSite: http.SameSiteNoneMode,   // 必须与 Secure 同时使用
-Secure:   true,                    // 跨域 Cookie 强制要求 HTTPS
-```
-
-### B3 · 前端改 API 基地址 + 带凭据
-
-```ts
-// web/src/api/endpoints.ts
-const BASE = import.meta.env.VITE_API_BASE ?? ''
-const ADMIN = `${BASE}/api/v1/admin`
-const ME = `${BASE}/api/v1/me`
-```
-
-```ts
-// web/src/api/http.ts
-credentials: 'include',            // 原来是 'same-origin'
-```
-
-构建时注入：`VITE_API_BASE=https://api.example.com npm run build`
-
-### B4 · 后端信任代理头
-
-跨域后客户端 IP 只能从前置代理取：
-
-```bash
-PANEL_TRUST_REVERSE_PROXY=true
-```
-
-并确保前置代理用 `$remote_addr` 覆盖 `X-Forwarded-For`（否则限流可被伪造绕过）。
-
-### 改完之后仍然存在的问题
-
-| 问题 | 说明 |
-|---|---|
-| CSRF 保护变弱 | `SameSite=None` 后必须依赖 `X-CSRF-Token` 双提交，不能只靠 Cookie 策略 |
-| 第三方 Cookie 拦截 | Safari / 部分浏览器默认拦第三方 Cookie，跨站场景登录可能直接失败 |
-| 部署复杂度 | 两个域名都要证书、都要配 CORS 白名单 |
-
-**除非有强需求，不建议方案 B。** 方案 A 能达到同样的"静态独立"收益，且不改代码。
-
----
-
-## 方案 C · 只想给静态资源加速（CDN 回源）
-
-不改代码，只在统一入口前加 CDN：
-
-- CDN 源站 = 方案 A 的统一入口
-- 只缓存 `/` 与 `/assets/`
-- **必须**把 `/api/`、`/sub/`、`/healthz`、`/readyz` 配成「不缓存、直接回源」
-- Cookie 域名保持 `panel.example.com`，不加 `Domain` 属性即可
-
----
-
-## 三种方案对比
-
-| | 方案 A | 方案 B | 方案 C |
-|---|---|---|---|
-| 改代码 | 不需要 | 需要 4 处 | 不需要 |
-| 前端可放 CDN | 可以 | 可以 | 可以（且强制走 CDN） |
-| 面板只跑 API | 是 | 是 | 取决于源站 |
-| 登录可靠性 | 稳（同源） | 受第三方 Cookie 策略影响 | 稳（同源） |
-| 证书数量 | 1 | 2 | 1 |
-| 推荐度 | ★★★ | ★（仅在必须分域名时） | ★★（在 A 之上叠加） |
-
----
-
-## 常见坑
-
-1. **忘了 SPA 回落** → 刷新 `/admin/members` 404。必须 `try_files $uri $uri/ /index.html`。
-2. **`PANEL_PUBLIC_URL` 填成内网地址** → 成员拿到的订阅链接打不开。
-3. **`PANEL_LISTEN` 设成 `0.0.0.0` 又开 `PANEL_TRUST_REVERSE_PROXY`** → 面板启动直接报错（代码强制要求回环，防止绕过代理直接暴露信任头）。
-4. **`/sub/` 被 CDN 或日志记录** → 订阅令牌（等同密码）进日志。
-5. **`X-Forwarded-For` 直接透传客户端值** → 登录限流可被伪造头绕过。
-6. **只缓存了 `index.html`** → 发布后用户拿到旧页面。`index.html` 必须 `no-store`，带哈希的 `/assets/` 才能长缓存。
+| API 基地址 | `web/src/api/endpoints.ts` 的资源路径使用构建变量 `VITE_API_BASE` |
+| 携带凭据 | `web/src/api/http.ts` 配了 `VITE_API_BASE` 后使用 `credentials: include` |
+| CORS | 后端配置 `PANEL_ALLOWED_ORIGINS` 精确 origin 白名单才启用，允许凭据及 CSRF/幂等头；不能用 `*` |
+| Cookie | `PANEL_COOKIE_SAMESITE`、`PANEL_COOKIE_DOMAIN` 可配；`none` 要求 Secure，与 DEV 互斥 |
+| **认证路径缺口** | 登录、session、退出、兑换仍为相对 `/api/v1/auth/**`，未使用资源 BASE |
+
+因此纯静态前端域名 + 独立 API 域名的完整登录链路仍有实现缺口，尚不能给出可靠的
+纯配置教程。不要重复粘贴 CORS 中间件或修改 Cookie 常量，相关能力已经存在；应先补齐
+认证 URL 一致性并实测浏览器，再决定是否跨域。本文不修改代码。
+
+即使补齐后也需要分别评估 origin 与 site、Cookie 作用域和浏览器第三方 Cookie 限制。
+不同站点通常需要 `SameSite=None; Secure`，仍可能被第三方 Cookie 策略阻止。
+Cookie 的 Domain 不能跨两个不同主域共享，扩大父域范围也不是默认必需项。
+CSRF 仍靠会话令牌校验而不比对 Origin，不能用 CORS 代替 CSRF。
+**没有强需求就保持方案 A 的同源入口。**
+
+## 方案 C：只加速静态资源
+
+可在统一入口上叠加 CDN，但仅缓存带内容哈希的 `/assets/` 等不可变资源。
+`index.html` 不缓存；`/api/`、`/sub/`、`/healthz`、`/readyz` 全部直达源站，不记录订阅令牌。
+CDN/WAF 会改变来源地址，当前 `clientIP()` 不提供可配置的 CDN 信任链解析，不能直接
+把互联网提供的 XFF 透传给面板；新增代理层需要重新设计并验证边界。
+
+## 验证边界
+
+本次新镜像已完成 amd64 构建、两种同源托管模式的隔离 HTTPS 与 Chromium 验证，见[部署烟测](../development/deployment-smoke.md)。未在生产宿主配置 nginx，未验证真跨域浏览器链路，也未在本轮重跑节点数据面。首次上线仍需分别检查，不能只以 `/healthz` 成功宣布可用。

@@ -26,7 +26,7 @@
 
 | 组件 | 作用 |
 |---|---|
-| `cmd/panel` | 面板：HTTP API、订阅分发、授权计算、审计 |
+| `cmd/panel` | 单 Go 进程：HTTP API、可选 SPA 托管、订阅分发、授权计算、审计 |
 | `cmd/agent` | 部署在节点机上：拉快照、跑 Xray 实例、上报用量 |
 | `web/` | 面板前端（Vue 3 + TypeScript + Tailwind + shadcn-vue） |
 | PostgreSQL 17 | 全部业务数据（含会话、账本、审计）；迁移带 checksum + advisory lock |
@@ -37,32 +37,24 @@ Agent 精确接受 **Xray 26.3.27** 与 **26.3.23**（闭合白名单），不�
 
 ## 快速开始
 
-需要 Docker 与 Docker Compose。完整说明见 [快速开始](docs/getting-started/quickstart.md)。
+可靠入口是 **HTTPS + 宿主机 nginx**，不是把容器的明文端口直接交给浏览器。
+需要 Docker / Compose、已解析到宿主机的域名，以及浏览器和 Agent 都信任的 TLS 证书。
 
-```bash
-git clone https://github.com/r1172464137/proxypanel.git
-cd proxypanel
+1. 按 [HTTPS 快速开始](docs/getting-started/quickstart.md) 准备固定保存的密钥、首次管理员密码和 `PANEL_PUBLIC_URL=https://你的域名`。
+2. 使用包含当前架构改动的镜像启动 bundle：宿主 `127.0.0.1:8081` → 容器 `0.0.0.0:8080`。不要假定 GHCR 的 `latest` 已包含这些改动；镜像选择与本地构建见 [Docker 部署](docs/deployment/docker.md#镜像与构建)。
+3. 按 [nginx 示例](deploy/nginx.conf.example) 在宿主终止 TLS，反代到 `http://127.0.0.1:8081`；执行 `nginx -t`、reload 后访问 `https://你的域名`。
+4. 登录 → 建服务器 → 建节点 → 建节点组 → 建订阅 → 建成员 → 生成一次性注册码 → 接上 Agent。
 
-# 生成 master key：它加密数据库里的凭据，丢了就再也解不开
-export PANEL_MASTER_KEY="$(openssl rand -base64 32)"
-
-cp deploy/docker-compose.example.yml docker-compose.yml
-docker compose up -d
-```
-
-首次启动提供管理员账号，之后就不要再传密码变量：
-
-```bash
-PANEL_ADMIN_USER=admin PANEL_ADMIN_PASSWORD='换成你自己的强密码' docker compose up -d
-```
-
-打开 `http://<你的IP>:8080`，登录 → 建服务器 → 建节点 → 建节点组 → 建订阅 → 建成员 →
-在服务器页面生成一次性注册码 → 把 Agent 接上。
+`deploy/Dockerfile.panel` 不含 nginx 或入口脚本，只启动一个 Go 进程。
+镜像默认 `PANEL_WEB_ROOT=/usr/share/proxypanel/web`，由 Go 托管 SPA；显式设空则
+API-only，由宿主 nginx 托管 `web/dist`，仍保持同源。
+**不要在 Docker bridge 部署中启用 `PANEL_DEV=true`**：main 强制 DEV 回环监听，
+容器内回环无法通过普通端口发布访问。本地源码开发见 [开发环境](docs/development/setup.md)。
 
 ## 部署方式
 
-- **Docker 单栈**（面板 + PostgreSQL + Redis + Agent 都在容器里）：[deployment/docker.md](docs/deployment/docker.md)
-- **面板与 Agent 分开部署**（面板在一台，节点在另一批机器上）：[deployment/split-panel-agent.md](docs/deployment/split-panel-agent.md)
+- **Docker 部署**（面板 + PostgreSQL + Redis，TLS 由宿主机 nginx 终止）：[deployment/docker.md](docs/deployment/docker.md)
+- **分离部署**（前端独立托管、统一 HTTPS 入口、Agent 部署到节点机）：[deployment/split-panel-agent.md](docs/deployment/split-panel-agent.md)
 - **生产注意**（TLS、反向代理、权限、不要暴露的端口）：[deployment/production.md](docs/deployment/production.md)
 
 ## 运维
@@ -109,14 +101,13 @@ npm run build
 ## 安全须知
 
 - **`PANEL_MASTER_KEY` 一旦丢失，数据库里的代理凭据无法恢复**。请和数据库一起备份。
-- 面板默认只监听回环；对外一律走 HTTPS 反向代理，别把 Agent 的 Stats 端口暴露到公网。
+- 裸进程默认监听回环；Docker 镜像监听 `0.0.0.0:8080`，只发布到宿主回环 `8081`，对外走宿主 nginx 的 HTTPS。别把面板明文端口或 Agent 的 Stats 端口暴露到公网。
 - 不提供默认管理员密码，仓库里不含任何真实密钥、数据库凭据或 Agent 状态。
 - 订阅令牌等同于访问凭据，泄露后请立刻在成员页面轮换。
 
 ## 已知边界
 
-- 在 WSL2 上完成了完整的功能与真实链路验证（含真实 Docker 栈、真实 Xray、真实客户端流量）；
-  宿主 Linux + systemd 的安装/升级/回滚没有在目标生产机验收。
+- 无 nginx 的单进程镜像已完成 amd64 构建、两种托管模式的 HTTPS 登录与真实浏览器验证，见[部署烟测](docs/development/deployment-smoke.md)。外置 nginx 在隔离容器中验证，未修改生产宿主 nginx；本轮未重跑 Agent/Xray 完整矩阵。宿主 systemd 的安装/升级/回滚仍需目标机验收。
 - v2rayN 的图形界面导入未验收（其无官方非 GUI 导入接口）；已验收的是配置能够正确生成并被加载。
 - 公网直连、真实 Telegram 送达、多节点大规模 SLA 需要在你自己的环境里实测。
 

@@ -5,21 +5,44 @@
 ## 拓扑：只有一个入口
 
 ```text
-浏览器 / Agent ──https:443──> nginx（TLS 终止 + 托管 SPA）──http:8080──> 面板（127.0.0.1）
-                                                                  └──> PostgreSQL / Redis（仅回环）
+浏览器 / Agent ──https:443──> nginx（TLS 终止）──http──> 面板
+                                                          │
+                              systemd: 127.0.0.1:8080 ────┤
+                              docker : 127.0.0.1:8081 ────┘（→ 容器 0.0.0.0:8080）
+                                                          └──> PostgreSQL / Redis（仅回环或仅容器网络）
 
 节点机：Agent ──> 官方 Xray 实例（监听节点端口，供成员连接）
 ```
 
-面板本身不做公网暴露：它只监听回环，TLS 由 nginx 终止，`PANEL_TRUST_REVERSE_PROXY=true` 让面板接受 nginx 写进来的 `X-Forwarded-For` / `X-Forwarded-Proto`。
+本文推荐面板不直接公网暴露，TLS 由宿主 nginx 终止。
+`PANEL_TRUST_REVERSE_PROXY=true` 允许面板在该拓扑下提供明文 HTTP，不再强制回环监听；
+Docker 镜像使用 `0.0.0.0:8080`，**只发布到宿主 `127.0.0.1:8081`**。
+镜像无 nginx 或入口脚本，只有一个 Go 进程，默认托管 SPA。
 
-代码里有个强制约束：**开了 `PANEL_TRUST_REVERSE_PROXY` 就不许监听非回环地址**，否则启动直接失败（`PANEL_TRUST_REVERSE_PROXY requires PANEL_LISTEN on a loopback address`）。这不是可选项——「信任反代头」的能力如果和公网端口同时存在，等于把限流键和审计里的来源 IP 交给客户端自己填。
+不要将来源 IP 校验当作网络隔离：`clientIP()` 在直连方为回环、私网或链路本地时
+读取 XFF，并取最右侧合法 IP；这不是精确代理白名单，也不受上述传输开关控制。
+必须限制宿主发布地址和容器网络成员，防止不可信对端绕过 TLS 或伪造来源。
+Docker 转发可能改变对端地址，不能保证绕过 nginx 时一定被识别为公网来源。
+nginx 应使用 `$remote_addr` 覆盖 `X-Forwarded-For`，同时传递 Host 与协议头；
+当前代码不通过 `X-Forwarded-Proto` 决定 Cookie Secure，Secure 由 DEV 设置决定。
 
-容器部署时这个约束的形态不同：发布的 `proxypanel-panel` 镜像内 nginx 监听 `0.0.0.0:8443`，面板退回 `127.0.0.1:8080`，两者在同一个网络命名空间里，所以对外仍然只有一个端口，反代头只可能由本机 nginx 产生。
+其他传输模式的真实约束：成对设置 `PANEL_TLS_CERT` / `PANEL_TLS_KEY` 时 Go 直接提供
+TLS，允许任意监听地址，且优先于反代路径；但不适用于本文的 HTTP upstream。
+**`PANEL_DEV=true` 无论是否同时配置 TLS 或反代，都必须回环监听**，因此不能用于
+本文 Docker bridge 部署。不要为了明文浏览器访问启用 DEV。
 
-## nginx：终止 TLS 并提供前端
+## nginx：终止 TLS 与选择前端归属
 
-`deploy/nginx.conf.example` 是一个可以直接改用的完整 server 片段（systemd 部署形态：面板在 `127.0.0.1:8080`，静态文件在 `/opt/proxypanel/current/web/dist`）。下面这份在它基础上补齐了 upstream keepalive、`/api/` 超时和两个探针 location，语义与那份文件一致：
+[`deploy/nginx.conf.example`](../../deploy/nginx.conf.example) 当前面向 Docker：
+上游是宿主 `127.0.0.1:8081`，默认全量反代给 Go 托管 SPA。镜像默认
+`PANEL_WEB_ROOT=/usr/share/proxypanel/web`；显式设空才是 API-only，由宿主 nginx serve dist。
+Compose 单连字符默认值保留显式空，详见 [Docker 静态托管](docker.md#方案-bapi-only宿主-nginx-托管-dist)。
+
+下面是另一种 **systemd + API-only + 宿主静态托管** 示例：面板设置
+`PANEL_LISTEN=127.0.0.1:8080`、`PANEL_TRUST_REVERSE_PROXY=true`、`PANEL_WEB_ROOT=`，
+nginx 从 `/opt/proxypanel/current/web/dist` 读取前端。若希望裸进程也托管 SPA，
+将 `PANEL_WEB_ROOT` 设为该目录并改用全量反代，不要混用两种 location。
+模板和下列配置都需按域名、证书路径及 nginx 版本调整，再执行 `nginx -t`。
 
 ```nginx
 upstream panel_api {
@@ -105,30 +128,39 @@ systemctl reload nginx
 
 ### 容器部署的反代写法
 
-如果宿主 nginx 要放在 bundle 镜像前面（例如你想在宿主上做统一入口、限速或 WAF），镜像里已经有一层 TLS，反代要连 `https`：
+容器里**没有** TLS，面板只提供明文 HTTP 8080，所以宿主 nginx 用 `http://` 反代，
+不需要 `proxy_ssl_*` 那一套：
 
 ```nginx
+upstream proxypanel_api {
+    server 127.0.0.1:8081;      # compose 里 PANEL_PORT 的宿主端口
+    keepalive 16;
+}
+
 location / {
-    proxy_pass https://127.0.0.1:8443;
+    proxy_pass http://proxypanel_api;
     proxy_http_version 1.1;
     proxy_set_header Connection "";
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-Proto https;
-    proxy_set_header X-Forwarded-For $remote_addr;
-    proxy_ssl_server_name on;
-    # 面板证书是自签时：把 CA 配进去，不要长期关校验
-    proxy_ssl_verify off;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For   $remote_addr;
+    proxy_read_timeout 60s;
 }
 ```
 
-这种双层 TLS 只跑在回环上，能接受；但更简单的做法是只发布 `127.0.0.1:8443`，用 SSH 隧道访问，不额外加一层。
+完整版本（含订阅不记日志、探针穿透、前端两种归属）见
+[`deploy/nginx.conf.example`](../../deploy/nginx.conf.example)。
+
+回环 HTTP 只用于宿主反代和命令行探针，不是浏览器快速入口；SSH 转发明文端口
+也不会提供 HTTPS。正式浏览器会话使用 Secure Cookie，应通过已配置好的 HTTPS 入口访问。
+不要以启用 DEV 替代 TLS。
 
 ## 哪些端口绝对不能暴露
 
 | 端口 | 是什么 | 应该 |
 |---|---|---|
 | 443 / 节点代理端口 | 对外开放的服务 | 公网可达 |
-| 面板 `8080`（systemd）或 `8443`（容器） | 面板 HTTP | **只回环**，由本机 nginx 反代 |
+| 面板 `8080`（宿主 systemd）或宿主发布端口（bundle 默认 `${PANEL_PORT:-8081}`，example 固定 8081） | 面板 HTTP | **宿主只回环**；容器内部监听 `0.0.0.0:8080` 不直接公开 |
 | PostgreSQL `5432` | 权威数据库 | 只回环或只容器网络。跨机连接要开服务端证书校验，`sslmode=disable` 仅限同机 |
 | Redis `6379` | 登录限流 | 只回环或只容器网络 |
 | Xray 管理 API | Agent 注入的 `StatsService`，监听 `127.0.0.1`，端口在 `20000–60000` 里随机 | 永远不要做端口转发。它是用量统计的唯一来源，也是本机提权面 |
@@ -137,11 +169,14 @@ location / {
 自查（在节点和面板所在机器上都要跑）：
 
 ```bash
-ss -lntp | grep -E ':(5432|6379|8080|8443|2000[0-9]|[2-5][0-9]{4})\b'
-# 期望：5432/6379/8080/8443 只出现在 127.0.0.1；20000-60000 段的 Xray API 只出现在 127.0.0.1
+ss -lntp | grep -E ':(5432|6379|8080|8081|2000[0-9]|[2-5][0-9]{4})\b'
+# 宿主视角：已发布的数据库与面板 HTTP 端口只绑回环；bundle 数据库不发布
+# 容器内 Go 的 0.0.0.0:8080 是预期值；Xray 管理 API 在其所在网络命名空间内只绑回环
 ```
 
 `0.0.0.0:8388` 这类是节点真正的代理端口，公开是有意的——请确认它就是你想要公开的那一个。
+Docker 发布可能由 NAT 而非宿主监听进程实现，还应检查 `docker compose ps` / 容器端口映射，
+并从外部确认面板明文端口不可达，不能只靠 `ss` 判断。
 
 ## 权限与文件所有权
 
@@ -250,7 +285,7 @@ chronyc tracking                  # 或 ntpq -p；看 offset 是否在毫秒级
 由此得到两条部署纪律：
 
 - nginx 必须用 `$remote_addr` **覆盖** `X-Forwarded-For`，不能 `$proxy_add_x_forwarded_for` 那样追加。`nginx.conf.example` 里写的就是覆盖；
-- 面板必须只监听回环。因为私网地址被当作可信反代，一旦面板在局域网/公网明文可达，同网段任何人都能自带 `X-Forwarded-For` 绕过限流，也能直接跳过 nginx 访问面板。
+- 必须限制面板的可达范围：systemd 监听宿主回环；Docker 内可监听所有接口，但只发布到宿主回环，且容器网络只容纳受信服务。私网地址会被当作可信代理，不可信同网段或同容器网络对端可能自带 XFF 绕过限流；来源校验不能代替隔离。
 
 其他与来源相关的点：
 
@@ -275,7 +310,7 @@ bash deploy/manage-linux.sh install panel /path/to/new-release proxypanel-0.1.3
 systemctl start proxypanel-panel
 
 journalctl -u proxypanel-panel -n 100 --no-pager     # 迁移日志 + transport 行
-curl -s http://127.0.0.1:8080/readyz; echo           # 未配反代时直接探环回
+curl -s http://127.0.0.1:8080/readyz; echo           # systemd 宿主探针；Docker 宿主改用 8081
 ```
 
 面板启动即跑迁移（advisory lock + checksum）。agent 与 panel 同机共用 `current` 时，两个服务要一起切、版本要配套。
@@ -303,12 +338,13 @@ Agent 的回滚有额外约束：恢复后的控制代次（generation）是一�
 ## 首次上线检查清单
 
 ```bash
-# 1. 进程与就绪（同一台机器上没装 Agent 时去掉后一个）
+# 1. systemd 进程与就绪（未安装 Agent 时去掉后一个）
+# Docker 则用 docker compose ps，以下宿主探针端口改为 8081
 systemctl is-active proxypanel-panel proxypanel-agent
 curl -s http://127.0.0.1:8080/healthz; echo
 curl -s http://127.0.0.1:8080/readyz;  echo
 
-# 2. TLS 与入口（不校验证书时用 -k，只为确认链路）
+# 2. TLS 与入口（私有 CA 用 --cacert，不以跳过校验作为验收）
 curl -sI https://panel.example.com/ | head -1
 curl -s -o /dev/null -w '%{http_code}\n' https://panel.example.com/assets/does-not-exist.js  # 404
 curl -s -o /dev/null -w '%{http_code}\n' https://panel.example.com/admin/members            # 200（SPA 回落）
@@ -326,6 +362,7 @@ ss -lntp
 
 ## 已验证与未验证
 
-已验证：真实 Docker 栈上跑过面板 + PostgreSQL + Redis + 真实 Agent + 真实官方 Xray + 真实客户端流量，含撤权重连、计量与账本、容器内 Agent/核心版本切换与技术回滚、隔离环境备份还原演练。
+历史已验证：真实 Docker 栈上跑过面板 + PostgreSQL + Redis + 真实 Agent + 真实官方 Xray + 真实客户端流量，含撤权重连、计量与账本、容器内 Agent/核心版本切换与技术回滚、隔离环境备份还原演练。
+本次无 nginx 的单进程镜像另做了 amd64 构建、两种托管模式的 HTTPS 与真实 Chromium 验证，见[部署烟测](../development/deployment-smoke.md)。nginx 在隔离容器中模拟外置代理，未安装/修改生产宿主 nginx；本轮未重新验证 Agent/Xray 数据面。
 
 未验证：Linux 宿主 systemd 的安装、升级、回滚没有在目标生产机上验收；`manage-linux.sh` 与 `deploy-agent.sh` 的 unit 行为来自代码与脚本本身，不是真机执行记录。公网直连、宿主重启自动恢复、真实 Telegram 送达、多节点生产规模下的 RPO/RTO 也都需要你在自己的环境里实测。

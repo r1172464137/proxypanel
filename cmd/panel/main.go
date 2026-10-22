@@ -39,9 +39,8 @@ func isLoopback(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// listenMode decides how the process exposes HTTP. Plain cleartext to a public
-// interface is only possible when it is explicitly a trusted reverse proxy
-// setup on loopback, or in development mode.
+// listenMode requires explicit opt-in for HTTP behind a TLS-terminating proxy.
+// Development remains loopback-only; proxy deployments may use a container bridge.
 func listenMode(dev bool) (tls bool, reason string, err error) {
 	cert := strings.TrimSpace(os.Getenv("PANEL_TLS_CERT"))
 	key := strings.TrimSpace(os.Getenv("PANEL_TLS_KEY"))
@@ -59,13 +58,13 @@ func listenMode(dev bool) (tls bool, reason string, err error) {
 	}
 	trustProxy := strings.EqualFold(env("PANEL_TRUST_REVERSE_PROXY", "false"), "true")
 	if trustProxy {
-		return false, "TLS terminated by a trusted reverse proxy on loopback", nil
+		return false, "TLS terminated by a trusted reverse proxy", nil
 	}
 	if dev {
 		return false, "development mode (PANEL_DEV=true)", nil
 	}
 	return false, "", errors.New("refusing cleartext HTTP in production: set PANEL_TLS_CERT/PANEL_TLS_KEY, " +
-		"or PANEL_TRUST_REVERSE_PROXY=true with PANEL_LISTEN on a loopback address, or PANEL_DEV=true for local development")
+		"or PANEL_TRUST_REVERSE_PROXY=true behind a TLS-terminating proxy, or PANEL_DEV=true for local development")
 }
 
 func main() {
@@ -81,6 +80,16 @@ func main() {
 	}
 	if dev && !isLoopback(host) {
 		log.Fatal("PANEL_DEV requires a loopback PANEL_LISTEN address")
+	}
+	useTLS, modeReason, err := listenMode(dev)
+	if err != nil {
+		log.Fatalf("transport: %v", err)
+	}
+	webRoot := strings.TrimSpace(os.Getenv("PANEL_WEB_ROOT"))
+	if webRoot != "" {
+		if err := api.ValidateWebRoot(webRoot); err != nil {
+			log.Fatalf("PANEL_WEB_ROOT=%q: %v", webRoot, err)
+		}
 	}
 
 	key, err := secrets.ParseKey(os.Getenv("PANEL_MASTER_KEY"))
@@ -102,12 +111,20 @@ func main() {
 		log.Fatalf("bootstrap admin: %v", err)
 	}
 
-	useTLS, modeReason, err := listenMode(dev)
-	if err != nil {
-		log.Fatalf("transport: %v", err)
-	}
+	// 只在"反向代理终止 TLS"这条路径上允许监听非回环地址（容器里宿主机 nginx
+	// 必须能连进来，容器内无法只绑 127.0.0.1）。clientIP/isTrustedProxy
+	// 只采信来自回环、私网或链路本地对端的 XFF，但这不能替代网络隔离：
+	// 宿主端口必须只发布到回环，容器网络不能接入不可信服务。
+	//
+	// 直接 TLS 不受此限制；开发明文仍由上面的检查限制为回环。
 	if !useTLS && !dev && !isLoopback(host) {
-		log.Fatalf("transport: PANEL_TRUST_REVERSE_PROXY requires PANEL_LISTEN on a loopback address, got %q", host)
+		if !strings.EqualFold(env("PANEL_TRUST_REVERSE_PROXY", "false"), "true") {
+			log.Fatalf("transport: cleartext HTTP on non-loopback %q requires either "+
+				"PANEL_TLS_CERT/PANEL_TLS_KEY or PANEL_TRUST_REVERSE_PROXY=true", host)
+		}
+		log.Printf("transport: warning: listening on non-loopback %q; only loopback/private "+
+			"peers' X-Forwarded-For is trusted, so the reverse proxy must reach the panel "+
+			"over a private network", host)
 	}
 	log.Printf("transport: %s", modeReason)
 
@@ -131,6 +148,15 @@ func main() {
 		log.Printf("cors: enabled for %s (前后端分离部署)", allowedOrigins)
 	}
 
+	// 前端静态托管是可选的：配了就由面板同时提供 SPA，不配就只提供 API。
+	// 目录不可用时直接退出 —— 让它带着坏配置跑起来，表现是"页面打不开但
+	// 容器健康"，比启动失败难查得多。
+	if webRoot != "" {
+		log.Printf("web: serving SPA from %s", webRoot)
+	} else {
+		log.Printf("web: PANEL_WEB_ROOT not set, serving API only (static files must be hosted separately)")
+	}
+
 	srv := &api.Server{
 		Store:       st,
 		RateLimiter: limiter,
@@ -140,6 +166,7 @@ func main() {
 			AllowedOrigins: allowedOrigins,
 			CookieSameSite: cookieSameSite,
 			CookieDomain:   strings.TrimSpace(os.Getenv("PANEL_COOKIE_DOMAIN")),
+			WebRoot:        webRoot,
 		},
 	}
 	httpSrv := &http.Server{

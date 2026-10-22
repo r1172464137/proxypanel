@@ -1,0 +1,16 @@
+.git
+.memory
+.local
+.secrets
+.keys
+.pi
+.env
+.env.*
+私钥.txt
+build
+web/node_modules
+web/dist
+web/.vite
+web/tests
+node_modules
+*.log

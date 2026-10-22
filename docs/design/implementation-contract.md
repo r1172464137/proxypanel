@@ -21,7 +21,8 @@
 
 - 单对象/动作成功：`{"data": ...}`；列表：`{"items":[],"next_cursor":null}`；错误：`{"error":{"code":"...","message":"..."}}`。
 - 时间RFC3339 UTC，ID使用服务端随机不透明字符串，版本int64。集合为空使用[]而非null。
-- 正式使用HTTPS；开发仅明确 `PANEL_DEV=true` 且绑定回环才能HTTP。
+- 正式浏览器/Agent 入口使用 HTTPS；宿主 nginx 可终止 TLS，再通过受控明文链路访问面板。Docker 镜像无 nginx，仅单 Go 进程，宿主回环 8081 → 容器 `0.0.0.0:8080`，不再要求反代模式监听回环；DEV 仍必须回环，只用于裸进程本机开发，不用于普通 Docker bridge。
+- 镜像默认 `PANEL_WEB_ROOT=/usr/share/proxypanel/web` 托管 SPA，显式空为 API-only（宿主 nginx 托管 dist）；裸进程默认 API-only。直接 TLS 可任意监听，成对证书优先于反代路径；DEV 回环检查独立生效。
 - 会话Cookie `pp_session`，HttpOnly，SameSite=Strict，生产Secure；写接口要求X-CSRF-Token（登录/邀请兑换/Agent Bearer除外）。GET session返回csrf_token。
 - 初始管理员仅服务端bootstrap：`PANEL_ADMIN_USER`、`PANEL_ADMIN_PASSWORD`，只在用户表为空时创建；不公开无保护的bootstrap HTTP接口。不提供默认密码。
 - 变更需校验JSON/字段/关系；客户端版本通过body.version；批量submit需要Idempotency-Key。验证错误400，未登录401，CSRF/权限403，不存在404，版本/幂等冲突409，依赖不可用503。

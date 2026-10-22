@@ -1,13 +1,19 @@
 # proxypanel 一体化部署：PostgreSQL + Redis + 面板，单个 compose 文件。
 #
-# 与 deploy/docker-compose.example.yml 的区别：
-#   * 数据库与缓存在这里和面板一起管理（示例来自行部署外部实例）；
-#   * 面板直接监听 0.0.0.0，便于从局域网访问，不经过宿主 nginx。
+# bundle 包含面板、PostgreSQL、Redis；example 另带可选的 Agent（profile=node）。
+#
+# 面板容器**不跑 nginx**：它只提供 HTTP（API + SPA），TLS 必须由宿主机 nginx
+# 终止（配置见 deploy/nginx.conf.example）。所以本文件把面板发布到宿主回环，
+# 前面必须有一层 nginx 才能对外。
+#
+# 不能省掉 nginx 直接对局域网暴露：PANEL_DEV=false 时会话 Cookie 带 Secure，
+# 浏览器在明文 http 下根本不会回传 Cookie，登录必然失败。
 #
 # 首次使用：
-#   cp .env.example .env && ${EDITOR:-vi} .env      # 填四个必填值
-#   docker compose up -d
-#   docker compose logs -f panel
+#   cp .env.bundle.example .env && ${EDITOR:-vi} .env   # 填四个必填值
+#   docker compose -f docker-compose.bundle.yml up -d
+#   docker compose -f docker-compose.bundle.yml logs -f panel
+#   然后按 deploy/nginx.conf.example 配宿主机 nginx 指向 127.0.0.1:${PANEL_PORT}
 #
 # 三个密码（PG_PASSWORD / REDIS_PASSWORD / PANEL_MASTER_KEY）生成一次后必须固定保存：
 # PANEL_MASTER_KEY 是加密成员凭据的钥匙，丢失后数据库里的密码与 UUID 无法恢复。
@@ -77,14 +83,16 @@ services:
       DATABASE_URL: "postgres://proxypanel:${PG_PASSWORD}@postgres:5432/proxypanel?sslmode=disable"
       REDIS_URL: "redis://default:${REDIS_PASSWORD}@redis:6379/0"
       PANEL_MASTER_KEY: "${PANEL_MASTER_KEY:?set PANEL_MASTER_KEY in .env}"
-      # 镜像内的 nginx 终止 TLS 并托管 SPA，面板退回回环明文监听。
-      # 这两个值由镜像的 ENV 提供，不要在这里覆盖：
-      #   PANEL_LISTEN=127.0.0.1:8080
-      #   PANEL_TRUST_REVERSE_PROXY=true
-      # 设置 PANEL_TLS_CERT 会让面板自己在 8080 上再开一层 TLS，nginx 反代失败。
-      # 必须与浏览器实际访问的地址一致：它决定 CSRF 与订阅链接里的主机名。
+      # 镜像内置 PANEL_LISTEN=0.0.0.0:8080 / PANEL_TRUST_REVERSE_PROXY=true。
+      # 宿主端口始终绑定回环，不能把明文端口直接发布到公网。
+      # 设置 PANEL_TLS_CERT 会让面板自己开 TLS，与宿主 nginx 反代互斥。
+      #
+      # PANEL_PUBLIC_URL 只用于拼订阅链接，必须与浏览器实际访问的地址一致。
       PANEL_PUBLIC_URL: "${PANEL_PUBLIC_URL:?set PANEL_PUBLIC_URL in .env}"
       PANEL_MIGRATIONS_DIR: "/app/migrations"
+      # 不设置变量则由面板托管 SPA；在 .env 写 PANEL_WEB_ROOT= 则纯 API。
+      # 注意用 - 而不是 :-，才能保留显式空值。
+      PANEL_WEB_ROOT: "${PANEL_WEB_ROOT-/usr/share/proxypanel/web}"
       # --- 前后端分离部署（可选）---
       # 默认全部留空 = 同源部署，行为与之前一致。
       # 填了 PANEL_ALLOWED_ORIGINS 才启用 CORS。
@@ -97,22 +105,16 @@ services:
       # 仅在用户表为空时创建管理员；首次登录成功后可以从 .env 删掉这两个值。
       PANEL_ADMIN_USER: "${PANEL_ADMIN_USER:-admin}"
       PANEL_ADMIN_PASSWORD: "${PANEL_ADMIN_PASSWORD:-}"
-    volumes:
-      - ./certs:/certs:ro
     ports:
-      # 只发布到内网网卡：203 有公网 IP，绑定 0.0.0.0 会让面板对全网可达。
-      # 容器内的 PANEL_LISTEN 仍是 0.0.0.0（容器网络命名空间独立），
-      # 外网能否访问由此处的宿主侧绑定决定。
-      # 需要从本机 curl 时把 IP 换成 127.0.0.1，或用
-      #   docker compose port panel 8443
-      - "${PANEL_BIND_IP:-127.0.0.1}:8443:8443"
+      # 面板容器内是明文 HTTP 8080。这里**只发布到宿主回环**，由宿主机 nginx
+      # 反代并终止 TLS。把左边换成别的宿主端口时，记得同步 nginx 的 upstream。
+      - "${PANEL_BIND_IP:-127.0.0.1}:${PANEL_PORT:-8081}:8080"
     healthcheck:
-      # 面板是 HTTPS，自签证书下必须跳过校验；这里只验证进程活着并能应答。
-      test: ["CMD-SHELL", "wget -q -O- --no-check-certificate https://127.0.0.1:8443/healthz || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8080/healthz || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 20s
     logging:
       driver: json-file
       options:

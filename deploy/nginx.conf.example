@@ -1,37 +1,80 @@
-# Adapt hostname and certificate paths. Validate with nginx -t before reload.
-server {
-    listen 443 ssl;
-    server_name panel.example.invalid;
-    ssl_certificate /etc/proxypanel/tls/fullchain.pem;
-    ssl_certificate_key /etc/proxypanel/tls/privkey.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    root /opt/proxypanel/current/web/dist;
-    index index.html;
-    client_max_body_size 2m;
-    add_header X-Content-Type-Options nosniff always;
-    add_header Referrer-Policy no-referrer always;
-    add_header X-Frame-Options DENY always;
-    # Subscription tokens are bearer secrets: do not log /sub URLs.
-    location /sub/ {
-        access_log off;
-        proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-Proto https;
-        add_header Cache-Control no-store always;
-    }
-    location /api/ {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-Proto https;
-        proxy_set_header X-Forwarded-For $remote_addr;
-        add_header Cache-Control no-store always;
-    }
-    location /assets/ { try_files $uri =404; }
-    location / { try_files $uri $uri/ /index.html; }
-    location ~ /\. { deny all; }
+# 宿主机 nginx：将域名、证书路径与 upstream 端口替换后 nginx -t。
+# 放进 nginx 的 http{} 上下文（例如 sites-enabled），不是整个 nginx.conf。
+# A（默认）：面板托管 SPA，全部反代。
+# B：面板 PANEL_WEB_ROOT=（显式空值），宿主机 nginx 直接托管 dist。
+# B 模式只替换下面标注的 location /，保留 /api/、/sub/ 与探针。
+upstream proxypanel_api {
+    server 127.0.0.1:8081;
+    keepalive 16;
 }
+
 server {
     listen 80;
-    server_name panel.example.invalid;
-    return 301 https://$host$request_uri;
+    listen [::]:80;
+    server_name panel.example.com;
+    location /.well-known/acme-challenge/ { root /var/www/acme; }
+    location / { return 301 https://$host$request_uri; }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    # nginx >= 1.25.1；旧版用 listen 443 ssl http2 并删除下一行。
+    http2 on;
+    server_name panel.example.com;
+    ssl_certificate /etc/letsencrypt/live/panel.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/panel.example.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:proxypanelSSL:10m;
+    ssl_session_timeout 1d;
+    client_max_body_size 4m;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy same-origin always;
+
+    # 覆盖 XFF；不要透传客户端提交的头。
+    # 面板只信任来自回环、私网、链路本地直连方的 XFF。
+    # 因而容器发布端口必须只绑定宿主回环，不能直接开放到公网/不可信局域网。
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_read_timeout 60s;
+
+    # A：默认。面板提供 dist 文件和 SPA 路由回退。
+    location / { proxy_pass http://proxypanel_api; }
+
+    # B：注释上面的 location /，启用以下 root 与两个 location。
+    # 将 CI 的 web-dist 解压（或 docker cp）到 /var/www/proxypanel，
+    # 目录内应直接有 index.html 和 assets/，不是再套一层 dist/。
+    # root /var/www/proxypanel;
+    # location /assets/ {
+    #     try_files $uri =404;
+    #     expires 1y;
+    #     add_header Cache-Control "public, immutable";
+    #     add_header X-Content-Type-Options nosniff always;
+    # }
+    # location / {
+    #     try_files $uri $uri/ /index.html;
+    #     add_header Cache-Control "no-store";
+    #     add_header X-Content-Type-Options nosniff always;
+    # }
+
+    # A/B 共用：API 不回退成 HTML。
+    location /api/ { proxy_pass http://proxypanel_api; }
+    location /sub/ {
+        proxy_pass http://proxypanel_api;
+        # 订阅路径含令牌，不写 access log，也不缓存上游响应。
+        access_log off;
+        proxy_cache off;
+        add_header Cache-Control "no-store" always;
+        add_header X-Content-Type-Options nosniff always;
+    }
+    location = /healthz { proxy_pass http://proxypanel_api/healthz; access_log off; }
+    location = /readyz { proxy_pass http://proxypanel_api/readyz; access_log off; }
+
+    access_log /var/log/nginx/proxypanel.access.log;
+    error_log /var/log/nginx/proxypanel.error.log warn;
 }

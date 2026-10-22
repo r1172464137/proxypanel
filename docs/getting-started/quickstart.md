@@ -1,64 +1,75 @@
 # 快速开始
 
-这篇带你把面板跑起来、接上一个节点、并打一次真实流量确认它真的在工作。面向第一次拿到仓库、想先看一眼效果的人；完整的部署参数见 [deployment/docker.md](../deployment/docker.md)。
+这篇通过宿主 nginx 的 HTTPS 入口启动面板、接上节点，并指导你打一次真实流量。
+单 Go 进程镜像的两种托管模式已完成隔离 HTTPS 与真实浏览器烟测，见[验证记录](../development/deployment-smoke.md)。你的宿主 nginx、证书和真实节点仍需按下面步骤验证。完整参数见 [Docker 部署](../deployment/docker.md)。
 
 ## 前置条件
 
 | 需要 | 说明 |
 |---|---|
-| Docker Engine 24+ / Compose v2 | `docker compose version` 有输出即可，单机就够 |
-| 2 vCPU / 2 GiB 内存 / 10 GiB 磁盘 | 面板 + PostgreSQL + Redis + Agent + 一个 Xray 实例同机 |
-| 一个能访问的地址 | 局域网 IP 或域名。自签证书就够用，浏览器会提示证书不受信任 |
-| 官方 Xray 二进制 | 只有「验证真实流量」那一步需要，下载与校验命令见下文 |
+| Docker Engine 24+ / Compose v2 | `docker compose version` 有输出 |
+| 2 vCPU / 2 GiB 内存 / 10 GiB 磁盘 | 面板、PostgreSQL、Redis、Agent 与一个 Xray 实例同机的起点，不是容量保证 |
+| 已解析到宿主机的域名、受信任的 TLS 证书、宿主 nginx | 证书须覆盖域名；浏览器与 Agent 都需信任它 |
+| 官方 Xray 二进制 | 接 Agent 与验证真实流量时需要，下载与校验见下文 |
 
-下面所有命令都在仓库根目录执行。
+证书申请、DNS 和防火墙需先按自己的环境准备好；本文不会自动配置它们。
+私有 CA / 自签证书必须显式加入浏览器和 Agent 信任，不以关闭校验代替。
+下面面板管理命令在仓库根目录执行，节点准备命令在节点机执行，需要 root 权限的路径请使用相应权限。
 
-## 步骤 1 · 生成密钥与证书
+## HTTPS 部署路径
+
+```text
+浏览器 / Agent → https://你的域名:443 → 宿主 nginx
+              → http://127.0.0.1:8081（宿主回环）→ 容器 0.0.0.0:8080
+```
+
+镜像无 nginx 或入口脚本，单 Go 进程默认从 `/usr/share/proxypanel/web` 托管 SPA。
+这里不提供 Docker DEV 试用方式：`PANEL_DEV=true` 强制回环监听，与普通 bridge 发布
+不兼容；不要通过公开明文端口绕过。本地源码调试见 [开发环境](../development/setup.md)。
+
+### 步骤 1 · 密钥与配置
 
 ```bash
 git clone https://github.com/r1172464137/proxypanel.git
 cd proxypanel
-
-# 一体化 compose：PostgreSQL + Redis + 面板（镜像里带 nginx，对外只有一个 8443）
+PANEL_HOST=panel.example.com       # 改成已解析、证书覆盖的域名
 cp deploy/docker-compose.bundle.yml docker-compose.yml
-cp deploy/.env.bundle.example .env
-mkdir -p certs
-```
 
-生成三个密钥和一个自签证书。`PANEL_HOST` 换成你实际访问用的 IP 或域名：**证书的 SAN 必须包含它**，否则浏览器报错、Agent 也连不上。
-
-```bash
-PANEL_HOST=192.168.1.20          # 改成你的 IP 或域名
-
+# 仅首次部署生成；已有数据库的密钥与密码不能重新生成覆盖
 PG_PASSWORD="$(openssl rand -hex 32)"
 REDIS_PASSWORD="$(openssl rand -hex 32)"
 PANEL_MASTER_KEY="$(openssl rand -base64 32)"
-ADMIN_PASSWORD="$(openssl rand -base64 12)"      # 一次性管理员密码，下面会打印出来
+ADMIN_PASSWORD="$(openssl rand -base64 12)"
 
-# IP 用 IP:，域名把 IP: 换成 DNS:
-openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
-  -keyout certs/privkey.pem -out certs/fullchain.pem \
-  -subj "/CN=$PANEL_HOST" -addext "subjectAltName=IP:$PANEL_HOST"
-
+umask 077
 cat > .env <<EOF
 PG_PASSWORD=$PG_PASSWORD
 REDIS_PASSWORD=$REDIS_PASSWORD
 PANEL_MASTER_KEY=$PANEL_MASTER_KEY
-PANEL_PUBLIC_URL=https://$PANEL_HOST:8443
-PANEL_BIND_IP=$PANEL_HOST
-PANEL_TAG=latest
+PANEL_PUBLIC_URL=https://$PANEL_HOST
+PANEL_BIND_IP=127.0.0.1
+PANEL_PORT=8081
 PANEL_ADMIN_USER=admin
 PANEL_ADMIN_PASSWORD=$ADMIN_PASSWORD
 EOF
 chmod 600 .env
-echo "一次性管理员密码：$ADMIN_PASSWORD"   # 登进去后到「账号安全」里自己改掉
+echo "一次性管理员密码：$ADMIN_PASSWORD"
 ```
 
-`PANEL_BIND_IP` 决定面板发布到宿主的哪个地址：默认模板里写的是本项目测试机的内网 IP，**必须改成你自己的**；填 `127.0.0.1` 就只能本机访问（可配合 SSH 隧道），填 `0.0.0.0` 则同网段/公网（有公网 IP 时）都能连。
+这里**不启用 DEV**，也**不把证书挂进面板容器**：TLS 由宿主 nginx 终止。
+`.env` 未定义 `PANEL_WEB_ROOT` 时保持默认 SPA 托管；显式写 `PANEL_WEB_ROOT=`
+才是 API-only，需要宿主另外托管 dist。变量必须通过 compose 映射进容器，
+详见 [静态托管切换](../deployment/docker.md#方案-bapi-only宿主-nginx-托管-dist)。
 
-**`PANEL_MASTER_KEY` 必须固定保存。** 它加密数据库里的代理凭据（每个「成员 × 节点」的密码 / UUID）。这个值丢了，数据库还在、成员还能登录，但所有代理凭据都解不开——只能全部轮换，成员要重新导入订阅。把它和 `.env` 一起抄进密码管理器。
+启动前确认 `panel.image` 指向包含本次改动的镜像，**不要假定 `latest` 已更新**。
+尚无对应发布标签时，按 [镜像与构建](../deployment/docker.md#镜像与构建) 使用仓库
+现有 Dockerfile 自建，并修改复制出的 compose 的镜像名。无需额外 Dockerfile。
 
-## 步骤 2 · 起容器
+**`PANEL_MASTER_KEY` 必须固定保存**：它加密数据库里的代理凭据，丢失或换值会让原
+密码/UUID 无法解密，只能全部轮换。账号密码哈希不受影响。将密钥和数据库备份
+分开安全保存，但确保恢复时能配对取得；不要把 `.env` 提交到仓库。
+
+### 步骤 2 · 起容器
 
 ```bash
 docker compose up -d
@@ -66,93 +77,130 @@ docker compose ps
 docker compose logs -f panel
 ```
 
-等到 `panel` 日志出现下面两行，说明面板进程活着、nginx 已经开始对外服务：
+检查日志是否选择了反代终止 TLS、启用了 SPA，并最终监听 `0.0.0.0:8080`。
+非回环监听的 warning 在此拓扑下是预期提醒，不是启动失败；仍须保持宿主只发布
+回环端口，限制容器网络中的直连方，不能只依赖 XFF 来源校验。
 
-```text
-entrypoint: panel is answering /healthz
-entrypoint: starting nginx on 0.0.0.0:8443
-```
-
-另开一个终端验证探针（自签证书要加 `-k`）：
+在宿主验证（这是待执行命令，不是本次实测输出）：
 
 ```bash
-curl -k -s "https://$PANEL_HOST:8443/healthz"; echo
-# {"data":{"status":"ok"},"request_id":""}
-curl -k -s "https://$PANEL_HOST:8443/readyz"; echo
-# {"data":{"status":"ok","postgres":"ok","redis":"ok"},"request_id":""}
+curl -fsS http://127.0.0.1:8081/healthz; echo
+curl -fsS http://127.0.0.1:8081/readyz; echo
 ```
 
-`/healthz` 只说明进程活着；`/readyz` 才真的去 ping PostgreSQL 和 Redis。
+`/healthz` 仅代表进程活着。`/readyz` 的 PostgreSQL 故障返回 503；Redis 故障可能
+仍为 200，但 `data.status=degraded`。需读取响应体，不只看状态码。
 
-## 步骤 3 · 用一次性管理员密码登录
+### 步骤 3 · 配宿主 nginx
 
-浏览器打开 `https://$PANEL_HOST:8443`，用户名 `admin`，密码是步骤 1 最后打印出来的那一串。
+完整起点见 [nginx 模板](../../deploy/nginx.conf.example)，替换域名、证书路径，
+根据 nginx 版本调整 HTTP/2 语法。下面是 Go 托管 SPA 的同源示例；请作为一个站点
+配置安装到宿主 nginx 的 `http` 配置上下文中，不要叠加重复 upstream/server：
 
-这套引导只在**成员表为空**时生效（密码至少 10 位，太短面板会直接启动失败）。登录成功后先到 **我的账户 → 账号安全** 把密码改成自己的，再把这两行从 `.env` 删掉，让配置生效：
+```nginx
+upstream proxypanel_api {
+    server 127.0.0.1:8081;
+    keepalive 16;
+}
+
+server {
+    listen 443 ssl;
+    server_name panel.example.com;
+    ssl_certificate     /etc/letsencrypt/live/panel.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/panel.example.com/privkey.pem;
+
+    client_max_body_size 4m;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Forwarded-For   $remote_addr;  # 覆盖，不透传客户端值
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+
+    location / {
+        proxy_pass http://proxypanel_api;
+        proxy_read_timeout 60s;
+    }
+    location /sub/ {
+        proxy_pass http://proxypanel_api;
+        access_log off;
+        add_header Cache-Control "no-store" always;
+    }
+}
+
+server {
+    listen 80;
+    server_name panel.example.com;
+    return 301 https://$host$request_uri;
+}
+```
+
+证书已存在且路径正确后，再启用配置并检查：
+
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+curl -fsS https://panel.example.com/healthz; echo
+curl -fsS https://panel.example.com/readyz; echo
+```
+
+私有 CA 使用 `curl --cacert /path/to/your-ca.crt ...`，不使用 `-k` 作为验收依据。
+
+### 步骤 4 · 登录
+
+浏览器打开 `https://panel.example.com`（替换为实际域名），用户名 `admin`，
+密码是步骤 1 打印的那串。检查 SPA 子路由刷新、缺失资源 404 和登录后的会话请求。
+
+管理员引导只在 **members 表为空**时生效，密码至少 10 位。
+登录后先到 **我的账户 → 账号安全** 改掉密码，然后删除 `.env` 中的引导密码并重建：
 
 ```bash
 sed -i '/^PANEL_ADMIN_/d' .env
-docker compose up -d
+docker compose up -d panel
 ```
 
-不删也不会重复创建管理员，但密码留在 `.env` 里没有任何好处。
+不删除不会重复创建管理员，但不应继续在配置里保留首次密码。
 
 ## 接下来 · 建到能出订阅
 
-最短路径是「服务器 → 节点 → 节点组 → 订阅 → 成员 → Agent」。顺序有依赖：订阅引用节点组，节点组引用节点，成员绑定订阅。
+最短路径是「服务器 → 节点 → 节点组 → 订阅 → 成员 → Agent」。
 
 ### 1. 建服务器
 
-左侧 **资源 → 服务器** → **新建服务器**，填名称、地址（IP 或域名）、地区，**保存**。
+左侧 **资源 → 服务器 → 新建服务器**，填节点机名称、地址、地区，保存。
 
 ### 2. 建节点
 
-**资源 → 节点** → **新建节点**，先点卡片里的 **Shadowsocks 2022** 模板（这个模板不需要域名和证书，适合先跑通）。然后核对这几项：
+**资源 → 节点 → 新建节点**，选择 **Shadowsocks 2022** 模板（节点代理本身不需要
+域名或证书，但面板入口仍必须 HTTPS），核对：
 
-- **所属服务器**：选第 1 步那台
-- **对外地址**：成员客户端实际连接的地址，填 `$PANEL_HOST`
-- **监听端口**：模板默认 `8388`（节点在这台机器上真正监听的端口）
-- **对外端口**：留空表示与监听端口相同
-- **监听地址**：`0.0.0.0`
-- **启用该节点**：勾上
+- **所属服务器**：上一步的节点机。
+- **对外地址**：成员实际连接的节点 IP 或域名；只有同机且直达节点时才能复用面板域名，不能误填 CDN 或另一台面板机域名。
+- **监听端口**：模板默认 `8388`，需在节点机发布并允许客户端访问。
+- **对外端口**：留空即等于监听端口；若另有中转，转发由你自己配置。
+- **监听地址**：`0.0.0.0`；勾选启用后保存。
 
-**保存节点**。节点技术配置一旦变化会重启该节点的核心实例，已连接的会话会断——这里只有你自己，无所谓。
+节点技术配置变化会重启该节点核心，已有连接会短暂中断。
 
 ### 3. 建节点组
 
-**资源 → 节点组** → **新建节点组**，填名称，在 **包含节点** 里勾上刚建的节点，**保存**。
-
-节点组是订阅的授权单位。改成员会直接影响已有成员，所以服务端要求先看影响预览再提交。
+**资源 → 节点组 → 新建节点组**，命名并勾选该节点，保存。
+组是订阅授权单位；已有成员时修改组成员需要影响预览。
 
 ### 4. 建订阅
 
-**资源 → 订阅** → **新建订阅**：
-
-- **名称**、**授权节点组**（勾上第 3 步的组）
-- **每人配额（GiB）**：默认 100，可以先改小
-- **周期起始日**、**时区**：默认 `1` / `Asia/Shanghai`
-- **默认有效期（天）**：留空也行，绑成员时手动填到期时间
-
-**保存订阅**。
+**资源 → 订阅 → 新建订阅**，选择节点组、配额、周期起始日、时区，保存。
+默认有效期可留空，绑定成员时显式填到期时间。
 
 ### 5. 建成员
 
-**成员 → 新建成员**：
-
-- **用户名**、**初始密码**（至少 10 位）
-- **角色**：`成员`
-- **订阅**：选第 4 步的订阅（保存时会给这个成员按授权节点生成凭据）
-- **到期时间**：留空则跟随订阅；想省事就直接选一个未来时间
-
-**保存**。之后在成员行点 **订阅链接** 就能拿到该成员的订阅 URL。
+**成员 → 新建成员**，填用户名、至少 10 位的初始密码，角色选成员，绑定刚建的订阅，
+设置到期时间后保存。在成员行的 **订阅链接** 中取得该成员的 URL。
 
 ### 6. 接上 Agent
 
-Agent 跑在节点机上，负责把面板下发的配置变成真实的 Xray 进程。这里用容器跑，和面板同机最省事。
+Agent 在节点机上运行，主动通过面板 HTTPS 入口拉取快照。
+在 **资源 → 服务器 → 注册码** 中复制一次性代码，只能用一次，15 分钟内有效。
 
-先在面板里拿注册码：**资源 → 服务器** → 目标服务器那一行的 **注册码** → 弹窗 **一次性 Agent 注册码** 里复制。注册码**只能用一次，15 分钟内有效**，关掉弹窗不保证还能再看。
-
-然后在节点机上准备官方 Xray 并核对官方摘要：
+在节点机下载官方 Xray 并核对摘要（示例 amd64，arm64 替换为 `Xray-linux-arm64-v8a.zip`）：
 
 ```bash
 mkdir -p /opt/proxypanel/xray /var/lib/proxypanel-agent /etc/proxypanel
@@ -160,19 +208,18 @@ cd /tmp
 curl -fsSLo xray.zip https://github.com/XTLS/Xray-core/releases/download/v26.3.27/Xray-linux-64.zip
 curl -fsSLo xray.zip.dgst https://github.com/XTLS/Xray-core/releases/download/v26.3.27/Xray-linux-64.zip.dgst
 expected="$(sed -n 's/.*SHA2-256=[[:space:]]*\([0-9a-fA-F]\{64\}\).*/\1/p' xray.zip.dgst | head -n1)"
-echo "$expected  xray.zip" | sha256sum -c -
+test -n "$expected" && echo "$expected  xray.zip" | sha256sum -c -
+# 只在校验成功后继续
 unzip -q -o xray.zip -d /opt/proxypanel/xray/26.3.27
-/opt/proxypanel/xray/26.3.27/xray version | head -1   # 应该是 26.3.27
+/opt/proxypanel/xray/26.3.27/xray version | head -1
 ```
 
-（arm64 主机把两个文件名换成 `Xray-linux-arm64-v8a.zip`。）
-
-写 Agent 配置。`xray_path` 与 `state_dir` 要按**容器内**路径写，因为下面用容器跑 Agent：
+写 Agent 配置，路径按**容器内**填写，替换域名与注册码：
 
 ```bash
 cat > /etc/proxypanel/agent.json <<'EOF'
 {
-  "panel_url": "https://REPLACE_WITH_PANEL_HOST:8443",
+  "panel_url": "https://REPLACE_WITH_PANEL_HOST",
   "registration_code": "REPLACE_WITH_ONE_TIME_CODE",
   "xray_path": "/opt/xray/26.3.27/xray",
   "state_dir": "/var/lib/proxypanel-agent",
@@ -182,77 +229,69 @@ cat > /etc/proxypanel/agent.json <<'EOF'
   "allow_loopback_http": false
 }
 EOF
-chmod 600 /etc/proxypanel/agent.json
-chown 65532:65532 /var/lib/proxypanel-agent    # Agent 镜像以 65532 运行
+chown root:65532 /etc/proxypanel/agent.json
+chmod 640 /etc/proxypanel/agent.json           # 容器 uid/gid 65532 必须可读
+chown 65532:65532 /var/lib/proxypanel-agent
+chmod 700 /var/lib/proxypanel-agent
 
-# 面板用的是自签证书；把这张证书作为 Agent 的信任根
-# （仓库根目录执行；如果 Agent 在另一台机器上，把面板的 fullchain.pem 拷过去）
-cp certs/fullchain.pem /etc/proxypanel/panel-ca.crt
-```
-
-启动 Agent（`-p` 的宿主端口要与节点配置里的「监听端口」一致）：
-
-```bash
 docker run -d --name proxypanel-agent --restart unless-stopped \
-  -e SSL_CERT_FILE=/usr/local/share/ca-certificates/panel-ca.crt \
   -v /etc/proxypanel/agent.json:/etc/proxypanel/agent.json:ro \
   -v /var/lib/proxypanel-agent:/var/lib/proxypanel-agent \
   -v /opt/proxypanel/xray:/opt/xray:ro \
-  -v /etc/proxypanel/panel-ca.crt:/usr/local/share/ca-certificates/panel-ca.crt:ro \
   -p 8388:8388 \
   ghcr.io/r1172464137/proxypanel-agent:latest
 
 docker logs -f proxypanel-agent
 ```
 
-镜像由仓库里的 `images` workflow 推到 `ghcr.io/<owner>/proxypanel-*`。如果你的 fork 没有开 Packages、或包是私有的，先 `docker login ghcr.io`，或者按 `deploy/Dockerfile.agent` 自己构建（构建上下文需要 `bin/<arch>/agent`）。
+公共 CA 通常无需额外配置。私有 CA 或自签证书则需先将信任根放到节点机
+`/etc/proxypanel/panel-ca.crt`，确保容器用户可读，再在上述 `docker run` 添加：
 
-注册成功后 Agent 会把 token 写进状态目录，`agent.json` 里的 `registration_code` 可以删掉。**不要删状态目录**：里面还有 Agent 身份、计量基线和尚未上传的用量队列。
+```text
+-e SSL_CERT_FILE=/usr/local/share/ca-certificates/panel-ca.crt
+-v /etc/proxypanel/panel-ca.crt:/usr/local/share/ca-certificates/panel-ca.crt:ro
+```
 
-回到面板核对三件事：
+仅复制证书到宿主不会让容器信任它。自签叶证书可以作为该连接的信任根。
+仓库 `images` workflow 已更新构建与冒烟逻辑，但这不代表本次任务已执行或通过它；
+不能据配置存在推断镜像已发布或验证。
+私有包需先登录 GHCR；Agent 也可使用现有 `deploy/Dockerfile.agent` 自建，需准备 `bin/<arch>/agent`。
 
-1. **资源 → 服务器** 列表里那台机器的状态列显示 **在线**（心跳在 60 秒内）
-2. 点服务器名进入 **Agent 与核心实例** 页：**核心实例** 表里出现这个节点、实例运行中，`已应用` 修订号追上了 `期望`
-3. **运行 → 任务与同步** 里没有失败项
+注册成功后可删除 `registration_code`，token 已持久化在状态目录。
+**不要删除状态目录**：它还保存计量基线与未上传用量。
+回到界面确认 Agent 在线、实例 running、`已应用` 追上 `期望`，任务与同步无失败。
+这些仍不等于代理真实可用。
 
 ## 确认真的通了
 
-上面前两项只证明「面板以为它好了」。真实流量要自己打一次。
-
-先取该成员的订阅链接：**成员 → 订阅链接**。用 `xray` 格式拉一份客户端配置（这份配置自带 `127.0.0.1:10808` 的 socks 入站）：
+在装有官方 Xray 的测试客户端上，以成员订阅生成客户端配置；它自带
+`127.0.0.1:10808` SOCKS 入站。测试配置包含凭据，限制文件权限：
 
 ```bash
-SUB_URL='https://REPLACE_WITH_PANEL_HOST:8443/sub/REPLACE_WITH_MEMBER_TOKEN'
-curl -k -fsS "$SUB_URL?format=xray" -o /tmp/pp-client.json
-
-# 用同一个官方核心当客户端（不要和 Agent 抢端口，这里另起一个进程）
+umask 077
+SUB_URL='https://REPLACE_WITH_PANEL_HOST/sub/REPLACE_WITH_MEMBER_TOKEN'
+curl -fsS "$SUB_URL?format=xray" -o /tmp/pp-client.json
+# 私有 CA 时给 curl 加 --cacert /path/to/your-ca.crt
 /opt/proxypanel/xray/26.3.27/xray run -c /tmp/pp-client.json &
+CLIENT_PID=$!
 sleep 2
-
-# 走代理访问，看出口 IP 是不是节点自己的
-curl -s --socks5-hostname 127.0.0.1:10808 https://www.cloudflare.com/cdn-cgi/trace | grep '^ip='
+curl -fsS --socks5-hostname 127.0.0.1:10808 https://www.cloudflare.com/cdn-cgi/trace | grep '^ip='
+kill "$CLIENT_PID"
+rm -f /tmp/pp-client.json
 ```
 
-拿到节点的出口 IP 就说明：面板授权 → Agent 下发 → Xray 实例 → 成员凭据 → 真实出网，这条链整条是通的。测试完 `kill %1`。
-
-然后去 **运行 → 用量** 看这个成员的用量：Agent 每 5 秒采样一次并上报，十几秒内应该出现字节数。数字出现了，计量链路也就是通的。
+确认出口 IP 为节点出口，再看 **运行 → 用量** 是否出现该成员增量。
+这是要求部署方执行的验证步骤，不是本次新镜像的已通过声明。
 
 ## 常见卡点
 
-**`PANEL_MASTER_KEY` 丢了会怎样？** 面板照常启动、照常登录，但所有代理凭据解不开，表现为成员订阅里没有可用节点 / 连不上。恢复方式只有轮换凭据（成员页 **凭据** 或用 **轮换凭据**），成员需要重新导入订阅。密码不受影响（存的是哈希）。所以 master key 与数据库必须一起备份。
+- **容器立即退出**：看 `docker compose logs panel`。检查 master key、数据库连接、管理员密码长度和 `PANEL_WEB_ROOT` 目录内的 `index.html`；不要用另一个只复制二进制的 Dockerfile 代替现有多阶段构建。
+- **DEV requires loopback**：误启用了 DEV。删除该配置，保持镜像监听 `0.0.0.0:8080`，由宿主 nginx 提供 HTTPS。
+- **拒绝生产明文**：检查是否使用当前镜像及 `PANEL_TRUST_REVERSE_PROXY=true`，不要改开 DEV。
+- **宿主 nginx 502**：检查 Go 是否启动、发布端口是否为回环 8081、upstream 是否为 HTTP 而非 HTTPS。
+- **能开页面但登录后仍未登录**：用浏览器核对 `Set-Cookie` 和后续请求 Cookie；正式入口必须 HTTPS。分域还需核对 Cookie 作用范围、CORS 与 credentials，同源默认无需额外设置。
+- **订阅 URL 错误**：`PANEL_PUBLIC_URL` 只控制链接拼接，不控制 Cookie 或 CSRF；必须填实际 HTTPS 对外入口。
+- **Agent 在线但代理不通**：查实例结果、修订收敛、节点地址及端口发布。面板只发布回环 8081，代理 8388 在 Agent 容器上另行发布。
 
-**Agent 在线 ≠ 节点可用。** 「在线」只是心跳在 60 秒内。节点能不能用要看 **运行详情** 里的核心实例是否运行、`已应用` 是否追上 `期望`。Agent 拉不到快照、Xray 起不来、端口被占用，都会表现为「在线但连不上」。
-
-**端口没映射。** 节点配置里的「监听端口」是**容器内**端口，必须靠 `docker run -p 宿主:容器` 暴露出去；「对外端口」是写给成员看的，面板不代管端口转发。上面面板容器只发布了 8443，节点端口 8388 是在 Agent 容器上单独映射的。
-
-**容器起来就退出。** 按顺序看日志：
-
-- `cannot read TLS certificate at /certs/fullchain.pem` → `certs/` 没放证书，或 compose 不在仓库根目录（`./certs` 是相对 compose 文件解析的）
-- `panel exited during startup` → 面板自身配置错。最常见的是 `PANEL_ADMIN_PASSWORD` 短于 10 位，或 `PANEL_LISTEN` 与 `PANEL_TRUST_REVERSE_PROXY` 冲突（镜像内已固定为回环 + 信任反代，不要覆盖）
-- `PANEL_MASTER_KEY must decode to 32 bytes` → 生成方式不对，用 `openssl rand -base64 32`
-
-**订阅链接打不开。** `PANEL_PUBLIC_URL` 决定订阅链接里的主机名，必须与浏览器实际访问的地址完全一致（协议、主机、端口）。填成内网地址却从外网导入，打不开是正常的。
-
----
-
-下一步：真正部署时看 [deployment/docker.md](../deployment/docker.md)（环境变量、卷、升级、备份）与 [deployment/production.md](../deployment/production.md)（TLS、权限、不能暴露的端口）。想把面板和节点拆到不同机器上，看 [deployment/split-panel-agent.md](../deployment/split-panel-agent.md)。
+长期维护见 [Docker 部署](../deployment/docker.md)、[生产部署](../deployment/production.md)
+与 [分离部署](../deployment/split-panel-agent.md)。

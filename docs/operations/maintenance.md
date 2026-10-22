@@ -53,11 +53,15 @@ Agent 离线时任务会停在 `pending`；Agent 回来拉快照后会自己收�
 
 | 端点 | 含义 | 用途 |
 |---|---|---|
-| `/healthz` | 进程活着 | 容器存活探针、entrypoint 等它就绪 |
-| `/readyz` | PostgreSQL / Redis 都可用 | 就绪探针、外部监控 |
+| `/healthz` | 进程活着 | 容器 HEALTHCHECK、宿主 nginx 穿透给外部监控 |
+| `/readyz` | PostgreSQL 故障 503；Redis 故障为 200 + `status=degraded`，未配置为 `redis=disabled` | 就绪探针、外部监控，需检查响应体 |
 
 **不要用 `/healthz` 判断服务可用** —— 数据库挂了它照样 200。
-反过来也别用 `/readyz` 做存活探针，依赖抖动会导致容器被反复重启。
+反过来也别用 `/readyz` 做存活探针，依赖抖动不应触发进程重启。
+Docker 宿主探测 `http://127.0.0.1:8081`，容器内 HEALTHCHECK 使用
+`http://127.0.0.1:8080/healthz`；外部监控走宿主 nginx 的 HTTPS。
+面板镜像无 nginx 或入口脚本，SPA 默认由 Go 从 `/usr/share/proxypanel/web` 提供，
+`PANEL_WEB_ROOT` 显式空时为 API-only；此时 API 健康并不说明宿主 dist 已正确部署。
 
 ## Agent 侧要看的指标
 
@@ -81,6 +85,9 @@ Agent 离线时任务会停在 `pending`；Agent 回来拉快照后会自己收�
 | 改了成员设置没生效 | `applied_revision == desired_revision`；不等就等，或看 Agent 日志 |
 | Agent 一直不来 | 注册码是否一次性已用；`panel_url` 是否 https（http 仅回环）；私有 CA 是否通过 `SSL_CERT_FILE` 提供 |
 | Agent 日志反复报 generation 不符 | 进出过恢复协调模式。走一次 `-accept-generation`，见 [架构](../design/architecture.md) |
-| 面板 500 且 `/readyz` 失败 | 数据库或 Redis；先 `docker compose logs postgres` |
+| 面板报错且 `/readyz` 失败或降级 | 检查 PostgreSQL 与 Redis 日志；Redis 故障不一定返回非 200 |
 | 登录一直被限流 | Redis 里的 `pp:rl:login:<ip>:<user>` 键，按 IP+用户名计数，60 秒窗口 |
-| 容器起来但全站 502 | entrypoint 等不到面板 `/healthz`；多数是数据库连不上或 `PANEL_MASTER_KEY` 格式错 |
+| 容器起来但 nginx 502 | 面板没在监听（`docker compose logs panel` 看是否启动即退出）；多数是数据库连不上或 `PANEL_MASTER_KEY` 格式错 |
+| 浏览器打得开但登录不上 | 核对 HTTPS 入口、Set-Cookie 与请求 Cookie；分域时查 Cookie site/作用域、CORS 和 credentials。不要用 DEV 绕过 Docker bridge 的限制 |
+| 页面 404 但 API 健康 | 检查是否显式清空了 `PANEL_WEB_ROOT`；API-only 时宿主 nginx 必须托管匹配版本的 dist |
+| Docker 因 DEV 回环限制退出 | 删除误设的 DEV，保持容器 `0.0.0.0:8080` → 宿主回环 8081，前置宿主 HTTPS nginx |

@@ -1,7 +1,7 @@
 # 构建并推送容器镜像到 GitHub Container Registry (GHCR)。
 #
 # 产出两个镜像，多架构（linux/amd64 + linux/arm64）：
-#   ghcr.io/<owner>/proxypanel-panel   —— 控制平面 API（自带 TLS 终止）
+#   ghcr.io/<owner>/proxypanel-panel   —— API + 可选 SPA，TLS 由宿主机反代终止
 #   ghcr.io/<owner>/proxypanel-agent   —— 节点端 Agent（不打包 Xray）
 #
 # 同时把构建好的前端产物作为 artifact 上传，供 nginx 部署使用。
@@ -52,14 +52,12 @@ jobs:
             done
           done
           cp -r migrations image-context/migrations
-          # 面板镜像在构建阶段自己跑 npm ci + npm run build，所以要把前端源码
-          # 和它引用的部署文件一起放进上下文。
-          mkdir -p image-context/web image-context/deploy
+          # 面板镜像在构建阶段构建前端；运行镜像不再包含 nginx。
+          mkdir -p image-context/web
           # Copy the whole web tree: vite/tsc resolve files from the project root,
           # so cherry-picking entries is fragile. node_modules and dist are
           # excluded by image-context/.dockerignore, not here.
           cp -r web/. image-context/web/
-          cp deploy/nginx.container.conf deploy/panel-entrypoint.sh image-context/deploy/
           # 记录实际编译出的版本，便于事后核对镜像里的 Agent 版本。
           ./image-context/bin/amd64/agent -version || true
           ls -l image-context/bin/amd64 image-context/bin/arm64
@@ -68,7 +66,7 @@ jobs:
           # YAML 缩进，整个 workflow 变成无效文件（表现为 0 秒失败且没有 job）。
           printf '%s\n' web/node_modules web/dist web/tests > image-context/.dockerignore
           test -f image-context/web/package-lock.json
-          test -f image-context/deploy/nginx.container.conf
+          test -f image-context/web/index.html
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -135,33 +133,59 @@ jobs:
           echo "--- agent -version ---"
           docker run --rm "$AGENT" -version | tee /tmp/agent-version.txt
           grep -q 'proxypanel-agent' /tmp/agent-version.txt
-          # 镜像内置 nginx，没有证书挂载时必须明确拒绝启动而不是起个 502 站点。
-          echo "--- panel 在没有证书时拒绝启动（预期非零退出） ---"
-          set +e
-          docker run --rm "$PANEL" > /tmp/panel-nocert.txt 2>&1
-          rc=$?
-          set -e
-          cat /tmp/panel-nocert.txt
-          test "$rc" -ne 0
-          grep -q 'cannot read TLS certificate' /tmp/panel-nocert.txt
-
-          # 挂上临时自签证书后，缺 PANEL_MASTER_KEY 应当在面板进程里被拒绝。
-          mkdir -p /tmp/panel-certs
-          openssl req -x509 -newkey rsa:2048 -sha256 -days 1 -nodes             -keyout /tmp/panel-certs/privkey.pem -out /tmp/panel-certs/fullchain.pem             -subj "/CN=smoke.invalid" -addext "subjectAltName=DNS:smoke.invalid" 2>/dev/null
-          echo "--- panel 缺 PANEL_MASTER_KEY（预期非零退出） ---"
-          set +e
-          docker run --rm -v /tmp/panel-certs:/certs:ro "$PANEL" > /tmp/panel-out.txt 2>&1
-          rc=$?
-          set -e
-          cat /tmp/panel-out.txt
-          test "$rc" -ne 0
-          grep -Eq 'PANEL_MASTER_KEY|DATABASE_URL' /tmp/panel-out.txt
-
-          echo "--- 前端产物与 nginx 配置已打进镜像 ---"
-          docker run --rm --entrypoint /bin/ls "$PANEL" /usr/share/proxypanel/web/index.html
-          docker run --rm --entrypoint /bin/ls "$PANEL" /etc/nginx/nginx.conf
-          echo "--- 迁移文件已打进面板镜像 ---"
-          docker run --rm --entrypoint /bin/ls "$PANEL" /app/migrations
+          echo "--- 缺少主密钥必须拒绝启动（无需证书挂载） ---"
+          if docker run --rm "$PANEL" > /tmp/panel-out.txt 2>&1; then
+            echo 'panel unexpectedly started without master key' >&2
+            exit 1
+          fi
+          grep -q 'PANEL_MASTER_KEY' /tmp/panel-out.txt
+          docker run --rm --entrypoint /bin/sh "$PANEL" -ec '
+            test -f /usr/share/proxypanel/web/index.html
+            test -d /app/migrations
+            test "$(id -u)" != 0
+            ! command -v nginx
+          '
+          # 真正启动单进程镜像，验证 SPA / API-only 两种运行模式。
+          NET="pp-smoke-${GITHUB_RUN_ID}"
+          DB="${NET}-db"
+          APP="${NET}-panel"
+          cleanup() {
+            docker rm -f "$APP" "$DB" >/dev/null 2>&1 || true
+            docker network rm "$NET" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker network create "$NET"
+          docker run -d --name "$DB" --network "$NET" \
+            -e POSTGRES_PASSWORD=smoke-password postgres:17-alpine
+          for i in $(seq 1 60); do
+            if docker exec "$DB" pg_isready -U postgres; then break; fi
+            sleep 1
+          done
+          KEY=$(openssl rand -base64 32)
+          for MODE in spa api; do
+            ROOT=/usr/share/proxypanel/web
+            [ "$MODE" = api ] && ROOT=''
+            docker run -d --name "$APP" --network "$NET" \
+              -p 127.0.0.1::8080 -e "PANEL_MASTER_KEY=$KEY" \
+              -e "DATABASE_URL=postgres://postgres:smoke-password@$DB:5432/postgres?sslmode=disable" \
+              -e "PANEL_WEB_ROOT=$ROOT" "$PANEL"
+            PORT=$(docker port "$APP" 8080/tcp | awk -F: '{print $NF}')
+            URL="http://127.0.0.1:$PORT"
+            for i in $(seq 1 60); do
+              if curl -fsS "$URL/healthz"; then break; fi
+              sleep 1
+            done
+            curl -fsS "$URL/readyz"
+            test "$(curl -s -o /dev/null -w '%{http_code}' "$URL/assets/missing.js")" = 404
+            test "$(curl -s -o /dev/null -w '%{http_code}' "$URL/api/unknown")" = 404
+            if [ "$MODE" = spa ]; then
+              curl -fsS "$URL/admin/nodes" | grep -q 'id="app"'
+              curl -fsSI "$URL/index.html" | grep -iq 'cache-control: no-store'
+            else
+              test "$(curl -s -o /dev/null -w '%{http_code}' "$URL/")" = 404
+            fi
+            docker rm -f "$APP"
+          done
 
   web-artifact:
     runs-on: ubuntu-24.04

@@ -69,11 +69,16 @@ Redis 是可选的；设 `REDIS_URL` 时登录限流走真实 Redis，不设则�
 
 ## 本地起一套
 
+这里运行的是**宿主裸 Go 进程 + Vite**，不是 Docker bridge 教程。
+DEV 强制回环监听；不要把这组变量套进面板容器来试用。
+正式容器 HTTPS 入口见 [快速开始](../getting-started/quickstart.md)。
+
 ```bash
 export PANEL_MASTER_KEY="$(openssl rand -base64 32)"   # 固定保存，不要每次重新生成
 export DATABASE_URL='postgres://proxypanel:pass@127.0.0.1:5432/proxypanel?sslmode=disable'
 export PANEL_DEV=true
 export PANEL_LISTEN=127.0.0.1:8080
+export PANEL_WEB_ROOT=                  # 本地由 Vite 提供页面
 export PANEL_PUBLIC_URL=http://127.0.0.1:5173
 export PANEL_ADMIN_USER=admin
 export PANEL_ADMIN_PASSWORD='local-dev-password-123'   # ≥10 位；首次启动后删掉这两个变量
@@ -108,7 +113,8 @@ go run ./cmd/agent -config /tmp/agent.json          # 再运行
 | `PANEL_MASTER_KEY` | 必需。加密 `credentials.secret_enc`；丢了只能全部轮换凭据 |
 | `DATABASE_URL` | 必需 |
 | `PANEL_DEV=true` | 允许回环明文 HTTP，Cookie 去掉 `Secure` |
-| `PANEL_LISTEN` | `DEV` 或 `TRUST_REVERSE_PROXY` 为 true 时必须是回环地址 |
+| `PANEL_LISTEN` | DEV 必须回环；反代模式允许非回环（Docker bridge 需要），但必须隔离明文入口 |
+| `PANEL_WEB_ROOT` | 裸进程默认为空，即 API-only；可指向 `web/dist` 托管 SPA，镜像默认 `/usr/share/proxypanel/web` |
 | `PANEL_PUBLIC_URL` | **只**用于拼订阅链接，不影响 CSRF |
 | `REDIS_URL` | 可选，仅登录限流 |
 

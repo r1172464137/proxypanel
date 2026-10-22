@@ -6,14 +6,14 @@ proxypanel 的文档按**你要做什么**组织，不按时间堆。
 
 | 文档 | 内容 |
 |---|---|
-| [快速开始](getting-started/quickstart.md) | 十分钟起一套，走到真实流量打通 |
+| [快速开始](getting-started/quickstart.md) | 宿主 nginx + HTTPS 入口、初始管理员、Agent 与真实流量自检 |
 
 ## 部署
 
 | 文档 | 内容 |
 |---|---|
-| [Docker 部署](deployment/docker.md) | 单栈 vs 分体、环境变量全表、卷、升级、备份 |
-| [面板与 Agent 分开部署](deployment/split-panel-agent.md) | 面板一台、节点另一批机器 |
+| [Docker 部署](deployment/docker.md) | 两份实际编排、单 Go 进程镜像、SPA/API-only、环境变量、卷与升级 |
+| [分离部署](deployment/split-panel-agent.md) | 前端独立托管但同源、节点 Agent、跨域实现边界 |
 | [生产部署](deployment/production.md) | TLS、反向代理、账户权限、不可暴露的端口、回滚红线 |
 
 ## 运维
@@ -46,6 +46,9 @@ proxypanel 的文档按**你要做什么**组织，不按时间堆。
 |---|---|
 | [开发环境](development/setup.md) | WSL2/Linux 依赖、日常检查、真实数据库测试、代码地图 |
 | [测试](development/testing.md) | 四层测试怎么跑、已验证基线、写测试的约定 |
+
+当前面板镜像无 nginx：宿主 TLS → 回环 8081 → 容器 8080，Go 默认托管 SPA。
+新镜像两种托管模式的隔离 HTTPS 与真实浏览器结果见[部署烟测](development/deployment-smoke.md)，不与历史全量基线混用。
 
 ## 历史记录
 
