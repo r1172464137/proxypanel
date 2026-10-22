@@ -6,9 +6,26 @@ export function isRecord(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+/**
+ * 深拷贝一个纯 JSON 值。
+ *
+ * 这里**不能**用 `structuredClone`：调用方经常传入 Vue 的响应式代理
+ * （例如 NodeEditorView 的 `const draft = reactive<NodeDraft>(...)`），
+ * 而 Proxy 不可结构化克隆，`structuredClone` 会抛
+ * `DataCloneError: #<Object> could not be cloned.`。这个异常发生在组件的
+ * setup 阶段，表现为整页空白（新建节点页曾因此完全不可用）。
+ *
+ * 本模块的类型就是 `JsonObject`，契约是纯 JSON，不需要 `structuredClone`
+ * 才支持的 Map/Set/Date/循环引用，所以 JSON 往返既是正确语义，也没有
+ * 可观察的行为差异。
+ */
 export function cloneJson<T>(value: T): T {
-  if (typeof structuredClone === 'function') return structuredClone(value)
-  return JSON.parse(JSON.stringify(value)) as T
+  // 基础类型与 null 原样返回：JSON 往返会把 undefined 丢成 undefined，
+  // 但 JSON.parse(undefined) 会抛错，必须提前拦下。
+  if (value === null || typeof value !== 'object') return value
+  const serialized = JSON.stringify(value)
+  if (serialized === undefined) return value
+  return JSON.parse(serialized) as T
 }
 
 export function getPath(source: unknown, path: string): unknown {
