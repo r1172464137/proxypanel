@@ -1,22 +1,32 @@
-# 面板（控制平面）运行镜像。
+# 面板（控制平面）运行镜像，自带 nginx：一个容器同时提供 API 和网页。
 #
 # 构建上下文由 CI 组装，需包含：
 #   bin/<arch>/panel   —— CGO_ENABLED=0 交叉编译的 linux 二进制
 #   migrations/        —— SQL 迁移（面板启动时按 PANEL_MIGRATIONS_DIR 读取）
+#   web/               —— 前端构建产物（npm run build 的 dist 目录内容）
 #
-# 面板自身只提供 API，不托管 SPA 静态文件；网页由 nginx 提供服务。
+# 进程模型：
+#   nginx   监听 0.0.0.0:8443，终止 TLS、托管 SPA、把 /api 与 /sub 反代给面板
+#   panel   监听 127.0.0.1:8080，只处理 API
 #
-# 关于监听地址：代码要求 PANEL_TRUST_REVERSE_PROXY=true 时 PANEL_LISTEN 必须是回环地址，
-# 容器里无法对外提供服务。因此本镜像的受支持形态是「面板自己终止 TLS」：
-#   PANEL_LISTEN=0.0.0.0:8443
-#   PANEL_TLS_CERT=/certs/fullchain.pem
-#   PANEL_TLS_KEY=/certs/privkey.pem
-# 纯 HTTP 只用于容器的本地调试，不对应本镜像的对外部署方式。
+# 为什么不是面板自己终止 TLS：面板在 PANEL_TRUST_REVERSE_PROXY=true 时强制
+# PANEL_LISTEN 为回环地址，防止"信任反向代理头"的能力被直接暴露。把 nginx
+# 放进同一个容器后，反代头只能由本机 nginx 产生，信任边界没有扩大，同时
+# 对外仍然只有一个端口。
+FROM node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914 AS web
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY web/ ./
+RUN npm run build
+
 FROM alpine:3.23@sha256:85fe1e81d6758c208f3e1eed4338a1997e19d4be002d4dd32d3100c9a8c010a0
 
-# ca-certificates：出站 HTTPS（例如 Telegram 通知）。
-# tzdata：周期按配置时区计算当前周期边界。
-RUN apk add --no-cache ca-certificates tzdata && update-ca-certificates
+# nginx：TLS 终止与静态文件；su-exec：以非 root 启动面板；
+# ca-certificates：出站 HTTPS（Telegram 通知）；tzdata：周期时区计算。
+RUN apk add --no-cache nginx su-exec ca-certificates tzdata \
+ && update-ca-certificates \
+ && mkdir -p /run/nginx /usr/share/proxypanel/web
 
 WORKDIR /app
 
@@ -24,13 +34,28 @@ WORKDIR /app
 ARG TARGETARCH
 COPY --chown=65532:65532 bin/${TARGETARCH}/panel /app/panel
 COPY --chown=65532:65532 migrations /app/migrations
+# 前端产物：nginx 以 worker 身份读取，普通权限即可。
+COPY --from=web --chown=0:0 /web/dist /usr/share/proxypanel/web
+COPY deploy/nginx.container.conf /etc/nginx/nginx.conf
+COPY deploy/panel-entrypoint.sh /app/entrypoint.sh
 
-RUN chmod 0755 /app/panel
+RUN chmod 0755 /app/panel /app/entrypoint.sh
 
-# 非 root 运行；65532 与 Kubernetes 的 nonroot 约定一致，便于挂载卷时对齐属主。
-USER 65532:65532
+# nginx 以 root master 启动（需要读 /certs 私钥），worker 降为 nginx 用户；
+# 面板由 entrypoint 用 su-exec 降权到 65532。
+#
+# 关键：面板这里**不能**设 PANEL_TLS_CERT/PANEL_TLS_KEY。面板看到 cert 就会
+# 自己在 8080 上也开 TLS，nginx 用 http:// 反代必然失败；而且 TLS 已经由
+# nginx 终止。正确形态是"反向代理终止 TLS"：
+#   PANEL_TRUST_REVERSE_PROXY=true + PANEL_LISTEN 必须是回环地址（代码强制）。
+ENV PANEL_LISTEN=127.0.0.1:8080 \
+    PANEL_TRUST_REVERSE_PROXY=true \
+    PANEL_MIGRATIONS_DIR=/app/migrations
 
-# 8443 是本镜像的约定端口（直接 HTTPS）。用其他端口时同步调整发布映射。
+# 8443 是唯一对外端口（HTTPS，nginx）。
 EXPOSE 8443
 
-ENTRYPOINT ["/app/panel"]
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
+  CMD wget -q -O- --no-check-certificate https://127.0.0.1:8443/healthz || exit 1
+
+ENTRYPOINT ["/app/entrypoint.sh"]

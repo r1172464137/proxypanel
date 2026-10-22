@@ -77,10 +77,11 @@ services:
       DATABASE_URL: "postgres://proxypanel:${PG_PASSWORD}@postgres:5432/proxypanel?sslmode=disable"
       REDIS_URL: "redis://default:${REDIS_PASSWORD}@redis:6379/0"
       PANEL_MASTER_KEY: "${PANEL_MASTER_KEY:?set PANEL_MASTER_KEY in .env}"
-      # 面板自己终止 TLS，容器的网络命名空间是独立的，所以监听 0.0.0.0。
-      PANEL_LISTEN: "0.0.0.0:8443"
-      PANEL_TLS_CERT: "/certs/fullchain.pem"
-      PANEL_TLS_KEY: "/certs/privkey.pem"
+      # 镜像内的 nginx 终止 TLS 并托管 SPA，面板退回回环明文监听。
+      # 这两个值由镜像的 ENV 提供，不要在这里覆盖：
+      #   PANEL_LISTEN=127.0.0.1:8080
+      #   PANEL_TRUST_REVERSE_PROXY=true
+      # 设置 PANEL_TLS_CERT 会让面板自己在 8080 上再开一层 TLS，nginx 反代失败。
       # 必须与浏览器实际访问的地址一致：它决定 CSRF 与订阅链接里的主机名。
       PANEL_PUBLIC_URL: "${PANEL_PUBLIC_URL:?set PANEL_PUBLIC_URL in .env}"
       PANEL_MIGRATIONS_DIR: "/app/migrations"
