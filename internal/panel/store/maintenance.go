@@ -708,7 +708,18 @@ func scanNotification(row interface{ Scan(...any) error }) (*Notification, error
 // attempt. SKIP LOCKED keeps concurrent senders (several panel processes) from
 // picking the same row. Attempts are counted at claim time so a crashing sender
 // still backs off instead of hot looping.
+//
+// The lease is evaluated against the *database* clock, never the caller's
+// wall clock. Rows are enqueued with `DEFAULT now()` (the database clock), so
+// comparing them with a caller timestamp makes delivery depend on how closely
+// the panel host tracks the database host: a panel whose clock lags the database
+// by even a second finds nothing due and silently stops delivering until the two
+// clocks agree. The same skew made failure backoffs land in the future. Both
+// clocks can drift, but the database is the authority for the rows it timestamps,
+// so it owns the comparison too. The now argument is kept for API compatibility
+// and is only used when the caller must derive an absolute deadline.
 func (s *Store) ClaimNotifications(ctx context.Context, now time.Time, limit int) ([]Notification, error) {
+	_ = now
 	if limit <= 0 {
 		limit = 5
 	}
@@ -718,18 +729,18 @@ func (s *Store) ClaimNotifications(ctx context.Context, now time.Time, limit int
 	rows, err := s.DB.QueryContext(ctx, `
 		WITH due AS (
 			SELECT id FROM notification_outbox
-			WHERE state = 'pending' AND next_attempt_at <= $1
+			WHERE state = 'pending' AND next_attempt_at <= now()
 			ORDER BY next_attempt_at, created_at
-			LIMIT $2
+			LIMIT $1
 			FOR UPDATE SKIP LOCKED
 		)
 		UPDATE notification_outbox o
 		SET attempts = o.attempts + 1,
-		    next_attempt_at = $1::timestamptz + interval '5 minutes',
-		    updated_at = $1::timestamptz
+		    next_attempt_at = now() + interval '5 minutes',
+		    updated_at = now()
 		FROM due WHERE o.id = due.id
 		RETURNING o.id, o.event_id, o.kind, o.subject_type, o.subject_id, o.text, o.state, o.attempts,
-		          o.next_attempt_at, o.last_error, o.sent_at, o.created_at`, now.UTC(), limit)
+		          o.next_attempt_at, o.last_error, o.sent_at, o.created_at`, limit)
 	if err != nil {
 		return nil, dbErr(err)
 	}
@@ -753,17 +764,28 @@ func (s *Store) MarkNotificationSent(ctx context.Context, id string, sentAt time
 	return dbErr(err)
 }
 
-// MarkNotificationFailed records a sanitized error and the next attempt. dead
+// MarkNotificationFailed records a sanitized error and the retry delay. dead
 // marks the row as exhausted; such rows are kept (never deleted) so delivery
 // attempts stay auditable.
-func (s *Store) MarkNotificationFailed(ctx context.Context, id, sanitizedErr string, nextAttempt time.Time, dead bool) error {
+//
+// The delay is expressed as a duration, not an absolute instant, and is applied
+// to the database clock. An absolute deadline computed from the panel clock would
+// be distorted by clock skew: a panel leading its database by an hour would park
+// the retry an hour and a half out, and a lagging panel would retry immediately
+// in a hot loop. The delay itself is a policy value and is therefore measured
+// from whatever clock owns the rows.
+func (s *Store) MarkNotificationFailed(ctx context.Context, id, sanitizedErr string, delay time.Duration, dead bool) error {
 	state := "pending"
 	if dead {
 		state = "failed"
 	}
+	if delay < 0 {
+		delay = 0
+	}
 	_, err := s.DB.ExecContext(ctx, `UPDATE notification_outbox
-		SET state = $2, last_error = $3, next_attempt_at = $4, updated_at = now()
-		WHERE id = $1`, id, state, truncateMessage(sanitizedErr, 300), nextAttempt.UTC())
+		SET state = $2, last_error = $3,
+		    next_attempt_at = now() + make_interval(secs => $4), updated_at = now()
+		WHERE id = $1`, id, state, truncateMessage(sanitizedErr, 300), delay.Seconds())
 	return dbErr(err)
 }
 

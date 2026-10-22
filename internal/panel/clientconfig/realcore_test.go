@@ -310,6 +310,22 @@ func localCases(t *testing.T, certPEM, keyPEM string) []localCase {
 			},
 		},
 		{
+			// The real machine shape of defect 5: a ws+tls node whose server
+			// tlsSettings announces h2 first. Xray connected, sing-box and
+			// Mihomo timed out until the exports offered http/1.1 and Mihomo
+			// carried skip-cert-verify.
+			key: "vless-ws-tls",
+			build: func(port int) (domain.Node, string, xrayconf.Client) {
+				stream := localObject(t, `{"network":"ws","security":"tls",`+
+					`"wsSettings":{"path":"/matrix-ws","headers":{"Host":"`+localSNI+`"}},`+
+					`"tlsSettings":{"serverName":"`+localSNI+`","alpn":["h2","http/1.1"],`+
+					`"certificates":[{"certificate":[`+localQuote(t, certPEM)+`],"key":[`+localQuote(t, keyPEM)+`]}]}}`)
+				n := base(protocol.VLESS, "", stream, tlsClient)
+				n.Port = port
+				return n, localUUID, xrayconf.Client{MemberID: "m-1", Email: "m-1", UUID: localUUID}
+			},
+		},
+		{
 			key: "trojan-tcp-none",
 			build: func(port int) (domain.Node, string, xrayconf.Client) {
 				n := base(protocol.Trojan, "", plain(), emptyClient)

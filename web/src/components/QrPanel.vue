@@ -41,9 +41,12 @@ watch(() => props.value, () => void render(), { immediate: true })
   flex-direction: column;
   gap: var(--space-2);
   align-items: center;
+  /* 二维码必须保留白底才能被扫描；其余跟随暖纸体系 */
   background: #fff;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  color: #271610;
+  border: 1px solid var(--input);
+  border-radius: 0;
+  box-shadow: var(--shadow-1);
   padding: var(--space-3);
   width: max-content;
   max-width: 100%;

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 	"log"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -230,5 +232,255 @@ func TestUploadReportsDeletesOnlyOnSuccess(t *testing.T) {
 	}
 	if len(client.sent) != 1 || client.sent[0].Revision != 2 {
 		t.Fatalf("unexpected delivered reports: %+v", client.sent)
+	}
+}
+
+// scriptedSource replays one statsquery response per call, so a test can make a
+// node fail for a while and then answer.
+type scriptedSource struct {
+	rounds [][]xray.InstanceStats
+	calls  int
+}
+
+func (s *scriptedSource) QueryStats(ctx context.Context) []xray.InstanceStats {
+	idx := s.calls
+	if idx >= len(s.rounds) {
+		idx = len(s.rounds) - 1
+	}
+	s.calls++
+	return s.rounds[idx]
+}
+
+func sampledNode(nodeID string, uplink int64) xray.InstanceStats {
+	return xray.InstanceStats{
+		InstanceID:     "inst-" + nodeID,
+		NodeID:         nodeID,
+		CoreGeneration: "gen-1",
+		EmailToMember:  map[string]string{"alice@example.test": "member-alice"},
+		Counters: []xray.StatCounter{
+			{Name: "user>>>alice@example.test>>>traffic>>>uplink", Value: uplink},
+			{Name: "user>>>alice@example.test>>>traffic>>>downlink", Value: uplink * 2},
+		},
+	}
+}
+
+func failedNode(nodeID string, err error) xray.InstanceStats {
+	return xray.InstanceStats{
+		InstanceID:     "inst-" + nodeID,
+		NodeID:         nodeID,
+		CoreGeneration: "gen-1",
+		Err:            err,
+	}
+}
+
+func newTestSampler(t *testing.T, store *state.Store, source StatsSource, now time.Time) *Sampler {
+	t.Helper()
+	sampler := NewSampler(store, source, log.New(io.Discard, "", 0))
+	sampler.SetNow(func() time.Time { return now })
+	return sampler
+}
+
+// TestSamplerRetriesTransientStatsQueryFailure covers the real log lines
+// "xray api statsquery failed: signal: killed" and "context deadline exceeded":
+// one failed query used to drop the whole sampling period.
+func TestSamplerRetriesTransientStatsQueryFailure(t *testing.T) {
+	store := newStore(t)
+	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	killed := errors.New("xray api statsquery failed: signal: killed")
+	source := &scriptedSource{rounds: [][]xray.InstanceStats{
+		{failedNode("node-1", killed)},
+		{failedNode("node-1", killed)},
+		{sampledNode("node-1", 100)},
+	}}
+	sampler := newTestSampler(t, store, source, now)
+	var waits []time.Duration
+	sampler.SetSleep(func(ctx context.Context, d time.Duration) error {
+		waits = append(waits, d)
+		return nil
+	})
+	res, err := sampler.RunOnce(context.Background())
+	if err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	if source.calls != 3 {
+		t.Fatalf("statsquery calls = %d, want 3 (first try plus two retries)", source.calls)
+	}
+	if res.Retries != 2 {
+		t.Fatalf("retries = %d, want 2", res.Retries)
+	}
+	if len(res.SamplingErrors) != 0 || len(res.InstanceErrs) != 0 {
+		t.Fatalf("a recovered node must not be reported as failed: %+v", res)
+	}
+	if res.SampleRows != 1 || len(res.BatchIDs) != 1 {
+		t.Fatalf("the recovered sample was not queued: %+v", res)
+	}
+	if len(waits) != 2 || waits[0] <= 0 || waits[1] <= waits[0] {
+		t.Fatalf("the backoff must grow between retries: %v", waits)
+	}
+	if got := sampler.LastSamplingErrors(); len(got) != 0 {
+		t.Fatalf("last sampling errors = %v", got)
+	}
+	pending, err := store.PendingBatches(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || len(pending[0].Samples) != 1 {
+		t.Fatalf("unexpected queue: %+v", pending)
+	}
+	if sample := pending[0].Samples[0]; sample.UploadBytes != 100 || sample.DownloadBytes != 200 {
+		t.Fatalf("unexpected sample: %+v", sample)
+	}
+}
+
+// TestSamplerRetryBooksEachCycleOnce proves the retries cannot duplicate usage:
+// a cycle is measured once with the counters of its successful attempt, and a
+// later cycle only books the delta.
+func TestSamplerRetryBooksEachCycleOnce(t *testing.T) {
+	store := newStore(t)
+	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	deadline := errors.New("rpc error: code = DeadlineExceeded desc = context deadline exceeded")
+	source := &scriptedSource{rounds: [][]xray.InstanceStats{
+		{failedNode("node-1", deadline)},
+		{failedNode("node-1", deadline)},
+		{sampledNode("node-1", 180)},
+		{sampledNode("node-1", 250)},
+		{sampledNode("node-1", 250)},
+	}}
+	sampler := newTestSampler(t, store, source, now)
+	sampler.SetSleep(func(context.Context, time.Duration) error { return nil })
+
+	first, err := sampler.RunOnce(context.Background())
+	if err != nil {
+		t.Fatalf("first cycle: %v", err)
+	}
+	if first.SampleRows != 1 {
+		t.Fatalf("first cycle sample rows = %d, want 1", first.SampleRows)
+	}
+	second, err := sampler.RunOnce(context.Background())
+	if err != nil {
+		t.Fatalf("second cycle: %v", err)
+	}
+	if second.SampleRows != 1 || second.Retries != 0 {
+		t.Fatalf("second cycle = %+v, want one row and no retry", second)
+	}
+	// A third cycle with unchanged counters must book nothing.
+	third, err := sampler.RunOnce(context.Background())
+	if err != nil {
+		t.Fatalf("third cycle: %v", err)
+	}
+	if third.SampleRows != 0 || len(third.BatchIDs) != 0 {
+		t.Fatalf("unchanged counters were booked again: %+v", third)
+	}
+
+	pending, err := store.PendingBatches(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	samples := make([]contracts.UsageSample, 0, 2)
+	for _, b := range pending {
+		samples = append(samples, b.Samples...)
+	}
+	if len(samples) != 2 {
+		t.Fatalf("queued samples = %d (%+v), want exactly 2 (one per changing cycle)", len(samples), samples)
+	}
+	booked := []int64{samples[0].UploadBytes, samples[1].UploadBytes}
+	sort.Slice(booked, func(i, j int) bool { return booked[i] < booked[j] })
+	if booked[0] != 70 || booked[1] != 180 {
+		t.Fatalf("booked usage = %v, want the deltas 70 and 180 once each", booked)
+	}
+}
+
+// TestSamplerContinuesAfterOneNodeFails is requirement (b): a node that keeps
+// failing must not stop the other nodes, and the failure must stay visible.
+func TestSamplerContinuesAfterOneNodeFails(t *testing.T) {
+	store := newStore(t)
+	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	down := errors.New("failed to dial 127.0.0.1:20525")
+	round := []xray.InstanceStats{failedNode("node-broken", down), sampledNode("node-healthy", 42)}
+	source := &scriptedSource{rounds: [][]xray.InstanceStats{round, round, round}}
+	sampler := newTestSampler(t, store, source, now)
+	sampler.SetSleep(func(context.Context, time.Duration) error { return nil })
+
+	res, err := sampler.RunOnce(context.Background())
+	if err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	if res.Instances != 2 {
+		t.Fatalf("instances = %d, want 2", res.Instances)
+	}
+	if res.SampleRows != 1 || len(res.BatchIDs) != 1 {
+		t.Fatalf("the healthy node was not sampled: %+v", res)
+	}
+	if len(res.SamplingErrors) != 1 {
+		t.Fatalf("sampling errors = %v, want one entry for the broken node", res.SamplingErrors)
+	}
+	entry := res.SamplingErrors[0]
+	for _, want := range []string{"sampling_error", "node=node-broken", "instance=inst-node-broken", "attempts=3", "failed to dial"} {
+		if !strings.Contains(entry, want) {
+			t.Fatalf("sampling error %q does not contain %q", entry, want)
+		}
+	}
+	if len(res.InstanceErrs) != 1 || res.InstanceErrs[0] != entry {
+		t.Fatalf("InstanceErrs = %v, want the same entry as SamplingErrors", res.InstanceErrs)
+	}
+	if got := sampler.LastSamplingErrors(); len(got) != 1 || got[0] != entry {
+		t.Fatalf("LastSamplingErrors = %v", got)
+	}
+	pending, err := store.PendingBatches(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || len(pending[0].Samples) != 1 || pending[0].Samples[0].UploadBytes != 42 {
+		t.Fatalf("unexpected queue: %+v", pending)
+	}
+}
+
+// TestSamplerPersistFailureDoesNotStopOtherNodes covers the second half of (b):
+// failing to persist one node must not abort the rest of the cycle either.
+func TestSamplerPersistFailureDoesNotStopOtherNodes(t *testing.T) {
+	store := newStore(t)
+	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	source := &scriptedSource{rounds: [][]xray.InstanceStats{{
+		sampledNode("node-1", 10),
+		sampledNode("node-2", 20),
+	}}}
+	sampler := newTestSampler(t, store, source, now)
+	sampler.SetSleep(func(context.Context, time.Duration) error { return nil })
+	if err := store.Close(); err != nil {
+		t.Fatalf("close store: %v", err)
+	}
+	res, err := sampler.RunOnce(context.Background())
+	if err == nil {
+		t.Fatal("a persistence failure must be returned to the caller")
+	}
+	if len(res.SamplingErrors) != 2 {
+		t.Fatalf("sampling errors = %v, want one entry per node (the cycle must not stop at the first)", res.SamplingErrors)
+	}
+	for _, entry := range res.SamplingErrors {
+		if !strings.Contains(entry, "task=persist") {
+			t.Fatalf("unexpected entry: %q", entry)
+		}
+	}
+}
+
+// TestSamplerRetriesAreBounded keeps the retry budget finite: a permanently dead
+// node must not make the sampler hammer the API forever.
+func TestSamplerRetriesAreBounded(t *testing.T) {
+	store := newStore(t)
+	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	down := []xray.InstanceStats{failedNode("node-down", errors.New("context deadline exceeded"))}
+	source := &scriptedSource{rounds: [][]xray.InstanceStats{down}}
+	sampler := newTestSampler(t, store, source, now)
+	sampler.SetRetryPolicy(2, 0)
+	sampler.SetSleep(func(context.Context, time.Duration) error { return nil })
+	res, err := sampler.RunOnce(context.Background())
+	if err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	if source.calls != 2 {
+		t.Fatalf("statsquery calls = %d, want the configured 2 attempts", source.calls)
+	}
+	if len(res.SamplingErrors) != 1 {
+		t.Fatalf("sampling errors = %v", res.SamplingErrors)
 	}
 }

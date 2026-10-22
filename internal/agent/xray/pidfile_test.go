@@ -84,7 +84,7 @@ func TestReapStaleKillsVerifiedLeftover(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("writePidFile: %v", err)
 	}
-	if err := mgr.reapStale(dir, cfgPath); err != nil {
+	if err := mgr.reapStale(dir); err != nil {
 		t.Fatalf("reapStale of a verified leftover process: %v", err)
 	}
 	done := make(chan error, 1)
@@ -116,7 +116,7 @@ func TestReapStaleRefusesForeignProcess(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("writePidFile: %v", err)
 	}
-	err = mgr.reapStale(dir, cfgPath)
+	err = mgr.reapStale(dir)
 	if err == nil || !errors.Is(err, ErrUnverifiedProcess) {
 		t.Fatalf("expected ErrUnverifiedProcess, got %v", err)
 	}
@@ -139,7 +139,7 @@ func TestReapStaleRefusesReusedPid(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("writePidFile: %v", err)
 	}
-	err = mgr.reapStale(dir, cfgPath)
+	err = mgr.reapStale(dir)
 	if err == nil || !errors.Is(err, ErrUnverifiedProcess) {
 		t.Fatalf("expected ErrUnverifiedProcess for a reused pid, got %v", err)
 	}
@@ -159,7 +159,7 @@ func TestReapStaleRefusesMissingIdentity(t *testing.T) {
 	if err := writePidFile(dir, pidRecord{PID: os.Getpid(), Executable: self.Executable, ConfigPath: cfgPath}); err != nil {
 		t.Fatalf("writePidFile: %v", err)
 	}
-	if err := mgr.reapStale(dir, cfgPath); err == nil || !errors.Is(err, ErrUnverifiedProcess) {
+	if err := mgr.reapStale(dir); err == nil || !errors.Is(err, ErrUnverifiedProcess) {
 		t.Fatalf("a record without a creation identity must not be trusted, got %v", err)
 	}
 }
@@ -180,17 +180,17 @@ func TestReapStaleRefusesOtherInstanceConfig(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("writePidFile: %v", err)
 	}
-	if err := mgr.reapStale(dir, cfgPath); err == nil || !errors.Is(err, ErrUnverifiedProcess) {
+	if err := mgr.reapStale(dir); err == nil || !errors.Is(err, ErrUnverifiedProcess) {
 		t.Fatalf("a record for another instance must not be trusted, got %v", err)
 	}
 }
 
 func TestReapStaleUnreadableRecord(t *testing.T) {
-	mgr, dir, cfgPath := newStaleManager(t, filepath.Join(t.TempDir(), "xray.exe"))
+	mgr, dir, _ := newStaleManager(t, filepath.Join(t.TempDir(), "xray.exe"))
 	if err := os.WriteFile(filepath.Join(dir, pidFileName), []byte("42"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := mgr.reapStale(dir, cfgPath); err == nil || !errors.Is(err, ErrUnverifiedProcess) {
+	if err := mgr.reapStale(dir); err == nil || !errors.Is(err, ErrUnverifiedProcess) {
 		t.Fatalf("an unreadable record must not be trusted, got %v", err)
 	}
 }
@@ -211,7 +211,7 @@ func TestReapStaleIgnoresMissingProcess(t *testing.T) {
 	if err := writePidFile(dir, pidRecord{PID: missing, Created: "0", Executable: "x", ConfigPath: cfgPath}); err != nil {
 		t.Fatalf("writePidFile: %v", err)
 	}
-	if err := mgr.reapStale(dir, cfgPath); err != nil {
+	if err := mgr.reapStale(dir); err != nil {
 		t.Fatalf("a missing process must not be an error: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, pidFileName)); !os.IsNotExist(err) {
@@ -268,7 +268,7 @@ func TestReapStaleSkipsOwnedProcess(t *testing.T) {
 	mgr.owned[helper.Process.Pid] = true
 	mgr.mu.Unlock()
 
-	if err := mgr.reapStale(dir, cfgPath); err != nil {
+	if err := mgr.reapStale(dir); err != nil {
 		t.Fatalf("reapStale of an owned process must be a no-op: %v", err)
 	}
 	time.Sleep(300 * time.Millisecond)

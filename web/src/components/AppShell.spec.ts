@@ -43,10 +43,10 @@ describe('AppShell 导航与抽屉', () => {
     wrapper.unmount()
   })
 
-  it('品牌保留「代理面板」名称并使用印章标记', () => {
+  it('品牌保留「代理面板」名称并使用直角品牌标记', () => {
     const wrapper = mountShell()
     expect(wrapper.find('.sidebar__brand-text strong').text()).toBe('代理面板')
-    expect(wrapper.find('.sidebar__seal').text()).toBe('墨')
+    expect(wrapper.find('.sidebar__seal').text()).toBe('代')
     wrapper.unmount()
   })
 

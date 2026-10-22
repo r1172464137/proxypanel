@@ -48,13 +48,17 @@ var supportedProtocols = map[string]bool{
 	VLESS: true, VMess: true, Trojan: true, Shadowsocks: true,
 }
 
-// Networks accepted by Xray 26.3.27. "raw" is the current name of TCP; "tcp",
-// "mkcp" and "splithttp" are still accepted aliases of the core and normalised
-// on output so admin input never silently degrades.
+// Networks accepted by the frozen core (Xray 26.3.27), verified against
+// `xray run -test`: tcp/raw, kcp/mkcp, ws, grpc, httpupgrade, xhttp/splithttp.
+// The aliases are normalised on output so admin input never silently degrades.
+//
+// This set must stay identical to allowedNetworks in
+// internal/agent/xray/build.go: a value the panel accepts but the core rejects
+// makes every later snapshot of every node fail until the node is archived.
 var supportedNetworks = map[string]string{
 	"": "tcp", "tcp": "tcp", "raw": "tcp", "ws": "ws", "grpc": "grpc",
 	"httpupgrade": "httpupgrade", "xhttp": "xhttp", "splithttp": "xhttp",
-	"kcp": "kcp", "mkcp": "kcp", "quic": "quic", "http": "http", "h2": "http",
+	"kcp": "kcp", "mkcp": "kcp",
 }
 
 var supportedSecurities = map[string]bool{
@@ -100,6 +104,62 @@ func NormalizeNetwork(network string) (string, bool) {
 	return v, ok
 }
 
+// SupportedNetworks returns the canonical transport names accepted by the panel,
+// sorted. The agent's xray.allowedNetworks must contain exactly this set.
+func SupportedNetworks() []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(supportedNetworks))
+	for _, canonical := range supportedNetworks {
+		if seen[canonical] {
+			continue
+		}
+		seen[canonical] = true
+		out = append(out, canonical)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// SupportedSecurities returns the accepted security layers, sorted. The agent's
+// xray.allowedSecurities must contain exactly this set.
+func SupportedSecurities() []string {
+	out := make([]string, 0, len(supportedSecurities))
+	for name := range supportedSecurities {
+		if name == "" {
+			continue
+		}
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// streamTransportIssues whitelists the transport (network) and the security
+// layer of a stream settings object. Both Validate and Sanitize use it, so the
+// admin API rejects an unsupported value with the field that carries it instead
+// of persisting a node the core can never load.
+func streamTransportIssues(stream domain.Object) []Issue {
+	if stream == nil {
+		return nil
+	}
+	var issues []Issue
+	networkRaw, _ := stream.String("network")
+	if _, ok := NormalizeNetwork(networkRaw); !ok {
+		issues = append(issues, Issue{
+			Field:   "stream_settings.network",
+			Message: fmt.Sprintf("unsupported transport %q (supported: tcp, raw, kcp, mkcp, ws, grpc, httpupgrade, xhttp, splithttp)", networkRaw),
+		})
+	}
+	securityRaw, _ := stream.String("security")
+	if security := strings.ToLower(strings.TrimSpace(securityRaw)); !supportedSecurities[security] {
+		issues = append(issues, Issue{
+			Field:   "stream_settings.security",
+			Message: fmt.Sprintf("unsupported security %q (supported: none, tls, reality)", securityRaw),
+		})
+	}
+	return issues
+}
+
 // Validate checks the node configuration and returns field level issues.
 func Validate(n Node) []Issue {
 	var issues []Issue
@@ -130,17 +190,18 @@ func Validate(n Node) []Issue {
 		n.ClientSettings = domain.NewObject()
 	}
 
+	// The transport and the security layer are whitelisted exactly like in
+	// Sanitize, so a value the frozen core cannot load is rejected with the
+	// offending field instead of being persisted (one such node makes every later
+	// snapshot fail until it is archived).
+	issues = append(issues, streamTransportIssues(n.StreamSettings)...)
 	networkRaw, _ := n.StreamSettings.String("network")
 	network, ok := NormalizeNetwork(networkRaw)
 	if !ok {
-		add("stream_settings.network", "unsupported transport %q", networkRaw)
 		network = "tcp"
 	}
 	securityRaw, _ := n.StreamSettings.String("security")
 	security := strings.ToLower(strings.TrimSpace(securityRaw))
-	if !supportedSecurities[security] {
-		add("stream_settings.security", "unsupported security %q (supported: none, tls, reality)", securityRaw)
-	}
 
 	for _, key := range streamSubObjects {
 		if n.StreamSettings.Has(key) {
@@ -260,6 +321,10 @@ func Validate(n Node) []Issue {
 
 // Sanitize returns the settings that are safe to persist with server-only
 // secrets removed, plus the extracted secret. Unknown fields are preserved.
+//
+// The transport (network) and the security layer are whitelisted here as well as
+// in Validate, so no caller can persist a combination the frozen core rejects:
+// one such node makes every later snapshot fail until it is archived.
 func Sanitize(n Node) (stream domain.Object, protocolSettings domain.Object, serverKey string, issues []Issue) {
 	stream = n.StreamSettings.Clone()
 	if stream == nil {
@@ -271,6 +336,7 @@ func Sanitize(n Node) (stream domain.Object, protocolSettings domain.Object, ser
 	}
 	serverKey = strings.TrimSpace(n.ServerKey)
 
+	issues = append(issues, streamTransportIssues(stream)...)
 	if rs, ok := stream.Sub("realitySettings"); ok {
 		if pk, ok := rs.String("privateKey"); ok && strings.TrimSpace(pk) != "" {
 			if serverKey == "" {

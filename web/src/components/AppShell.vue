@@ -112,7 +112,7 @@ async function signOut(): Promise<void> {
       aria-label="主导航"
     >
       <div class="sidebar__brand">
-        <span class="sidebar__seal" aria-hidden="true">墨</span>
+        <span class="sidebar__seal" aria-hidden="true">代</span>
         <div class="sidebar__brand-text">
           <strong>代理面板</strong>
           <span>私人合租运维</span>
@@ -155,7 +155,7 @@ async function signOut(): Promise<void> {
         <div class="topbar__spacer" />
         <ThemeToggle />
         <div class="topbar__user">
-          <span class="badge badge--accent hide-sm">{{ sessionState.user?.role === 'admin' ? '管理员' : '成员' }}</span>
+          <span class="badge badge--accent badge--pill hide-sm">{{ sessionState.user?.role === 'admin' ? '管理员' : '成员' }}</span>
           <span class="hide-sm">{{ sessionState.user?.username }}</span>
         </div>
         <button type="button" class="btn btn--sm" :disabled="signingOut" @click="signOut">

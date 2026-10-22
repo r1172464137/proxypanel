@@ -406,8 +406,8 @@ func (s *Service) deliver(ctx context.Context) (sent, failed int, err error) {
 			continue
 		}
 		dead := n.Attempts >= maxAttempts
-		next := s.now().Add(backoffFor(n.Attempts, res.retryAfter))
-		if err := s.st.MarkNotificationFailed(ctx, n.ID, res.errText, next, dead); err != nil {
+		delay := backoffFor(n.Attempts, res.retryAfter)
+		if err := s.st.MarkNotificationFailed(ctx, n.ID, res.errText, delay, dead); err != nil {
 			return sent, failed, err
 		}
 		failed++
@@ -508,7 +508,12 @@ func backoffFor(attempts int, retryAfter time.Duration) time.Duration {
 	if shift > 7 {
 		shift = 7
 	}
-	return clampDuration(backoffBase<<uint(shift), backoffBase, maxRetryAfter)
+	// Clamp the lower bound at minRetryAfter, not at backoffBase: the base is the
+	// *default* first delay, but a caller (or an operator via SetRetryPolicy) may
+	// configure a base above maxRetryAfter. Clamping to the base would then return
+	// a delay larger than the documented one-hour cap. The cap must apply to every
+	// value this function produces, whatever the configured base is.
+	return clampDuration(backoffBase<<uint(shift), minRetryAfter, maxRetryAfter)
 }
 
 func clampDuration(d, min, max time.Duration) time.Duration {

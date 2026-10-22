@@ -41,6 +41,8 @@ type stubRunner struct {
 	nextPID       int
 	testErr       error
 	stats         map[string][]xray.StatCounter
+	// statsErr, when set, makes every StatsQuery fail (sampling-retry tests).
+	statsErr error
 	// statsAny is returned for any server when stats has no entry for it.
 	statsAny []xray.StatCounter
 	version  string
@@ -89,7 +91,7 @@ func (r *stubRunner) Start(ctx context.Context, spec xray.StartSpec) (xray.Proc,
 		r.lastStartByID[spec.InstanceID] = string(raw)
 	}
 	r.nextPID++
-	return &stubProc{runner: r, id: spec.InstanceID, pid: 900000 + r.nextPID}, nil
+	return &stubProc{runner: r, id: spec.InstanceID, pid: 900000 + r.nextPID, exited: make(chan struct{})}, nil
 }
 
 // countsFor reports how often one instance was started and stopped.
@@ -110,10 +112,21 @@ func (r *stubRunner) lastStartedFor(id string) string {
 func (r *stubRunner) StatsQuery(ctx context.Context, server string) ([]xray.StatCounter, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.statsErr != nil {
+		return nil, r.statsErr
+	}
 	if counters, ok := r.stats[server]; ok {
 		return counters, nil
 	}
 	return r.statsAny, nil
+}
+
+// setStatsError makes every StatsQuery fail, the way a killed or hung statsquery
+// looks to the sampler. Pass nil to recover.
+func (r *stubRunner) setStatsError(err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.statsErr = err
 }
 
 func (r *stubRunner) Version(ctx context.Context) (string, error) {
@@ -185,10 +198,13 @@ type stubProc struct {
 	id     string
 	pid    int
 	once   sync.Once
+	// exited is closed by Stop, so the manager can prove that the process is
+	// really gone instead of trusting the stop call alone.
+	exited chan struct{}
 }
 
 func (p *stubProc) PID() int                { return p.pid }
-func (p *stubProc) Exited() <-chan struct{} { return make(chan struct{}) }
+func (p *stubProc) Exited() <-chan struct{} { return p.exited }
 func (p *stubProc) ExitError() error        { return nil }
 func (p *stubProc) Output() []string        { return nil }
 func (p *stubProc) Stop(ctx context.Context) error {
@@ -200,6 +216,7 @@ func (p *stubProc) Stop(ctx context.Context) error {
 		}
 		p.runner.stopsByID[p.id]++
 		p.runner.mu.Unlock()
+		close(p.exited)
 	})
 	return nil
 }

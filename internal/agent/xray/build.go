@@ -41,9 +41,14 @@ var (
 	allowedOutboundProtocols = map[string]struct{}{
 		"freedom": {}, "blackhole": {},
 	}
+	// allowedNetworks must stay identical to supportedNetworks in
+	// internal/panel/protocol/protocol.go and only contain transports the frozen
+	// core really loads (verified with `xray run -test`): QUIC and the legacy
+	// HTTP/2 transport were removed by Xray 26.3.27, so a node using them makes
+	// every snapshot fail instead of running.
 	allowedNetworks = map[string]struct{}{
-		"tcp": {}, "raw": {}, "kcp": {}, "ws": {}, "grpc": {}, "httpupgrade": {},
-		"xhttp": {}, "quic": {}, "http": {},
+		"tcp": {}, "raw": {}, "kcp": {}, "mkcp": {}, "ws": {}, "grpc": {},
+		"httpupgrade": {}, "xhttp": {}, "splithttp": {},
 	}
 	allowedSecurities = map[string]struct{}{"none": {}, "tls": {}, "reality": {}}
 	allowedLogLevels  = map[string]struct{}{"debug": {}, "info": {}, "warning": {}, "error": {}, "none": {}}
@@ -716,20 +721,24 @@ func validateStreamSettings(raw any, certRoot string, checkCertPaths bool) error
 	if !ok {
 		return invalid("streamSettings must be an object")
 	}
+	// The values are normalised before the whitelist check, exactly like the panel
+	// does: a stored "TCP" or " none " must not fail the whole snapshot.
 	if v, ok := stream["network"]; ok {
 		s, _ := v.(string)
+		s = strings.ToLower(strings.TrimSpace(s))
 		if s != "" {
 			if _, ok := allowedNetworks[s]; !ok {
-				return invalid("streamSettings.network %q is not supported", s)
+				return invalid("streamSettings.network %q is not supported by the frozen core (supported: tcp, raw, kcp, mkcp, ws, grpc, httpupgrade, xhttp, splithttp)", s)
 			}
 		}
 	}
 	security := ""
 	if v, ok := stream["security"]; ok {
 		s, _ := v.(string)
+		s = strings.ToLower(strings.TrimSpace(s))
 		if s != "" {
 			if _, ok := allowedSecurities[s]; !ok {
-				return invalid("streamSettings.security %q is not supported", s)
+				return invalid("streamSettings.security %q is not supported (supported: none, tls, reality)", s)
 			}
 			security = s
 		}

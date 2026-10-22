@@ -12,3 +12,6 @@ node_modules/
 dist/
 build/
 coverage/
+
+# Harness session notes (local paths, not project content)
+.memory/

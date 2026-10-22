@@ -473,3 +473,108 @@ func TestMaintenanceIntegrationDeliveryFailure(t *testing.T) {
 		}
 	}
 }
+
+// A panel host whose clock lags the database must still deliver. Outbox rows are
+// created with the database clock (`DEFAULT now()`), so leasing them with the
+// caller's wall clock silently stalls the queue whenever the panel clock is even
+// slightly behind - the row is "not due yet" from the panel's point of view, and
+// the delay grows with the skew. The same skew pushed retry backoffs into the
+// future. Leasing and backoff are therefore evaluated on the database clock.
+//
+// This is a real deployment concern, not a test artefact: a panel and its
+// PostgreSQL do not share a clock, and the acceptance topology already measured
+// multi-second offsets between hosts.
+func TestMaintenanceDeliversWhenPanelClockLagsDatabase(t *testing.T) {
+	st := openTestStore(t)
+	seed(t, st)
+	ctx := context.Background()
+
+	var delivered int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		delivered++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":1}}`))
+	}))
+	defer srv.Close()
+
+	svc := newService(st, srv.Client())
+	svc.baseURL = srv.URL
+	svc.limits.Notifications = 20
+
+	// The panel believes it is one minute behind the database. A correct
+	// implementation must still see the freshly enqueued rows as due.
+	lagging := time.Now().UTC().Add(-time.Minute)
+	svc.now = func() time.Time { return lagging }
+
+	if _, err := svc.RunOnce(ctx); err != nil {
+		t.Fatalf("first pass: %v", err)
+	}
+	if _, err := st.UpdateSettings(ctx, 0, func(v *domain.Settings) error {
+		v.TelegramEnabled = true
+		v.TelegramChatID = "-1001234567890"
+		v.TelegramToken = "123456:simulated-token"
+		return nil
+	}); err != nil {
+		t.Fatalf("enable telegram: %v", err)
+	}
+	stats, err := svc.RunOnce(ctx)
+	if err != nil {
+		t.Fatalf("delivery pass: %v", err)
+	}
+	if stats.Sent != 5 || delivered != 5 {
+		t.Fatalf("a panel clock lagging the database must not stall delivery: sent = %d (server saw %d), want 5",
+			stats.Sent, delivered)
+	}
+	if got := scalarInt(t, st, `SELECT count(*) FROM notification_outbox WHERE state='sent'`); got != 5 {
+		t.Fatalf("outbox sent rows = %d, want 5", got)
+	}
+}
+
+// The mirror case: when delivery fails, the recorded retry must be a real delay
+// ahead of the database clock, even if the panel clock leads or lags. Otherwise a
+// lagging panel retries too early (hot loop) and a leading one stalls for the
+// skew's duration.
+func TestMaintenanceBackoffIsMeasuredFromDatabaseClock(t *testing.T) {
+	st := openTestStore(t)
+	seed(t, st)
+	ctx := context.Background()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"ok":false,"error_code":429,"description":"Too Many Requests","parameters":{"retry_after":30}}`))
+	}))
+	defer srv.Close()
+
+	svc := newService(st, srv.Client())
+	svc.baseURL = srv.URL
+	svc.limits.Notifications = 20
+
+	// Panel clock leads the database by an hour: a naive absolute deadline would
+	// be "one hour minus 30s" in the future and the row would never retry.
+	svc.now = func() time.Time { return time.Now().UTC().Add(time.Hour) }
+
+	if _, err := svc.RunOnce(ctx); err != nil {
+		t.Fatalf("first pass: %v", err)
+	}
+	if _, err := st.UpdateSettings(ctx, 0, func(v *domain.Settings) error {
+		v.TelegramEnabled = true
+		v.TelegramChatID = "-1001234567890"
+		v.TelegramToken = "123456:simulated-token"
+		return nil
+	}); err != nil {
+		t.Fatalf("enable telegram: %v", err)
+	}
+	if _, err := svc.RunOnce(ctx); err != nil {
+		t.Fatalf("delivery pass: %v", err)
+	}
+
+	// The retry must be due relative to the database, not to the skewed panel.
+	var dueIn float64
+	if err := st.DB.QueryRowContext(ctx, `SELECT EXTRACT(EPOCH FROM (next_attempt_at - now()))
+		FROM notification_outbox ORDER BY next_attempt_at LIMIT 1`).Scan(&dueIn); err != nil {
+		t.Fatalf("read next_attempt_at: %v", err)
+	}
+	if dueIn < 25 || dueIn > 40 {
+		t.Fatalf("the retry must be ~30s ahead of the database clock, got %.1fs (a skewed panel must not stretch or collapse the backoff)", dueIn)
+	}
+}

@@ -59,7 +59,7 @@ onBeforeUnmount(cleanup)
   inset: 0;
   z-index: 50;
   background: var(--overlay);
-  backdrop-filter: blur(1px);
+  backdrop-filter: blur(2px);
   animation: fade-in var(--dur) var(--ease-out);
   display: flex;
   align-items: flex-start;
@@ -69,14 +69,15 @@ onBeforeUnmount(cleanup)
 }
 
 .modal {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 2px solid var(--card-border);
+  border-radius: 0;
   box-shadow: var(--shadow-pop);
   width: 100%;
   max-width: 640px;
   margin: auto 0;
-  animation: rise var(--dur-slow) var(--ease-out) both;
+  animation: enter var(--dur-slow) var(--ease-spring) both;
 }
 
 .modal--sm { max-width: 440px; }
@@ -91,10 +92,10 @@ onBeforeUnmount(cleanup)
 }
 
 .modal__header h2 {
-  font-family: var(--font-serif);
+  font-family: var(--font-sans);
   font-size: var(--text-lg);
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: -0.01em;
   flex: 1;
   min-width: 0;
 }
@@ -111,8 +112,8 @@ onBeforeUnmount(cleanup)
   gap: var(--space-2);
   padding: var(--space-4) var(--space-5);
   border-top: 1px solid var(--border);
-  background: var(--surface-2);
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  background: var(--muted);
+  border-radius: 0;
   flex-wrap: wrap;
 }
 </style>

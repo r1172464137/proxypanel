@@ -36,11 +36,12 @@ const (
 )
 
 const (
-	// applyBudget keeps config validation plus stop/start inside the 60 second
-	// revocation requirement, including reporting overhead.
-	applyBudget = 55 * time.Second
-	// instanceTimeout is the per instance validation + restart budget.
-	instanceTimeout = 45 * time.Second
+	// applyBudgetFloor is the minimum apply budget of one snapshot. The real
+	// budget is derived from the xray lifecycle budgets times the number of
+	// instances (see Supervisor.snapshotBudget): a snapshot never gets less time
+	// than one instance needs, so a single slow core can not consume the budget
+	// of the next instance and make its `xray -test` fail with a killed process.
+	applyBudgetFloor = 55 * time.Second
 )
 
 // Options are the dependencies of a Supervisor. Tests replace the panel client
@@ -102,6 +103,10 @@ type Supervisor struct {
 	stopInFlight   bool
 	failures       map[string]*failure
 	metrics        map[string]float64
+	// lastSamplingErrors holds the sampling failures of the most recent cycle so
+	// they can be surfaced (heartbeat metrics plus the LastSamplingErrors
+	// accessor) instead of only being logged once.
+	lastSamplingErrors []string
 	// coordinationGeneration is the control generation the agent refused to
 	// apply, and coordinationReportKey throttles the panel report to once per
 	// offered snapshot.
@@ -115,6 +120,10 @@ type Supervisor struct {
 	// expiryAfterReadHook is a test seam that runs inside the serialized section
 	// right after the instance records were read. nil in production.
 	expiryAfterReadHook func()
+	// timeouts are the lifecycle budgets of one instance (readiness, config
+	// validation, stop, rollback). The apply budgets are derived from them, so a
+	// slow machine is tuned in exactly one place.
+	timeouts xray.Timeouts
 }
 
 // New builds a supervisor and locks the state directory.
@@ -179,6 +188,7 @@ func New(opts Options) (*Supervisor, error) {
 		failures:  map[string]*failure{},
 		metrics:   map[string]float64{},
 		startedAt: now(),
+		timeouts:  xray.DefaultTimeouts(),
 	}
 	mgr.SetSecrets(func() []string {
 		values := []string{client.Token(), opts.Config.RegistrationCode}
@@ -194,6 +204,37 @@ func (s *Supervisor) Store() *state.Store { return s.store }
 
 // Manager exposes the instance manager (tests).
 func (s *Supervisor) Manager() *xray.Manager { return s.mgr }
+
+// SetXrayTimeouts overrides the instance lifecycle budgets (startup wiring and
+// tests only). It must run before Run/Apply.
+func (s *Supervisor) SetXrayTimeouts(t xray.Timeouts) {
+	s.mu.Lock()
+	s.timeouts = t
+	s.mu.Unlock()
+	s.mgr.SetTimeouts(t)
+}
+
+// instanceBudget is the upper bound of one instance reconcile.
+func (s *Supervisor) instanceBudget() time.Duration {
+	s.mu.Lock()
+	t := s.timeouts
+	s.mu.Unlock()
+	return t.InstanceBudget()
+}
+
+// snapshotBudget is the upper bound of one snapshot apply that reconciles
+// instanceCount instances sequentially. It is never smaller than the floor, so a
+// snapshot with a single instance keeps the documented 60 second envelope.
+func (s *Supervisor) snapshotBudget(instanceCount int) time.Duration {
+	s.mu.Lock()
+	t := s.timeouts
+	s.mu.Unlock()
+	budget := t.SnapshotBudget(instanceCount)
+	if budget < applyBudgetFloor {
+		budget = applyBudgetFloor
+	}
+	return budget
+}
 
 // Client exposes the panel client (tests).
 func (s *Supervisor) Client() *control.Client { return s.client }
@@ -368,10 +409,10 @@ func (s *Supervisor) restore(ctx context.Context) error {
 	if len(targets) == 0 {
 		return nil
 	}
-	applyCtx, cancel := context.WithTimeout(ctx, applyBudget)
+	applyCtx, cancel := context.WithTimeout(ctx, s.snapshotBudget(len(targets)))
 	defer cancel()
 	results := s.mgr.Apply(applyCtx, targets, xray.ApplyOptions{
-		Force: true, PerInstanceTimeout: instanceTimeout, BeforeStop: s.sampleHook(),
+		Force: true, PerInstanceTimeout: s.instanceBudget(), BeforeStop: s.sampleHook(),
 	})
 	byID := map[string]xray.Target{}
 	for _, t := range targets {
@@ -544,7 +585,7 @@ func (s *Supervisor) applySnapshotSerialized(ctx context.Context, snapshot *cont
 		s.log.Printf("agent: ignoring snapshot revision %d (already applied %d)", snapshot.Revision, id.AppliedRevision)
 		return false, nil
 	}
-	applyCtx, cancel := context.WithTimeout(ctx, applyBudget)
+	applyCtx, cancel := context.WithTimeout(ctx, s.snapshotBudget(len(snapshot.Instances)))
 	defer cancel()
 
 	now := s.now()
@@ -581,7 +622,7 @@ func (s *Supervisor) applySnapshotSerialized(ctx context.Context, snapshot *cont
 	results := s.mgr.Apply(applyCtx, targets, xray.ApplyOptions{
 		Force:              force,
 		Skip:               skip,
-		PerInstanceTimeout: instanceTimeout,
+		PerInstanceTimeout: s.instanceBudget(),
 		BeforeStop:         s.sampleHook(),
 	})
 	results = append(results, rejected...)
@@ -834,6 +875,18 @@ func (s *Supervisor) sampleOnce(ctx context.Context) error {
 	if len(res.BatchIDs) > 0 {
 		s.log.Printf("agent: queued %d new sample row(s) in %d batch(es)", res.SampleRows, len(res.BatchIDs))
 	}
+	// Publish the sampling outcome so a degraded sampling loop is visible instead
+	// of only appearing in a log line that scrolls away. A cycle that needed
+	// retries, or that gave up on an instance, is an operator-visible condition:
+	// without it "sampling quietly returns nothing" - the exact shape of the
+	// original statsquery failure - looks identical to "no traffic".
+	s.mu.Lock()
+	s.metrics["sampling_errors"] = float64(len(res.SamplingErrors))
+	s.metrics["sampling_retries"] = float64(res.Retries)
+	s.metrics["sampling_instances"] = float64(res.Instances)
+	s.metrics["sampling_counters"] = float64(res.Counters)
+	s.lastSamplingErrors = append([]string(nil), res.SamplingErrors...)
+	s.mu.Unlock()
 	depth, derr := s.store.QueueDepth(ctx)
 	if derr != nil {
 		s.setPersistenceError(derr)
@@ -849,6 +902,15 @@ func (s *Supervisor) sampleOnce(ctx context.Context) error {
 		s.setQueueOverCapacity(true)
 	}
 	return nil
+}
+
+// LastSamplingErrors returns the persistent sampling failures reported by the most
+// recent cycle (empty when every instance was sampled). It is the read accessor
+// for the heartbeat metrics published in sampleOnce.
+func (s *Supervisor) LastSamplingErrors() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.lastSamplingErrors...)
 }
 
 func (s *Supervisor) uploadOnce(ctx context.Context) error {
@@ -1005,14 +1067,14 @@ func (s *Supervisor) expiryOnce(ctx context.Context) error {
 		targets = append(targets, target)
 	}
 	s.log.Printf("agent: local expiry reached for %v; rebuilding with the committed authorization of all %d instance(s)", expired, len(targets))
-	applyCtx, cancel := context.WithTimeout(ctx, applyBudget)
+	applyCtx, cancel := context.WithTimeout(ctx, s.snapshotBudget(len(targets)))
 	defer cancel()
 	// Force stays false: expiry only drops the expired clients, so the affected
 	// instances get a new hash while every other instance keeps its hash and is
 	// neither restarted nor stopped.
 	results := s.mgr.Apply(applyCtx, targets, xray.ApplyOptions{
 		Skip:               s.skipSetFor(targets),
-		PerInstanceTimeout: instanceTimeout,
+		PerInstanceTimeout: s.instanceBudget(),
 		BeforeStop:         s.sampleHook(),
 	})
 	byID := map[string]xray.Target{}

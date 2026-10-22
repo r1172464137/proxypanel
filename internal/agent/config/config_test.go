@@ -1,8 +1,11 @@
 package config
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -16,12 +19,34 @@ func writeConfig(t *testing.T, body string) string {
 	return path
 }
 
+// absTestPath builds a platform-appropriate absolute path so the config tests
+// exercise Normalize() rather than the host's notion of an absolute path. A
+// hard-coded `C:\...` literal is not absolute on Linux and would make the
+// production check look broken on non-Windows runners.
+func absTestPath(t *testing.T, elem ...string) string {
+	t.Helper()
+	root := "/"
+	if runtime.GOOS == "windows" {
+		root = t.TempDir()
+	}
+	return filepath.Join(append([]string{root}, elem...)...)
+}
+
+// jsonPath renders a path for embedding inside a JSON string literal.
+func jsonPath(p string) string {
+	b, err := json.Marshal(p)
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
+}
+
 func TestLoadAppliesDefaults(t *testing.T) {
-	path := writeConfig(t, `{
+	path := writeConfig(t, fmt.Sprintf(`{
 		"panel_url": "https://panel.example.test/",
-		"xray_path": "C:\\SDK\\xray.exe",
+		"xray_path": %s,
 		"state_dir": "  state  "
-	}`)
+	}`, jsonPath(absTestPath(t, "SDK", "xray.exe"))))
 	cfg, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -38,7 +63,8 @@ func TestLoadAppliesDefaults(t *testing.T) {
 }
 
 func TestLoadRejectsUnknownField(t *testing.T) {
-	path := writeConfig(t, `{"panel_url":"https://p.test","xray_path":"C:\\x.exe","state_dir":"s","exec_shell":"rm -rf /"}`)
+	path := writeConfig(t, fmt.Sprintf(`{"panel_url":"https://p.test","xray_path":%s,"state_dir":"s","exec_shell":"rm -rf /"}`,
+		jsonPath(absTestPath(t, "x.exe"))))
 	if _, err := Load(path); err == nil {
 		t.Fatal("unknown field must be rejected")
 	}
@@ -61,7 +87,7 @@ func TestPlainHTTPRequiresLoopbackOptIn(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := &Config{PanelURL: tc.url, XrayPath: `C:\x.exe`, StateDir: t.TempDir(), AllowLoopbackHTTP: tc.allow}
+			cfg := &Config{PanelURL: tc.url, XrayPath: absTestPath(t, "x.exe"), StateDir: t.TempDir(), AllowLoopbackHTTP: tc.allow}
 			err := cfg.Normalize()
 			if tc.wantErr && err == nil {
 				t.Fatalf("expected error for %s", tc.url)
@@ -75,7 +101,7 @@ func TestPlainHTTPRequiresLoopbackOptIn(t *testing.T) {
 
 func TestValidateRejectsUnsafeInput(t *testing.T) {
 	base := func() *Config {
-		return &Config{PanelURL: "https://p.test", XrayPath: `C:\x.exe`, StateDir: `C:\state`}
+		return &Config{PanelURL: "https://p.test", XrayPath: absTestPath(t, "x.exe"), StateDir: absTestPath(t, "state")}
 	}
 	t.Run("relative xray path", func(t *testing.T) {
 		c := base()

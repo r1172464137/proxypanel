@@ -1,24 +1,41 @@
 /*
- * 设计契约（墨韵后台）——改样式前先读这一段：
+ * 设计契约（暖纸台账 / 像素描边）——改样式前先读这一段：
  *
- * 使命：把真实运维数据放在纸面上，安静、可读、有呼吸感，但不牺牲后台密度。
- * 色彩：纸白/暖灰底 + 墨灰文字；朱砂(--seal)与苔绿(--ok)只做小面积点缀，
- *       主按钮用墨色(--accent)，危险操作始终是醒目的红(--danger)。
- * 排版：中文标题/品牌走本地衬线栈(--font-serif)，正文、表格、数字保持 sans 与
- *       tabular-nums 清晰；标题与正文形成对比而不是整体放大。
- * 间距：4px 节奏（--space-1…7）；圆角克制（4/5/8）；投影几乎不可见，
- *       只用 1px 描边与细分隔线划分层次。
- * 动效：只表达状态变化——hover/press 90ms，状态过渡 160ms，进场 260ms，
- *       全部用 --ease-out；prefers-reduced-motion 下关闭。
+ * 使命：把真实运维数据摊在暖纸台账上。珊瑚橙只标记"可操作 / 活跃"的东西；
+ *       直角 + 2px 珊瑚描边 + 硬边偏移阴影把每张纸片抬到桌面上，层级靠阴影
+ *       偏移量说话，而不是靠柔光模糊；按钮 hover 时用 clip-path 顺时针扫出
+ *       一圈珊瑚描边（上游 pixel-button 的签名交互）。
+ * 色彩：对齐上游 iluobei/miaomiaowu 的 src/styles/theme.css：
+ *       --background #fdfdfc / --foreground #271610 / --card #fdfdfc /
+ *       --primary #d97757 / --primary-foreground #fffaf7 / --secondary #fbe7da /
+ *       --muted #f7ebdf / --muted-foreground #816055 / --accent #f18c6e /
+ *       --destructive #ef4444 / --border rgba(137,110,96,.38) /
+ *       --input rgba(137,110,96,.45) / --ring rgba(217,119,87,.6)；
+ *       深色 --background #10131c，描边转 rgba(255,255,255,.08) / .12。
+ *       ok / warn / info 是本项目额外的低饱和状态色（上游只用 primary/destructive）。
+ * 排版：正文与标题同为 sans，数字/代码/ID/延迟用 JetBrains Mono + tabular-nums。
+ *       上游自托管 OPlusSans3 / JetBrainsMono woff2，本项目无授权文件，
+ *       因此 OPlusSans3 缺席、JetBrains Mono 无本地文件时回退 ui-monospace。
+ * 间距：4px 网格 --space-1…7；--radius 全为 0，只有胶囊徽章用 --radius-pill。
+ * 描边：卡片 / 弹窗 / KPI / 按钮均为 2px。卡片与弹窗用
+ *       color-mix(in srgb, var(--primary) 22%, var(--border))，hover 加深到 40%
+ *       （--card-border-hover）；按钮用 --input，避免满屏珊瑚框。
+ * 阴影：卡片 --shadow-1(4px) / --shadow-2(6px) / --shadow-pop(8px)；
+ *       按钮单独一套 --shadow-btn(3px 3px 0) → hover 4px → active 1px，
+ *       小按钮(.btn--sm / .btn--icon) 用 --shadow-btn-sm(2px) 那一档。
+ *       胶囊 --pill-shadow(2px) → hover --pill-hover-shadow(4px + 内侧高光)。
+ * 纹理：扫描线 = 1px 线 + 5px 透明（6px 周期），--scanline 按主题换色；
+ *       整页 body::after 用 0deg，局部 .scanlines 用上游的 -45deg。
+ * 动效：按钮扫边 --dur-sweep(350ms) ease-out（clip-path 顺时针）；enter/exit/
+ *       slideUp/slideDown；prefers-reduced-motion 下全部关闭（见 base.css 末尾）。
  *
- * Do：纸白底、细描边、小方印、极淡墨层；选中项用淡墨块 + 细朱砂竖线。
- * Don't：渐变主色、深蓝侧栏、大圆角卡片、重投影、整页 overflow-x 掩盖布局、
- *        仅 Unicode/emoji 当图标、远程字体或图片。
+ * Do：暖纸底、直角、2px 珊瑚描边、硬边偏移阴影、等宽数字、低透明度纹理。
+ * Don't：衬线大标题、柔和卡片阴影、大圆角、整页 overflow-x 掩盖布局、
+ *        远程字体或图片（含上游自托管 woff2）、transition: all。
  */
 :root {
   --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
-  --font-serif: "Songti SC", "Noto Serif SC", "Source Han Serif SC", "SimSun", "STSong", Georgia, serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   --space-1: 4px;
   --space-2: 8px;
@@ -28,9 +45,11 @@
   --space-6: 32px;
   --space-7: 48px;
 
-  --radius-sm: 4px;
-  --radius: 5px;
-  --radius-lg: 8px;
+  /* 直角是默认；胶囊只给徽章。三个旧半径名保留为别名，值全部为 0。 */
+  --radius: 0;
+  --radius-sm: 0;
+  --radius-lg: 0;
+  --radius-pill: 9999px;
 
   --text-xs: 12px;
   --text-sm: 13px;
@@ -39,100 +58,196 @@
   --text-xl: 20px;
   --text-2xl: 26px;
 
-  --sidebar-width: 232px;
+  --sidebar-width: 236px;
   --topbar-height: 56px;
 
   --dur-fast: 90ms;
-  --dur: 160ms;
-  --dur-slow: 260ms;
+  --dur: 150ms;
+  --dur-slow: 240ms;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.46, 0.64, 1);
+
+  /* 按钮 hover 扫边：上游 pixel-button 的 clip-path 动画固定 350ms ease-out */
+  --dur-sweep: 350ms;
+
+  /* 卡片/弹窗描边（上游 pixel-card）：color-mix 在用到时按当前主题求值 */
+  --card-border: color-mix(in srgb, var(--primary) 22%, var(--border));
+  --card-border-hover: color-mix(in srgb, var(--primary) 40%, var(--border));
+  /* 按钮扫边填充（上游 pixel-button::before，深色另有 amber 覆盖） */
+  --btn-sweep: rgba(217, 119, 87, 0.9);
+
+  /* 胶囊（上游 pixel-pill）：rest 2px 硬边 → hover 抬 1px + 4px + 内侧高光 */
+  --pill-shadow: 2px 2px 0 rgba(0, 0, 0, 0.12);
+  --pill-hover-shadow: 4px 4px 0 rgba(0, 0, 0, 0.2), inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  --pill-hover-bg: rgba(241, 140, 110, 0.16);
+  --pill-hover-border: rgba(241, 140, 110, 0.65);
+  /* 小尺寸按钮（表格动作列）：比标准按钮低一档，避免相邻按钮阴影互相压边 */
+  --shadow-btn-sm: 2px 2px #0000002e;
+  --shadow-btn-sm-hover: 3px 3px #00000038;
+  /* 珊瑚底按钮（primary）上的扫边换成墨色珊瑚，否则珊瑚画珊瑚看不出动效 */
+  --btn-sweep-contrast: color-mix(in srgb, var(--foreground) 72%, var(--primary));
 }
 
-/* 浅色：纸白暖灰（刻意压低黄色，避免旧纸张的脏黄） */
+/* 浅色：暖纸 + 珊瑚橙（数值为设计规格实测值，不要随手调） */
 :root[data-theme='light'] {
   color-scheme: light;
-  --bg: #f5f3ee;
-  --surface: #fdfcf9;
-  --surface-2: #f3f0e9;
-  --surface-3: #eae5db;
-  --border: #e2ddd2;
-  --border-strong: #cbc4b6;
-  --text: #22201d;
-  --text-muted: #5f5951;
-  --text-faint: #877f73;
-  --accent: #2b2721;
-  --accent-hover: #423b32;
-  --accent-weak: #efeae0;
-  --accent-text: #2b2721;
-  --on-accent: #fbf8f2;
-  --seal: #9a4a39;
-  --seal-weak: #f4ebe5;
-  --danger: #ab3327;
-  --danger-weak: #faeeea;
-  --warn: #8a6514;
-  --warn-weak: #f8f2e0;
-  --ok: #44664a;
-  --ok-weak: #edf2ea;
-  --info: #3d5b72;
-  --info-weak: #eceff2;
-  --wash: rgba(43, 39, 33, 0.055);
-  --wash-soft: rgba(43, 39, 33, 0.028);
-  --focus-ring: rgba(154, 74, 57, 0.58);
 
-  --shadow-card: 0 1px 1px rgba(40, 34, 26, 0.03);
-  --shadow-pop: 0 14px 36px rgba(40, 34, 26, 0.12), 0 2px 6px rgba(40, 34, 26, 0.05);
+  --background: #fdfdfc;
+  --foreground: #271610;
+  --card: #fdfdfc;
+  --card-foreground: #33170f;
+  --primary: #d97757;
+  --primary-foreground: #fffaf7;
+  --primary-hover: #c4653f;
+  --secondary: #fbe7da;
+  --secondary-foreground: #33170f;
+  --muted: #f7ebdf;
+  --muted-foreground: #816055;
+  --accent: #f18c6e;
+  --accent-foreground: #3a1c12;
+  --destructive: #ef4444;
+  --destructive-foreground: #fffaf7;
+  --border: #896e6061;
+  --input: #896e6073;
+  --ring: #d9775799;
 
-  --sidebar-bg: #f1ede4;
-  --sidebar-elevated: #e8e2d6;
-  --sidebar-text: #3a352e;
-  --sidebar-muted: #857d6f;
-  --sidebar-border: #ded8cb;
-  --sidebar-active-bg: #e4ded1;
-  --sidebar-active-text: #1d1a16;
-  --overlay: rgba(28, 23, 17, 0.42);
+  /* 别名：全站视图沿用这些语义名，值全部来自上面这套色板 */
+  --bg: var(--background);
+  --surface: var(--card);
+  --surface-2: var(--muted);
+  --surface-3: #f2e2d4;
+  --border-strong: var(--input);
+  --text: var(--foreground);
+  --text-muted: var(--muted-foreground);
+  --text-faint: #8f7062;
+  --on-accent: var(--primary-foreground);
+
+  /* 状态色：暖纸体系内的专用色；--danger 固定映射 destructive，文字另用 --danger-ink 保证对比 */
+  --ok: #33704b;
+  --ok-weak: #e9f2ec;
+  --warn: #8a5c11;
+  --warn-weak: #f9efda;
+  --danger: var(--destructive);
+  --danger-weak: #fdeaea;
+  --danger-ink: #c02f22;
+  --info: #3d6f96;
+  --info-weak: #e8f0f6;
+
+  /* 卡片/浮层硬边阴影：4px → 6px → 8px */
+  --shadow-1: 4px 4px #0000002e, inset 0 0 0 1px #ffffff14;
+  --shadow-2: 6px 6px #00000038, inset 0 0 0 1px #ffffff1f;
+  --shadow-pop: 8px 8px #0000003d, inset 0 0 0 1px #ffffff26;
+  /* 按钮单独一套（上游 pixel-button）：rest 3px → hover 4px → active 1px，无内描边 */
+  --shadow-btn: 3px 3px #0000002e;
+  --shadow-btn-hover: 4px 4px #00000038;
+  --shadow-btn-active: 1px 1px #00000029;
+  /* 小徽章 / 空状态图标等小控件仍用 2px */
+  --shadow-mini: 2px 2px #00000024, inset 0 0 0 1px #ffffff14;
+  --shadow-card: var(--shadow-1);
+
+  --focus-ring: var(--ring);
+  /* 扫描线：-45deg、1px 线 / 6px 周期（上游 .scanlines 的深色值换成暖色低对比） */
+  --scanline: rgba(39, 22, 16, 0.035);
+  --grid-line: rgba(137, 110, 96, 0.18);
+  /* 空状态背景用的更淡网格，避免纹理压过正文 */
+  --grid-line-soft: rgba(137, 110, 96, 0.085);
+  /* body 背景分层（必须照抄；background-attachment: fixed 在 base.css） */
+  --body-layers:
+    radial-gradient(1100px at 5% -10%, #d9775733, transparent 60%),
+    radial-gradient(900px at 90% 0, #60a5fa1f, transparent 65%),
+    linear-gradient(#fff7f2fa, #fff7f2);
+
+  --sidebar-bg: #f7ebdf;
+  --sidebar-elevated: #f3e0d0;
+  --sidebar-text: #33170f;
+  --sidebar-muted: #8a6a5c;
+  --sidebar-border: var(--border);
+  --sidebar-active-bg: #fbe7da;
+  --sidebar-active-text: #271610;
+  --overlay: rgba(39, 22, 16, 0.44);
 }
 
-/* 深色：墨黑 + 暖灰纸感，不是冷调蓝黑 */
+/* 深色：夜蓝黑纸 + 同一支珊瑚橙；描边转成亮色，内描边让硬边阴影不糊 */
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --bg: #151310;
-  --surface: #1d1a16;
-  --surface-2: #231f19;
-  --surface-3: #2a251f;
-  --border: #332e26;
-  --border-strong: #4a4338;
-  --text: #ece6dc;
-  --text-muted: #a8a094;
-  --text-faint: #877f72;
-  --overlay: rgba(6, 5, 4, 0.62);
-  --accent: #d8d1c3;
-  --accent-hover: #e9e3d6;
-  --accent-weak: #2a251f;
-  --accent-text: #ded6c7;
-  --on-accent: #1a1713;
-  --seal: #c37c67;
-  --seal-weak: #2b211d;
-  --danger: #e07a6b;
-  --danger-weak: #2c1c18;
-  --warn: #d3a94f;
-  --warn-weak: #2a2317;
-  --ok: #93b696;
-  --ok-weak: #1b241c;
-  --info: #93b3cc;
-  --info-weak: #1a232a;
-  --wash: rgba(236, 230, 220, 0.05);
-  --wash-soft: rgba(236, 230, 220, 0.026);
-  --focus-ring: rgba(195, 124, 103, 0.62);
 
-  --shadow-card: 0 1px 1px rgba(0, 0, 0, 0.35);
-  --shadow-pop: 0 16px 38px rgba(0, 0, 0, 0.5);
+  --background: #10131c;
+  --foreground: #fdfdfc;
+  --card: #161a25;
+  --card-foreground: #fdfdfc;
+  --primary: #f18c6e;
+  --primary-foreground: #10131c;
+  --primary-hover: #ffa387;
+  --secondary: #2a1f1a;
+  --secondary-foreground: #fdfdfc;
+  --muted: #1b2030;
+  --muted-foreground: #b9a79c;
+  --accent: #f18c6e;
+  --accent-foreground: #10131c;
+  --destructive: #f87171;
+  --destructive-foreground: #150a0a;
+  --border: #ffffff14;
+  --input: #ffffff1f;
+  --ring: #f18c6e87;
 
-  --sidebar-bg: #1a1714;
-  --sidebar-elevated: #241f1a;
-  --sidebar-text: #cfc8ba;
-  --sidebar-muted: #8d8577;
-  --sidebar-border: #2e2a23;
-  --sidebar-active-bg: #2a251f;
-  --sidebar-active-text: #f2ece1;
+  --bg: var(--background);
+  --surface: var(--card);
+  --surface-2: var(--muted);
+  --surface-3: #212736;
+  --border-strong: var(--input);
+  --text: var(--foreground);
+  --text-muted: var(--muted-foreground);
+  --text-faint: #93837a;
+  --on-accent: var(--primary-foreground);
+
+  --ok: #6ec08d;
+  --ok-weak: #14241c;
+  --warn: #e0b25f;
+  --warn-weak: #262014;
+  --danger: var(--destructive);
+  --danger-weak: #2a1717;
+  --danger-ink: var(--danger);
+  --info: #7fb4d8;
+  --info-weak: #131f28;
+
+  --shadow-1: 4px 4px #00000059, inset 0 0 0 1px #ffffff1f;
+  --shadow-2: 6px 6px #0000006b, inset 0 0 0 1px #ffffff26;
+  --shadow-pop: 8px 8px #0000007a, inset 0 0 0 1px #ffffff2e;
+  /* 上游 .dark .pixel-button：rest rgba(0,0,0,.45) / hover .55 / active .35 */
+  --shadow-btn: 3px 3px #00000073;
+  --shadow-btn-hover: 4px 4px #0000008c;
+  --shadow-btn-active: 1px 1px #00000059;
+  --shadow-mini: 2px 2px #00000047, inset 0 0 0 1px #ffffff1f;
+  --shadow-card: var(--shadow-1);
+  --shadow-btn-sm: 2px 2px #0000005c;
+  --shadow-btn-sm-hover: 3px 3px #00000073;
+
+  /* 上游 .dark .pixel-pill:hover：背景 .24 / 描边 .75 */
+  --pill-shadow: 2px 2px 0 rgba(0, 0, 0, 0.35);
+  --pill-hover-shadow: 4px 4px 0 rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  --pill-hover-bg: rgba(241, 140, 110, 0.24);
+  --pill-hover-border: rgba(241, 140, 110, 0.75);
+  /* 深色下 coral 底按钮上的扫边用墨色回退，保证对比 */
+  --btn-sweep-contrast: color-mix(in srgb, var(--background) 74%, var(--primary));
+
+  --focus-ring: var(--ring);
+  --scanline: rgba(255, 255, 255, 0.05);
+  /* 上游 .dark .pixel-button::before 用 amber，深色底上更亮 */
+  --btn-sweep: rgba(251, 191, 36, 0.95);
+  --grid-line: rgba(255, 255, 255, 0.055);
+  --grid-line-soft: rgba(255, 255, 255, 0.028);
+
+  --body-layers:
+    radial-gradient(1100px at 5% -10%, #f18c6e26, transparent 60%),
+    radial-gradient(900px at 90% 0, #60a5fa1a, transparent 65%),
+    linear-gradient(#0d101a, #10131c);
+
+  --sidebar-bg: #141822;
+  --sidebar-elevated: #1d222f;
+  --sidebar-text: #d8cec7;
+  --sidebar-muted: #8f8377;
+  --sidebar-border: var(--border);
+  --sidebar-active-bg: #251c19;
+  --sidebar-active-text: #fdfdfc;
+  --overlay: rgba(4, 6, 12, 0.66);
 }
-

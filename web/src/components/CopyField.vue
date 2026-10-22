@@ -82,9 +82,9 @@ async function doCopy(): Promise<void> {
   display: flex;
   gap: var(--space-2);
   align-items: flex-start;
-  background: var(--surface-2);
+  background: var(--muted);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: 0;
   padding: var(--space-2) var(--space-3);
 }
 

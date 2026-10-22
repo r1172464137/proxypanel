@@ -191,6 +191,43 @@ func requireNoExplicitPin(client string, n NodeConfig) error {
 		Reason: "this client cannot verify a certificate SHA-256 pin"}
 }
 
+// http1Transport reports whether the transport tunnels an HTTP/1.1 Upgrade
+// request (WebSocket or HTTPUpgrade) inside the TLS session.
+func http1Transport(network string) bool {
+	switch network {
+	case "ws", "httpupgrade":
+		return true
+	}
+	return false
+}
+
+// clientALPN returns the ALPN list a client must offer for this endpoint.
+//
+// A WebSocket or HTTPUpgrade tunnel runs on HTTP/1.1, so offering "h2" through
+// ALPN makes the server negotiate HTTP/2 and the upgrade request then never
+// completes: the real-core matrix showed a ws+tls node answering 200 for Xray
+// (a client that offers no ALPN at all) while sing-box and Mihomo timed out,
+// because protocol.EndpointFor copies the server's tlsSettings.alpn ("h2",
+// "http/1.1") onto the endpoint. h2 is not a value the administrator can pick
+// for such a node - it is physically unable to carry the tunnel - so the export
+// states the only usable protocol instead of propagating a broken list. Every
+// other transport keeps the administrator's ALPN untouched.
+//
+// The rule is keyed on the transport, not on Security == "tls": REALITY
+// terminates TLS just the same and a ws+REALITY node carries the identical
+// HTTP/1.1 upgrade, so it inherits the very same broken ALPN list from
+// realitySettings. Gating on "tls" left ws+REALITY exporting h2 to sing-box and
+// v2rayN (Xray and Mihomo happened to emit no ALPN and therefore masked the bug).
+// The condition is "a TLS-terminating session on an HTTP/1.1 transport", which is
+// exactly "Security is set at all" - an empty Security means no TLS layer, so a
+// plain ws node keeps whatever ALPN it had (normally none).
+func clientALPN(ep protocol.Endpoint) []string {
+	if ep.Security != "" && http1Transport(ep.Network) {
+		return []string{"http/1.1"}
+	}
+	return ep.ALPN
+}
+
 // sortedFormats returns a stable copy for responses.
 func sortedFormats() []string {
 	out := append([]string(nil), Formats...)
@@ -345,8 +382,8 @@ func xrayStreamSettings(n NodeConfig) (map[string]any, error) {
 	switch ep.Security {
 	case "tls":
 		ts := map[string]any{"serverName": ep.SNI}
-		if len(ep.ALPN) > 0 {
-			ts["alpn"] = ep.ALPN
+		if alpn := clientALPN(ep); len(alpn) > 0 {
+			ts["alpn"] = alpn
 		}
 		if ep.Fingerprint != "" {
 			ts["fingerprint"] = ep.Fingerprint

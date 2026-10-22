@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"proxypanel/internal/agent/state"
@@ -30,18 +31,52 @@ type ReportClient interface {
 	Applied(ctx context.Context, report contracts.ApplyReport) error
 }
 
+// Retry policy of the counter query. A statsquery that fails with a transient
+// error (a killed helper process, a deadline exceeded, an API port that is not
+// dialable yet) is retried a bounded number of times with a growing delay
+// before the cycle gives that instance up: a single lost query otherwise loses
+// a whole sampling period, and the counters are accounting data.
+//
+// Retrying can never book the same traffic twice: the counters are cumulative,
+// state.Measure is idempotent per (node, core generation, counter) baseline and
+// a cycle measures every instance exactly once - the retry only decides which
+// snapshot feeds that one measurement.
+const (
+	// DefaultSampleAttempts is the number of statsquery rounds per sampling
+	// cycle (the first try plus two retries).
+	DefaultSampleAttempts = 3
+	// DefaultSampleBackoff is the delay before the second attempt; every
+	// further retry doubles it, up to maxSampleBackoff.
+	DefaultSampleBackoff = 500 * time.Millisecond
+	maxSampleBackoff     = 10 * time.Second
+)
+
 // Sampler converts cumulative counters into member deltas and persists them
 // together with the new baselines.
 type Sampler struct {
-	store  *state.Store
-	source StatsSource
-	logger *log.Logger
-	now    func() time.Time
+	store    *state.Store
+	source   StatsSource
+	logger   *log.Logger
+	now      func() time.Time
+	attempts int
+	backoff  time.Duration
+	sleep    func(context.Context, time.Duration) error
+
+	mu       sync.Mutex
+	lastErrs []string
 }
 
 // NewSampler builds a sampler.
 func NewSampler(store *state.Store, source StatsSource, logger *log.Logger) *Sampler {
-	return &Sampler{store: store, source: source, logger: logger, now: func() time.Time { return time.Now().UTC() }}
+	return &Sampler{
+		store:    store,
+		source:   source,
+		logger:   logger,
+		now:      func() time.Time { return time.Now().UTC() },
+		attempts: DefaultSampleAttempts,
+		backoff:  DefaultSampleBackoff,
+		sleep:    sleepContext,
+	}
 }
 
 // SetNow overrides the clock (tests).
@@ -49,6 +84,37 @@ func (s *Sampler) SetNow(fn func() time.Time) {
 	if fn != nil {
 		s.now = fn
 	}
+}
+
+// SetRetryPolicy overrides how often a failing statsquery is retried and the
+// base delay between attempts (tests and operators).
+func (s *Sampler) SetRetryPolicy(attempts int, backoff time.Duration) {
+	if attempts < 1 {
+		attempts = 1
+	}
+	if backoff < 0 {
+		backoff = 0
+	}
+	s.attempts = attempts
+	s.backoff = backoff
+}
+
+// SetSleep overrides how the sampler waits between two attempts (tests).
+func (s *Sampler) SetSleep(fn func(context.Context, time.Duration) error) {
+	if fn != nil {
+		s.sleep = fn
+	}
+}
+
+// LastSamplingErrors reports the persistent sampling failures of the most recent
+// cycle, one "sampling_error ..." line per instance. It is the queryable twin of
+// SampleResult.SamplingErrors, so a status or heartbeat consumer can surface a
+// degraded sampling loop instead of the failure being logged once and lost. It
+// returns nil when the last cycle sampled every instance.
+func (s *Sampler) LastSamplingErrors() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.lastErrs...)
 }
 
 // SampleResult summarises one sampling round.
@@ -59,41 +125,180 @@ type SampleResult struct {
 	BatchIDs     []string
 	Unmapped     int
 	InstanceErrs []string
+	// SamplingErrors lists the instances whose counters are still missing after
+	// the retry budget: one "sampling_error node=... instance=... attempts=N:
+	// <cause>" entry each. A degraded cycle is marked here instead of being
+	// swallowed, so the caller can log, count or report it.
+	SamplingErrors []string
+	// Retries counts the extra statsquery rounds this cycle needed.
+	Retries int
 }
 
-// RunOnce samples all running instances.
+// sampleCandidate follows one instance through the retry rounds of a cycle.
+// Every instance is measured exactly once per cycle, no matter how many attempts
+// it took.
+type sampleCandidate struct {
+	instanceID string
+	nodeID     string
+	stats      xray.InstanceStats
+	attempts   int
+	err        error
+}
+
+// RunOnce samples all running instances. A failing statsquery is retried with a
+// growing backoff; a node that still fails, or whose sample cannot be persisted,
+// is marked in the result and never stops the other nodes from being sampled.
 func (s *Sampler) RunOnce(ctx context.Context) (SampleResult, error) {
 	var res SampleResult
-	stats := s.source.QueryStats(ctx)
-	for _, inst := range stats {
-		res.Instances++
-		if inst.Err != nil {
-			res.InstanceErrs = append(res.InstanceErrs, fmt.Sprintf("%s: %v", inst.InstanceID, inst.Err))
+	attempts := s.attempts
+	if attempts < 1 {
+		attempts = 1
+	}
+	candidates := make([]*sampleCandidate, 0)
+	byKey := make(map[string]*sampleCandidate)
+	for attempt := 1; attempt <= attempts; attempt++ {
+		if attempt > 1 {
+			if !hasUnresolved(candidates) {
+				break
+			}
+			if err := s.sleep(ctx, s.backoffFor(attempt)); err != nil {
+				// The cycle was cancelled while waiting: report the instances
+				// that are still missing instead of pretending they were read.
+				break
+			}
+			res.Retries++
+		}
+		for _, inst := range s.source.QueryStats(ctx) {
+			key := inst.InstanceID
+			if key == "" {
+				key = inst.NodeID
+			}
+			c, ok := byKey[key]
+			if !ok {
+				c = &sampleCandidate{instanceID: inst.InstanceID, nodeID: inst.NodeID}
+				byKey[key] = c
+				candidates = append(candidates, c)
+			}
+			c.attempts++
+			if inst.Err != nil {
+				c.err = inst.Err
+				continue
+			}
+			c.stats = inst
+			c.err = nil
+		}
+	}
+
+	res.Instances = len(candidates)
+	var persistErr error
+	for _, c := range candidates {
+		node := firstNonEmpty(c.nodeID, c.stats.NodeID)
+		instance := firstNonEmpty(c.instanceID, node)
+		if c.err != nil {
+			res.SamplingErrors = append(res.SamplingErrors, fmt.Sprintf(
+				"sampling_error node=%s instance=%s attempts=%d: %v",
+				node, instance, c.attempts, c.err))
 			continue
 		}
-		items := make([]state.CounterItem, 0, len(inst.Counters))
-		for _, c := range inst.Counters {
-			member, ok := MemberForCounter(c.Name, inst.EmailToMember)
+		if c.attempts > 1 {
+			s.logf("agent: sampling: instance %s recovered on attempt %d", instance, c.attempts)
+		}
+		items := make([]state.CounterItem, 0, len(c.stats.Counters))
+		for _, counter := range c.stats.Counters {
+			member, ok := MemberForCounter(counter.Name, c.stats.EmailToMember)
 			if !ok {
 				res.Unmapped++
 				continue
 			}
 			res.Counters++
-			items = append(items, state.CounterItem{MemberID: member, Counter: c.Name, Value: c.Value})
+			items = append(items, state.CounterItem{MemberID: member, Counter: counter.Name, Value: counter.Value})
 		}
 		if len(items) == 0 {
 			continue
 		}
-		measured, err := s.store.Measure(ctx, inst.NodeID, inst.CoreGeneration, s.now(), items)
+		measured, err := s.store.Measure(ctx, c.stats.NodeID, c.stats.CoreGeneration, s.now(), items)
 		if err != nil {
-			return res, fmt.Errorf("persist sample for node %s: %w", inst.NodeID, err)
+			// One node must never stop the others: collect the failure, finish
+			// the cycle and report it afterwards.
+			res.SamplingErrors = append(res.SamplingErrors, fmt.Sprintf(
+				"sampling_error node=%s instance=%s task=persist: %v", node, instance, err))
+			if persistErr == nil {
+				persistErr = fmt.Errorf("persist sample for node %s: %w", node, err)
+			}
+			continue
 		}
 		if measured.BatchID != "" {
 			res.SampleRows += measured.SampleRows
 			res.BatchIDs = append(res.BatchIDs, measured.BatchID)
 		}
 	}
-	return res, nil
+	// InstanceErrs keeps the existing supervisor log line ("agent: sampling:
+	// ...") working; it carries the same entries as SamplingErrors.
+	res.InstanceErrs = append(res.InstanceErrs, res.SamplingErrors...)
+	s.setLastErrors(res.SamplingErrors)
+	return res, persistErr
+}
+
+// hasUnresolved reports whether any instance still misses its counters.
+func hasUnresolved(candidates []*sampleCandidate) bool {
+	for _, c := range candidates {
+		if c.err != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// backoffFor returns the delay before the given attempt (2, 3, ...).
+func (s *Sampler) backoffFor(attempt int) time.Duration {
+	if s.backoff <= 0 {
+		return 0
+	}
+	delay := s.backoff
+	for i := 2; i < attempt; i++ {
+		delay *= 2
+		if delay >= maxSampleBackoff {
+			return maxSampleBackoff
+		}
+	}
+	return delay
+}
+
+func (s *Sampler) setLastErrors(errs []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastErrs = append([]string(nil), errs...)
+}
+
+func (s *Sampler) logf(format string, args ...any) {
+	if s.logger != nil {
+		s.logger.Printf(format, args...)
+	}
+}
+
+// sleepContext waits for the given delay or until the context is cancelled.
+func sleepContext(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return ctx.Err()
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+// firstNonEmpty returns the first value that is not blank.
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // MemberForCounter maps "user>>>email>>>traffic>>>uplink|downlink" to the stable

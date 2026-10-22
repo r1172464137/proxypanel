@@ -112,8 +112,8 @@ func singboxTLS(n NodeConfig) (map[string]any, error) {
 	if ep.SNI != "" {
 		tls["server_name"] = ep.SNI
 	}
-	if len(ep.ALPN) > 0 {
-		tls["alpn"] = ep.ALPN
+	if alpn := clientALPN(ep); len(alpn) > 0 {
+		tls["alpn"] = alpn
 	}
 	if ep.AllowInsecure {
 		tls["insecure"] = true
@@ -234,7 +234,6 @@ func mihomoProxy(n NodeConfig, name string) (map[string]any, error) {
 		}
 		p["type"] = "trojan"
 		p["password"] = n.Credential
-		p["skip-cert-verify"] = ep.AllowInsecure
 	case protocol.Shadowsocks:
 		if ep.Cipher == "" {
 			return nil, &UnsupportedError{NodeName: ep.Name, NodeID: ep.NodeID, Client: "mihomo", Field: "cipher", Reason: "shadowsocks method is missing"}
@@ -256,8 +255,8 @@ func mihomoProxy(n NodeConfig, name string) (map[string]any, error) {
 			if ep.SNI != "" {
 				p["servername"] = ep.SNI
 			}
-			if len(ep.ALPN) > 0 {
-				p["alpn"] = ep.ALPN
+			if alpn := clientALPN(ep); len(alpn) > 0 {
+				p["alpn"] = alpn
 			}
 			if ep.Fingerprint != "" {
 				p["client-fingerprint"] = ep.Fingerprint
@@ -278,6 +277,16 @@ func mihomoProxy(n NodeConfig, name string) (map[string]any, error) {
 		default:
 			return nil, &UnsupportedError{NodeName: ep.Name, NodeID: ep.NodeID, Client: "mihomo", Field: "stream_settings.security", Reason: "unsupported security " + ep.Security}
 		}
+	}
+	// Mihomo checks the node certificate unless the proxy itself says otherwise;
+	// "skip-cert-verify" is its name for client_settings.allow_insecure. It used
+	// to be emitted inside the trojan branch only, so a VLESS/VMess ws+tls node
+	// whose administrator disabled the check was exported with the check still
+	// on and the real core dropped the connection with a deadline exceeded. The
+	// setting belongs to every TLS carrying proxy, so it is decided here for all
+	// protocols instead of one case.
+	if ep.Protocol != protocol.Shadowsocks && ep.Security != "" && ep.AllowInsecure {
+		p["skip-cert-verify"] = true
 	}
 	switch ep.Network {
 	case "ws":
@@ -360,8 +369,8 @@ func shareLink(n NodeConfig, name string) (string, error) {
 		setIf("sid", ep.ShortID)
 		q.Set("spx", "/")
 	}
-	if len(ep.ALPN) > 0 {
-		setIf("alpn", strings.Join(ep.ALPN, ","))
+	if alpn := clientALPN(ep); len(alpn) > 0 {
+		setIf("alpn", strings.Join(alpn, ","))
 	}
 	switch ep.Network {
 	case "ws", "httpupgrade", "xhttp", "http":
@@ -397,8 +406,8 @@ func shareLink(n NodeConfig, name string) (string, error) {
 			"type": firstNonEmpty(ep.HeaderType, "none"), "host": ep.Host, "path": ep.Path,
 			"tls": ep.Security, "sni": ep.SNI,
 		}
-		if len(ep.ALPN) > 0 {
-			payload["alpn"] = strings.Join(ep.ALPN, ",")
+		if alpn := clientALPN(ep); len(alpn) > 0 {
+			payload["alpn"] = strings.Join(alpn, ",")
 		}
 		if ep.Fingerprint != "" {
 			payload["fp"] = ep.Fingerprint

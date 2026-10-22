@@ -31,13 +31,139 @@ const (
 )
 
 // Default instance apply budget. The contract requires config validation plus
-// stop/start to fit into 60 seconds per snapshot.
+// stop/start to fit into 60 seconds per snapshot on a healthy machine; the
+// individual step budgets below are upper bounds for a slow machine (nested
+// virtualization) and are only reached when a step really stalls.
 const (
 	DefaultInstanceTimeout = 45 * time.Second
 	MinAPIPort             = 20000
 	MaxAPIPort             = 60000
-	readinessTimeout       = 5 * time.Second
+
+	// DefaultReadinessTimeout is how long a started core may take before its
+	// management API answers. Xray logs "started" long before the stats service
+	// is reachable on a slow host, so the budget must not be measured in single
+	// digit seconds.
+	DefaultReadinessTimeout = 30 * time.Second
+	// DefaultValidationTimeout is the budget of one `xray -test` run.
+	DefaultValidationTimeout = 30 * time.Second
+	// DefaultStopTimeout is the budget of one core stop. It is deliberately
+	// independent of the readiness budget: a slow stop must never shorten a start
+	// and a slow start must never shorten a stop.
+	DefaultStopTimeout = 15 * time.Second
+	// DefaultRollbackTimeout is the budget of the whole rollback attempt
+	// (validate the last known good config, start it, wait for readiness). It is
+	// more generous than the normal path on purpose: the failure that triggered
+	// the rollback has usually already consumed the normal budget.
+	DefaultRollbackTimeout = 60 * time.Second
+
+	// readinessPollInterval is how often the management API is probed while the
+	// core starts.
+	readinessPollInterval = 500 * time.Millisecond
+	// readinessProbeTimeout bounds one single probe.
+	readinessProbeTimeout = 5 * time.Second
 )
+
+// Environment overrides so an operator can tune the lifecycle budgets on a slow
+// machine without rebuilding the agent. Values use Go duration syntax ("45s",
+// "2m"); invalid or non positive values are ignored.
+const (
+	EnvReadinessTimeout  = "PROXYPANEL_XRAY_READINESS_TIMEOUT"
+	EnvValidationTimeout = "PROXYPANEL_XRAY_VALIDATION_TIMEOUT"
+	EnvStopTimeout       = "PROXYPANEL_XRAY_STOP_TIMEOUT"
+	EnvRollbackTimeout   = "PROXYPANEL_XRAY_ROLLBACK_TIMEOUT"
+)
+
+// Timeouts are the independent lifecycle budgets of one instance. They are
+// separate values on purpose: one stalling step must never consume the budget
+// of the next one.
+type Timeouts struct {
+	// Readiness is how long the management API may take to answer after a start.
+	Readiness time.Duration
+	// Validate is the budget of one `xray -test` run.
+	Validate time.Duration
+	// Stop is the budget of one core stop.
+	Stop time.Duration
+	// Rollback is the budget of the whole rollback attempt.
+	Rollback time.Duration
+}
+
+// DefaultTimeouts returns the built-in budgets, overridden by the optional
+// PROXYPANEL_XRAY_*_TIMEOUT environment variables.
+func DefaultTimeouts() Timeouts {
+	t := Timeouts{
+		Readiness: DefaultReadinessTimeout,
+		Validate:  DefaultValidationTimeout,
+		Stop:      DefaultStopTimeout,
+		Rollback:  DefaultRollbackTimeout,
+	}
+	t.Readiness = envDuration(EnvReadinessTimeout, t.Readiness)
+	t.Validate = envDuration(EnvValidationTimeout, t.Validate)
+	t.Stop = envDuration(EnvStopTimeout, t.Stop)
+	t.Rollback = envDuration(EnvRollbackTimeout, t.Rollback)
+	return t
+}
+
+// withDefaults fills every unset budget with its default.
+func (t Timeouts) withDefaults() Timeouts {
+	d := DefaultTimeouts()
+	if t.Readiness <= 0 {
+		t.Readiness = d.Readiness
+	}
+	if t.Validate <= 0 {
+		t.Validate = d.Validate
+	}
+	if t.Stop <= 0 {
+		t.Stop = d.Stop
+	}
+	if t.Rollback <= 0 {
+		t.Rollback = d.Rollback
+	}
+	return t
+}
+
+// InstanceBudget is the upper bound of one complete instance apply: validate the
+// new config, stop the old core and start the new one, plus slack for the
+// bookkeeping around it. The rollback attempt has its own budget because it only
+// runs after a failure.
+func (t Timeouts) InstanceBudget() time.Duration {
+	t = t.withDefaults()
+	budget := t.Validate + t.Readiness + t.Stop
+	if budget < DefaultInstanceTimeout {
+		budget = DefaultInstanceTimeout
+	}
+	return budget + 15*time.Second
+}
+
+// SnapshotBudget is the upper bound of one snapshot apply that reconciles
+// instanceCount instances sequentially.
+func (t Timeouts) SnapshotBudget(instanceCount int) time.Duration {
+	if instanceCount < 1 {
+		instanceCount = 1
+	}
+	return time.Duration(instanceCount)*t.InstanceBudget() + 15*time.Second
+}
+
+// rollbackBudget is the budget of one whole rollback attempt (validate the last
+// known good config, start it, wait for readiness).
+func (t Timeouts) rollbackBudget() time.Duration {
+	t = t.withDefaults()
+	if t.Rollback > 0 {
+		return t.Rollback
+	}
+	return t.Validate + t.Readiness
+}
+
+func envDuration(name string, fallback time.Duration) time.Duration {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		return fallback
+	}
+	return d
+}
 
 // Target is an instance the agent has to run.
 type Target struct {
@@ -102,7 +228,7 @@ type InstanceStats struct {
 
 // Lock order for this package:
 //
-//	instance.mu  ->  Manager.mu
+//	instance.mu  ->  validateMu  ->  Manager.mu
 //
 // Manager.mu only guards the instance map and the owned pid set. It is a leaf
 // lock: it is never held while acquiring an instance lock and never held across
@@ -111,6 +237,11 @@ type InstanceStats struct {
 // not take instance.mu at all: they read the immutable view that the lifecycle
 // owner publishes, so a config test or start in progress can never stall the
 // heartbeat, the stats loop or shutdown.
+//
+// validateMu serializes the `xray -test` runs of all instances (see
+// validateMutex). It is taken while instance.mu is held and never while
+// Manager.mu is held, and nothing else is acquired while it is held, so it can
+// neither stall a reader nor close a lock cycle.
 type instance struct {
 	mu            sync.Mutex // lifecycle lock, see the lock order above
 	id            string     // immutable after creation
@@ -204,12 +335,47 @@ type Manager struct {
 	now      func() time.Time
 	portFn   func(reserved map[int]bool) (int, error)
 	secrets  func() []string
-
+	// timeouts holds the independent lifecycle budgets (readiness, validation,
+	// stop, rollback). Set by NewManager from DefaultTimeouts and adjustable via
+	// SetTimeouts; never zero.
+	timeouts Timeouts
 	// mu guards instances and owned only; leaf lock, never held across I/O.
 	mu        sync.Mutex
 	instances map[string]*instance
 	owned     map[int]bool
+	// validateMu serializes every `xray -test` of this manager. It is a mutex of
+	// its own, not Manager.mu: Manager.mu is the leaf lock of the instance map
+	// and must never be held across I/O, while this lock is held for the whole
+	// test process. See validateConfig for why the test must not run in parallel.
+	validateMu validateMutex
 }
+
+// validateMutex is the process wide serialization point for `xray -test`.
+//
+// It is not a plain sync.Mutex because waiting for it has to be bounded: a
+// queued instance must be able to give up when its own validation budget is
+// gone, instead of testing a configuration after it was already reported as out
+// of time. The zero value is ready to use.
+type validateMutex struct {
+	init sync.Once
+	slot chan struct{}
+}
+
+// lock acquires the mutex, or returns ctx.Err() when ctx ends first. It never
+// waits past the caller's deadline, so a waiter stays inside a bounded
+// lifecycle step.
+func (m *validateMutex) lock(ctx context.Context) error {
+	m.init.Do(func() { m.slot = make(chan struct{}, 1) })
+	select {
+	case m.slot <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// unlock releases the mutex. It must only be called after a successful lock.
+func (m *validateMutex) unlock() { <-m.slot }
 
 // NewManager creates the instance manager rooted at the agent state directory.
 func NewManager(root, xrayPath string, runner Runner, logger *log.Logger) (*Manager, error) {
@@ -237,6 +403,7 @@ func NewManager(root, xrayPath string, runner Runner, logger *log.Logger) (*Mana
 		logger:    logger,
 		now:       time.Now,
 		portFn:    allocatePort,
+		timeouts:  DefaultTimeouts(),
 		instances: map[string]*instance{},
 		owned:     map[int]bool{},
 	}, nil
@@ -257,6 +424,16 @@ func (m *Manager) SetPortAllocator(fn func(reserved map[int]bool) (int, error)) 
 		m.portFn = fn
 	}
 }
+
+// SetTimeouts overrides the lifecycle budgets. Unset (zero or negative) fields
+// keep their default. It must be called before Apply/Stop run (tests and startup
+// wiring only).
+func (m *Manager) SetTimeouts(t Timeouts) {
+	m.timeouts = t.withDefaults()
+}
+
+// Timeouts returns the effective lifecycle budgets.
+func (m *Manager) Timeouts() Timeouts { return m.timeouts.withDefaults() }
 
 // CertRoot is the only directory allowed to hold TLS material for instances.
 func (m *Manager) CertRoot() string { return m.certRoot }
@@ -317,7 +494,7 @@ func (m *Manager) lookup(id string) *instance {
 // restarted, unchanged instances are left alone.
 func (m *Manager) Apply(ctx context.Context, targets []Target, opts ApplyOptions) []Result {
 	if opts.PerInstanceTimeout <= 0 {
-		opts.PerInstanceTimeout = DefaultInstanceTimeout
+		opts.PerInstanceTimeout = m.timeouts.withDefaults().InstanceBudget()
 	}
 	wanted := make(map[string]bool, len(targets))
 	for _, t := range targets {
@@ -505,7 +682,7 @@ func (m *Manager) replace(ctx context.Context, inst *instance, t Target, opts Ap
 	if inst.proc == nil {
 		// Only look for a leftover process when this manager does not own a
 		// running one (otherwise the pid record describes our own core).
-		if err := m.reapStale(dir, cfgPath); err != nil {
+		if err := m.reapStale(dir); err != nil {
 			// A process we cannot prove is ours must not be killed; report the
 			// instance as failed and leave the unknown process untouched.
 			m.sampleAndStop(ctx, inst, opts.BeforeStop)
@@ -523,7 +700,19 @@ func (m *Manager) replace(ctx context.Context, inst *instance, t Target, opts Ap
 	if err := writeFileAtomic(cfgPath, config, 0o600); err != nil {
 		return m.rollbackOrFail(ctx, inst, t, opts, fmt.Errorf("write instance config: %w", err))
 	}
-	if err := m.runner.Test(ctx, cfgPath); err != nil {
+	// The new configuration is validated while the previous core is still
+	// running, with a budget of its own: a rejected configuration must never take
+	// a healthy instance down, and a stalled step must never make this validation
+	// fail with a killed process.
+	if err := m.validateConfig(ctx, cfgPath); err != nil {
+		// A validation timeout is not a verdict about the document: the run may
+		// never have started because another instance held the serialized test
+		// slot. Treating that as "config is invalid" would stop a healthy core
+		// and start a rollback for a document nobody rejected, so the previous
+		// core keeps serving and the next poll retries the same target.
+		if errors.Is(err, ErrValidationTimeout) {
+			return m.deferValidation(inst, t, err)
+		}
 		return m.rollbackOrFail(ctx, inst, t, opts, fmt.Errorf("config validation failed: %w", err))
 	}
 	// Controlled stop: collect the last usage, then terminate the old process so
@@ -564,8 +753,8 @@ func (m *Manager) replace(ctx context.Context, inst *instance, t Target, opts Ap
 }
 
 // startInstance starts the core, retrying once with a fresh management API port
-// when the first attempt failed (for example because a stale process still holds
-// the port).
+// when the first attempt failed (for example because a leftover process still
+// holds the port).
 func (m *Manager) startInstance(ctx context.Context, inst *instance, dir, cfgPath string, doc map[string]any, port *int) (Proc, string, error) {
 	spec := StartSpec{
 		InstanceID: inst.id,
@@ -573,13 +762,15 @@ func (m *Manager) startInstance(ctx context.Context, inst *instance, dir, cfgPat
 		LogPath:    filepath.Join(dir, "xray.log"),
 		Secrets:    m.secretValues(),
 	}
-	proc, err := m.startAndWait(ctx, spec, *port)
+	proc, gen, err := m.startAndWait(ctx, inst, dir, cfgPath, spec, *port)
 	if err == nil {
-		return proc, m.reportStarted(inst, dir, cfgPath, proc), nil
+		return proc, gen, nil
 	}
 	m.logger.Printf("agent: instance %s: first start attempt failed: %v", inst.id, err)
-	// A leftover process may still hold the port.
-	if rerr := m.reapStale(dir, cfgPath); rerr != nil {
+	// A leftover process may still hold the port. When the failed attempt could
+	// not be proven dead its pid record was kept, so this is what makes the retry
+	// self healing instead of failing on a busy inbound port forever.
+	if rerr := m.reapStale(dir); rerr != nil {
 		return nil, "", rerr
 	}
 	nextPort, perr := m.portFn(m.reservedPorts(doc))
@@ -593,61 +784,108 @@ func (m *Manager) startInstance(ctx context.Context, inst *instance, dir, cfgPat
 	if werr := writeFileAtomic(cfgPath, config, 0o600); werr != nil {
 		return nil, "", err
 	}
-	if terr := m.runner.Test(ctx, cfgPath); terr != nil {
+	// Fresh validation budget: the first attempt may already have consumed the
+	// readiness budget of this instance. A validation timeout here is discarded
+	// like any other validation error: the original start failure is the cause
+	// the caller has to act on.
+	if terr := m.validateConfig(ctx, cfgPath); terr != nil {
 		return nil, "", err
 	}
-	proc, err = m.startAndWait(ctx, spec, nextPort)
+	proc, gen, err = m.startAndWait(ctx, inst, dir, cfgPath, spec, nextPort)
 	if err != nil {
 		return nil, "", err
 	}
 	*port = nextPort
-	return proc, m.reportStarted(inst, dir, cfgPath, proc), nil
+	return proc, gen, nil
 }
 
-// startAndWait starts the core and waits until its management API answers, so a
-// successful start really means the instance is serving.
-func (m *Manager) startAndWait(ctx context.Context, spec StartSpec, apiPort int) (Proc, error) {
+// startAndWait starts the core, records its identity and waits until its
+// management API answers, so a successful start really means the instance is
+// serving.
+//
+// The pid record is written before the readiness wait: a core that has to be
+// stopped here must stay reclaimable by the next attempt instead of surviving as
+// an orphan that holds the inbound port.
+func (m *Manager) startAndWait(ctx context.Context, inst *instance, dir, cfgPath string, spec StartSpec, apiPort int) (Proc, string, error) {
 	proc, err := m.runner.Start(ctx, spec)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
+	gen := m.reportStarted(inst, dir, cfgPath, proc)
 	if err := m.waitReady(ctx, proc, apiPort); err != nil {
-		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		_ = proc.Stop(stopCtx)
-		cancel()
-		return nil, err
+		m.abandonStarted(inst, dir, proc)
+		return nil, "", err
 	}
-	return proc, nil
+	return proc, gen, nil
 }
 
+// abandonStarted stops a core whose start failed and keeps its pid record when
+// the process could not be proven dead, so the next attempt can reclaim it.
+func (m *Manager) abandonStarted(inst *instance, dir string, proc Proc) {
+	if m.stopProc(inst, proc) {
+		removePidFile(dir)
+		return
+	}
+	m.logger.Printf("agent: ALERT: instance %s: keeping %s for the surviving core pid %d so the next attempt can reclaim it", inst.id, pidFileName, proc.PID())
+}
+
+// waitReady polls the management API of a freshly started core until it answers
+// or the readiness budget is exhausted.
+//
+// A single slow probe never ends the wait: on a slow host (nested
+// virtualization) the core logs "started" long before the stats service answers,
+// so the loop retries every readinessPollInterval until the configurable budget
+// is used up. The budget is independent of the stop budget.
 func (m *Manager) waitReady(ctx context.Context, proc Proc, apiPort int) error {
 	if apiPort <= 0 {
 		return nil
 	}
+	budget := m.timeouts.withDefaults().Readiness
 	server := net.JoinHostPort(APIListen, strconv.Itoa(apiPort))
-	deadline := m.now().Add(readinessTimeout)
+	deadline := m.now().Add(budget)
+	var lastErr error
 	for {
 		select {
 		case <-proc.Exited():
 			return fmt.Errorf("core exited during startup: %v", proc.ExitError())
+		case <-ctx.Done():
+			return ctx.Err()
 		default:
 		}
-		qctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		probe := readinessProbeTimeout
+		if remaining := deadline.Sub(m.now()); remaining > 0 && remaining < probe {
+			probe = remaining
+		}
+		qctx, cancel := context.WithTimeout(ctx, probe)
 		_, err := m.runner.StatsQuery(qctx, server)
 		cancel()
 		if err == nil {
 			return nil
 		}
+		lastErr = err
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if m.now().After(deadline) {
+		if !m.now().Before(deadline) {
 			if out := proc.Output(); len(out) > 0 {
-				return fmt.Errorf("core management API did not answer within %s (last output: %s)", readinessTimeout, out[len(out)-1])
+				return fmt.Errorf("core management API did not answer within %s (last output: %s)", budget, out[len(out)-1])
 			}
-			return fmt.Errorf("core management API did not answer within %s: %v", readinessTimeout, err)
+			return fmt.Errorf("core management API did not answer within %s: %v", budget, lastErr)
 		}
-		time.Sleep(150 * time.Millisecond)
+		wait := readinessPollInterval
+		if remaining := deadline.Sub(m.now()); remaining > 0 && remaining < wait {
+			wait = remaining
+		}
+		timer := time.NewTimer(wait)
+		select {
+		case <-proc.Exited():
+			timer.Stop()
+			return fmt.Errorf("core exited during startup: %v", proc.ExitError())
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
 	}
 }
 
@@ -677,62 +915,110 @@ func (m *Manager) reportStarted(inst *instance, dir, cfgPath string, proc Proc) 
 	return gen
 }
 
+// rollbackOrFail handles a failed apply.
+//
+// The last known good configuration is built and validated while the previous
+// core is still running: a rollback that cannot be validated must not take a
+// healthy instance down. Only a verified replacement is started, and it never
+// reuses the budget of the attempt that just failed.
 func (m *Manager) rollbackOrFail(ctx context.Context, inst *instance, t Target, opts ApplyOptions, cause error) Result {
-	// The old process may still authorize users that the new snapshot revoked.
-	m.sampleAndStop(ctx, inst, opts.BeforeStop)
-	if inst.lastGood != nil {
-		if res, ok := m.tryRollback(ctx, inst, t); ok {
+	plan, perr := m.prepareRollback(ctx, inst, t)
+	if perr != nil {
+		m.logger.Printf("agent: instance %s: no verified last known good config available: %v", inst.id, perr)
+	} else {
+		// The replacement is verified: stop the old core now (this also enforces
+		// the current authorization) and start the rollback config immediately.
+		m.sampleAndStop(ctx, inst, opts.BeforeStop)
+		if res, ok := m.startRollback(ctx, inst, t, plan); ok {
 			res.Error = cause.Error()
 			m.logger.Printf("agent: instance %s: applied last known good technical config with current authorization: %v", inst.id, cause)
 			return res
 		}
 	}
+	// Nothing verified could be applied. The old core may still authorize users
+	// that the current snapshot revoked, so it must not keep serving.
+	m.sampleAndStop(ctx, inst, opts.BeforeStop)
 	return m.failLocked(inst, t, cause)
 }
 
-// tryRollback re-applies the last good technical document while keeping only
-// clients that the current authorization still allows.
-func (m *Manager) tryRollback(ctx context.Context, inst *instance, t Target) (Result, bool) {
+// rollbackPlan is a rollback configuration that was built and validated while the
+// previous core was still running.
+type rollbackPlan struct {
+	cfgPath       string
+	doc           map[string]any
+	port          int
+	hash          string
+	emailToMember map[string]string
+}
+
+// prepareRollback builds the last good technical document filtered by the current
+// authorization, writes it and validates it with the independent rollback budget.
+func (m *Manager) prepareRollback(ctx context.Context, inst *instance, t Target) (*rollbackPlan, error) {
+	if inst.lastGood == nil {
+		return nil, fmt.Errorf("no last known good configuration")
+	}
+	dir, err := m.instanceDir(inst.id)
+	if err != nil {
+		return nil, err
+	}
+	filtered, err := FilterDocument(inst.lastGood, t.Authorization)
+	if err != nil {
+		return nil, err
+	}
+	port, err := m.portFn(m.reservedPorts(filtered.Document))
+	if err != nil {
+		return nil, err
+	}
+	config, err := BuildEffective(filtered.Document, port)
+	if err != nil {
+		return nil, err
+	}
+	cfgPath := filepath.Join(dir, "config.rollback.json")
+	if err := writeFileAtomic(cfgPath, config, 0o600); err != nil {
+		return nil, err
+	}
+	// A detached, more generous budget: the failure that triggered the rollback
+	// has usually already consumed the validation and readiness budgets of this
+	// instance, and reusing them would reject a config that is perfectly fine.
+	// The test itself is serialized like every other `xray -test` of this agent.
+	if terr := m.validateWithBudget(ctx, cfgPath, m.timeouts.withDefaults().rollbackBudget()); terr != nil {
+		m.logger.Printf("agent: instance %s: rollback config rejected: %v", inst.id, terr)
+		return nil, terr
+	}
+	hash, _ := HashDocument(filtered.Document)
+	return &rollbackPlan{
+		cfgPath:       cfgPath,
+		doc:           filtered.Document,
+		port:          port,
+		hash:          hash,
+		emailToMember: filtered.EmailToMember,
+	}, nil
+}
+
+// startRollback starts a validated rollback configuration with the independent
+// rollback budget.
+func (m *Manager) startRollback(ctx context.Context, inst *instance, t Target, plan *rollbackPlan) (Result, bool) {
 	dir, err := m.instanceDir(inst.id)
 	if err != nil {
 		return Result{}, false
 	}
-	filtered, err := FilterDocument(inst.lastGood, t.Authorization)
-	if err != nil {
-		return Result{}, false
-	}
-	port, err := m.portFn(m.reservedPorts(filtered.Document))
-	if err != nil {
-		return Result{}, false
-	}
-	config, err := BuildEffective(filtered.Document, port)
-	if err != nil {
-		return Result{}, false
-	}
-	cfgPath := filepath.Join(dir, "config.rollback.json")
-	if err := writeFileAtomic(cfgPath, config, 0o600); err != nil {
-		return Result{}, false
-	}
-	if err := m.runner.Test(ctx, cfgPath); err != nil {
-		m.logger.Printf("agent: instance %s: rollback config rejected: %v", inst.id, err)
-		return Result{}, false
-	}
-	proc, gen, err := m.startInstance(ctx, inst, dir, cfgPath, filtered.Document, &port)
+	sctx, cancel := stepContext(ctx, m.timeouts.withDefaults().rollbackBudget(), true)
+	proc, gen, err := m.startInstance(sctx, inst, dir, plan.cfgPath, plan.doc, &plan.port)
+	cancel()
 	if err != nil {
 		m.logger.Printf("agent: instance %s: rollback start failed: %v", inst.id, err)
 		return Result{}, false
 	}
-	hash, _ := HashDocument(filtered.Document)
 	inst.proc = proc
 	inst.coreGen = gen
-	inst.apiPort = port
+	inst.apiPort = plan.port
 	inst.state = StateRollback
 	inst.err = ""
-	inst.doc = filtered.Document
-	inst.hash = hash
-	inst.emailToMember = copyMap(filtered.EmailToMember)
-	inst.usersList = authorizedSubset(t.Users, filtered.EmailToMember)
-	inst.users = len(filtered.EmailToMember)
+	inst.doc = plan.doc
+	inst.hash = plan.hash
+	inst.emailToMember = copyMap(plan.emailToMember)
+	inst.usersList = authorizedSubset(t.Users, plan.emailToMember)
+	inst.users = len(plan.emailToMember)
 	inst.nextExpiry = t.NextExpiry
 	inst.startedAt = m.now()
 	inst.publish()
@@ -743,14 +1029,21 @@ func (m *Manager) tryRollback(ctx context.Context, inst *instance, t Target) (Re
 		AppliedUserCount:         inst.users,
 		OldConnectionsTerminated: true,
 		CoreGeneration:           gen,
-		Hash:                     hash,
-		Document:                 filtered.Document,
-		EmailToMember:            copyMap(filtered.EmailToMember),
-		Users:                    authorizedSubset(t.Users, filtered.EmailToMember),
+		Hash:                     plan.hash,
+		Document:                 plan.doc,
+		EmailToMember:            copyMap(plan.emailToMember),
+		Users:                    authorizedSubset(t.Users, plan.emailToMember),
 		NextExpiry:               t.NextExpiry,
 	}, true
 }
 
+// failLocked marks the instance failed and reclaims any core process that
+// survived the stop.
+//
+// A surviving core keeps the inbound port busy, so without this cleanup every
+// later retry fails with the same error until an operator kills the process by
+// hand. The reclaim is verified (creation identity, executable, instance
+// directory), so it can never kill a foreign or reused pid.
 func (m *Manager) failLocked(inst *instance, t Target, cause error) Result {
 	inst.proc = nil
 	inst.hash = ""
@@ -759,6 +1052,11 @@ func (m *Manager) failLocked(inst *instance, t Target, cause error) Result {
 	inst.users = 0
 	inst.emailToMember = map[string]string{}
 	inst.publish()
+	if dir, err := m.instanceDir(inst.id); err == nil {
+		if rerr := m.reapStale(dir); rerr != nil {
+			m.logger.Printf("agent: instance %s: leftover core process could not be reclaimed: %v", inst.id, rerr)
+		}
+	}
 	return Result{
 		InstanceID:               inst.id,
 		NodeID:                   t.NodeID,
@@ -779,6 +1077,39 @@ func (m *Manager) deferred(t Target) Result {
 	}
 }
 
+// deferValidation reports a `xray -test` that ran out of budget while waiting for
+// the serialized test slot.
+//
+// This is not a verdict about the document and not a failure of the instance: the
+// running core is left untouched, the state, the committed hash and the applied
+// user count are unchanged, and the supervisor treats StateDeferred as "nothing
+// was attempted this poll", so the same target is retried on the next poll without
+// entering a rollback or a failed/backoff state.
+func (m *Manager) deferValidation(inst *instance, t Target, cause error) Result {
+	m.logger.Printf("agent: instance %s: config validation deferred, the serialized `xray -test` slot was not available in time: %v", inst.id, cause)
+	view := inst.view()
+	return Result{
+		InstanceID:       inst.id,
+		NodeID:           inst.nodeID,
+		State:            StateDeferred,
+		Error:            cause.Error(),
+		AppliedUserCount: view.users,
+		CoreGeneration:   view.coreGeneration,
+		Hash:             view.hash,
+		Document:         view.document,
+		EmailToMember:    copyMap(view.emailToMember),
+		Users:            copyUsers(view.usersList),
+		NextExpiry:       view.nextExpiry,
+	}
+}
+
+// sampleAndStop collects the final usage counters and stops the core of an
+// instance.
+//
+// The stop uses its own budget (independent of the readiness budget) and the pid
+// record is only removed once the process is provably gone. A survivor keeps its
+// record so reapStale can prove ownership on the next attempt and reclaim it,
+// which is what makes a failed apply self healing instead of terminal.
 func (m *Manager) sampleAndStop(ctx context.Context, inst *instance, hook SampleHook) {
 	if inst.proc == nil {
 		return
@@ -790,23 +1121,150 @@ func (m *Manager) sampleAndStop(ctx context.Context, inst *instance, hook Sample
 	}
 	proc := inst.proc
 	inst.proc = nil
-	sctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	err := proc.Stop(sctx)
-	cancel()
-	m.mu.Lock()
-	delete(m.owned, proc.PID())
-	m.mu.Unlock()
-	if err != nil {
-		m.logger.Printf("agent: instance %s: stop returned %v", inst.id, err)
-	}
-	if out := proc.Output(); len(out) > 0 && err != nil {
-		m.logger.Printf("agent: instance %s: last core output: %s", inst.id, out[len(out)-1])
-	}
+	gone := m.stopProc(inst, proc)
 	inst.state = StateStopped
 	inst.apiPort = 0
 	inst.publish()
-	if dir, derr := m.instanceDir(inst.id); derr == nil {
+	dir, derr := m.instanceDir(inst.id)
+	if derr != nil {
+		return
+	}
+	if gone {
 		removePidFile(dir)
+		return
+	}
+	m.logger.Printf("agent: ALERT: instance %s: keeping %s for the surviving core pid %d so the next attempt can reclaim it", inst.id, pidFileName, proc.PID())
+}
+
+// stopProc terminates one core process with the stop budget and reports whether
+// it is provably gone. The pid leaves the owned set first so reapStale can
+// reclaim it when it survives.
+func (m *Manager) stopProc(inst *instance, proc Proc) bool {
+	if proc == nil {
+		return true
+	}
+	m.mu.Lock()
+	delete(m.owned, proc.PID())
+	m.mu.Unlock()
+	sctx, cancel := context.WithTimeout(context.Background(), m.timeouts.withDefaults().Stop)
+	err := proc.Stop(sctx)
+	cancel()
+	if err != nil {
+		m.logger.Printf("agent: instance %s: stop returned %v", inst.id, err)
+	}
+	if exitedWithin(proc, stopVerifyWindow) {
+		return true
+	}
+	// Secondary confirmation for a Proc whose exit signal is unreliable: a pid
+	// that no longer exists cannot be holding the inbound port.
+	if _, found, ierr := processIdentity(proc.PID()); ierr == nil && !found {
+		return true
+	}
+	if out := proc.Output(); len(out) > 0 {
+		m.logger.Printf("agent: instance %s: last core output: %s", inst.id, out[len(out)-1])
+	}
+	m.logger.Printf("agent: instance %s: core pid %d is still alive after the %s stop budget", inst.id, proc.PID(), m.timeouts.withDefaults().Stop)
+	return false
+}
+
+// stopVerifyWindow is how long the manager waits for a stopped core to disappear
+// before it treats the process as a survivor.
+var stopVerifyWindow = 2 * time.Second
+
+// exitedWithin reports whether the process exited within the given window.
+func exitedWithin(proc Proc, window time.Duration) bool {
+	select {
+	case <-proc.Exited():
+		return true
+	default:
+	}
+	timer := time.NewTimer(window)
+	defer timer.Stop()
+	select {
+	case <-proc.Exited():
+		return true
+	case <-timer.C:
+	}
+	select {
+	case <-proc.Exited():
+		return true
+	default:
+		return false
+	}
+}
+
+// validateConfig runs `xray -test` with a budget of its own.
+//
+// The validation is detached from the per instance deadline: on a slow host an
+// earlier stalled step must never make it fail with a killed process (which is
+// what turned a slow start into an unrecoverable failure). A shutdown still
+// aborts it.
+func (m *Manager) validateConfig(ctx context.Context, cfgPath string) error {
+	return m.validateWithBudget(ctx, cfgPath, m.timeouts.withDefaults().Validate)
+}
+
+// ErrValidationTimeout reports that a `xray -test` run did not finish inside its
+// budget, including the time it spent waiting for the serialized test slot.
+//
+// It is deliberately distinct from a rejected configuration: `xray -test` starts
+// the core's StatsService, so concurrent runs block each other for minutes on a
+// loaded host. A valid document that only queued too long must never be reported
+// as invalid, must never trigger a rollback and must never mark the instance
+// failed.
+var ErrValidationTimeout = errors.New("config validation timed out")
+
+// validateWithBudget runs one serialized `xray -test` with an explicit budget.
+func (m *Manager) validateWithBudget(ctx context.Context, cfgPath string, budget time.Duration) error {
+	vctx, cancel := stepContext(ctx, budget, true)
+	err := m.runTestSerialized(vctx, cfgPath)
+	// The budget state is sampled before cancel(), otherwise a real rejection
+	// would be indistinguishable from a run that was cut short.
+	expired := vctx.Err()
+	cancel()
+	if err != nil && errors.Is(expired, context.DeadlineExceeded) {
+		return fmt.Errorf("%w: %w", ErrValidationTimeout, err)
+	}
+	return err
+}
+
+// runTestSerialized runs m.runner.Test while holding the manager wide validation
+// slot, so two `xray -test` processes of this agent never run at the same time.
+//
+// Why this exists: `xray -test` instantiates the StatsService (api/stats/policy).
+// Five concurrent runs against the same host took 116 seconds each instead of
+// 26 milliseconds, which is what produced the historical "xray -test failed:
+// signal: killed" and "core management API did not answer within 5s" reports.
+// Waiting for the slot is part of the caller's budget: a run that cannot start in
+// time returns a timeout instead of testing after it was reported as out of time.
+func (m *Manager) runTestSerialized(ctx context.Context, cfgPath string) error {
+	if err := m.validateMu.lock(ctx); err != nil {
+		return fmt.Errorf("no free `xray -test` slot within the validation budget: %w", err)
+	}
+	defer m.validateMu.unlock()
+	// Re-check the budget: lock can be granted at the very instant the deadline
+	// fires, and select would otherwise pick the slot at random.
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("no free `xray -test` slot within the validation budget: %w", err)
+	}
+	return m.runner.Test(ctx, cfgPath)
+}
+
+// stepContext returns a context with its own budget for one lifecycle step.
+//
+// When detachDeadline is set the parent deadline is ignored, so a step always
+// gets its full budget even after an earlier step consumed the per instance
+// budget. Cancellation of the parent (shutdown) is always propagated.
+func stepContext(parent context.Context, budget time.Duration, detachDeadline bool) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), budget)
+	stop := context.AfterFunc(parent, func() {
+		if detachDeadline && errors.Is(parent.Err(), context.DeadlineExceeded) {
+			return
+		}
+		cancel()
+	})
+	return ctx, func() {
+		stop()
+		cancel()
 	}
 }
 
@@ -902,10 +1360,14 @@ func (m *Manager) reservedPorts(doc map[string]any) map[int]bool {
 
 // reapStale stops a leftover core process recorded in the instance directory,
 // but only when its identity can be proven: the recorded process creation
-// identity, the full executable path and the instance config path must all
-// match. Anything else returns ErrUnverifiedProcess and the process is left
-// running, because a reused pid must never be killed.
-func (m *Manager) reapStale(dir, cfgPath string) error {
+// identity, the full executable path and the instance directory of the recorded
+// config must all match. Anything else returns ErrUnverifiedProcess and the
+// process is left running, because a reused pid must never be killed.
+//
+// The record is matched against the instance directory rather than one exact
+// config file: a core left behind by a failed rollback is started with
+// config.rollback.json and must still be reclaimable.
+func (m *Manager) reapStale(dir string) error {
 	rec, err := readPidFile(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -930,7 +1392,7 @@ func (m *Manager) reapStale(dir, cfgPath string) error {
 		removePidFile(dir)
 		return nil
 	}
-	if verr := m.verifyOwnership(rec, live, cfgPath); verr != nil {
+	if verr := m.verifyOwnership(rec, live, dir); verr != nil {
 		return verr
 	}
 	if terr := terminateProcess(rec.PID); terr != nil {
@@ -941,11 +1403,11 @@ func (m *Manager) reapStale(dir, cfgPath string) error {
 	return nil
 }
 
-func (m *Manager) verifyOwnership(rec pidRecord, live ProcessIdentity, cfgPath string) error {
+func (m *Manager) verifyOwnership(rec pidRecord, live ProcessIdentity, dir string) error {
 	if rec.Created == "" || live.Created == "" {
 		return fmt.Errorf("%w: pid %d has no recorded process creation identity", ErrUnverifiedProcess, rec.PID)
 	}
-	if rec.Created != live.Created {
+	if !creationIdentityMatches(rec.Created, live.Created) {
 		return fmt.Errorf("%w: pid %d creation identity changed (recorded %s, live %s); the pid was reused", ErrUnverifiedProcess, rec.PID, rec.Created, live.Created)
 	}
 	if rec.Executable == "" || !samePath(rec.Executable, live.Executable) {
@@ -954,13 +1416,79 @@ func (m *Manager) verifyOwnership(rec pidRecord, live ProcessIdentity, cfgPath s
 	if m.xrayPath != "" && !samePath(m.xrayPath, live.Executable) {
 		return fmt.Errorf("%w: pid %d executable %q is not the configured core %q", ErrUnverifiedProcess, rec.PID, live.Executable, m.xrayPath)
 	}
-	if cfgPath == "" || rec.ConfigPath == "" || !samePath(rec.ConfigPath, cfgPath) {
-		return fmt.Errorf("%w: pid %d is recorded for config %q, not %q", ErrUnverifiedProcess, rec.PID, rec.ConfigPath, cfgPath)
+	if dir == "" || rec.ConfigPath == "" || !samePath(filepath.Dir(rec.ConfigPath), dir) {
+		return fmt.Errorf("%w: pid %d is recorded for config %q, which is not inside %q", ErrUnverifiedProcess, rec.PID, rec.ConfigPath, dir)
 	}
 	if live.CommandLine != "" && !strings.Contains(live.CommandLine, rec.ConfigPath) {
 		return fmt.Errorf("%w: pid %d command line does not reference %q", ErrUnverifiedProcess, rec.PID, rec.ConfigPath)
 	}
 	return nil
+}
+
+// creationIdentityMatches compares the recorded and live creation identity of a
+// process.
+//
+// The identity is "<boot time>/<starttime>". starttime (proc/PID/stat field 22)
+// is a monotonically increasing tick count since boot and never changes for a
+// live process, so it is the part that actually proves "this pid was not
+// reused". The boot time prefix only disambiguates two processes that happen to
+// share a starttime across different boots.
+//
+// Requiring an exact match on the boot prefix is unsafe: /proc/stat's btime is
+// derived from the current wall clock minus uptime and is therefore *not*
+// stable when the clock is adjusted or the machine is suspended. Under WSL2 the
+// observed btime moved by seconds to minutes within a single boot, which made
+// every recorded identity look "reused" and permanently blocked reclaiming the
+// leftover cores (the agent logged "creation identity changed … the pid was
+// reused" for processes it had started itself, and the instance stayed failed
+// with two cores fighting over the inbound port).
+//
+// So: the starttime component must match exactly, and the boot component is
+// compared leniently - equal, either side unknown, or close enough that a clock
+// adjustment (rather than a reboot) explains the difference. A genuine reboot
+// changes btime far more than the tolerance, and a reused pid without a reboot
+// cannot keep the same starttime.
+func creationIdentityMatches(recorded, live string) bool {
+	recBoot, recStart, recOK := splitCreationIdentity(recorded)
+	liveBoot, liveStart, liveOK := splitCreationIdentity(live)
+	if !recOK || !liveOK {
+		// Unknown format: fall back to the strict comparison so an unparsable
+		// identity is never silently trusted.
+		return recorded == live
+	}
+	if recStart != liveStart {
+		return false
+	}
+	if recBoot == liveBoot {
+		return true
+	}
+	recSeconds, errA := strconv.ParseInt(recBoot, 10, 64)
+	liveSeconds, errB := strconv.ParseInt(liveBoot, 10, 64)
+	if errA != nil || errB != nil {
+		// "?" is what bootTime() returns when /proc/stat is unreadable. Treat an
+		// unknown boot time as "cannot contradict", since starttime already matched.
+		return true
+	}
+	delta := recSeconds - liveSeconds
+	if delta < 0 {
+		delta = -delta
+	}
+	return delta <= creationIdentityBootTolerance
+}
+
+// creationIdentityBootTolerance bounds how far the boot-time component of a
+// creation identity may drift before the identity is treated as a different
+// boot. A real reboot shifts btime by at least the uptime of the previous boot
+// (minutes to days), while clock adjustment and suspend/resume shift it by
+// seconds. One hour is comfortably inside that gap.
+const creationIdentityBootTolerance = 3600
+
+func splitCreationIdentity(id string) (boot, start string, ok bool) {
+	idx := strings.LastIndex(id, "/")
+	if idx <= 0 || idx == len(id)-1 {
+		return "", "", false
+	}
+	return id[:idx], id[idx+1:], true
 }
 
 // SetSecrets registers the values that must be redacted from core output. It must
