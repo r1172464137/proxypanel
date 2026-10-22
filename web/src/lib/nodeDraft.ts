@@ -324,6 +324,17 @@ export function validateNodeDraft(draft: NodeDraft): NodeValidation {
   if (!draft.host.trim()) err('node-host', '对外地址必填：成员客户端会连这个地址')
   const port = Number(draft.port)
   if (!Number.isInteger(port) || port < 1 || port > 65535) err('node-port', '端口必须是 1–65535 的整数')
+  // 对外端口可选：留空表示与监听端口相同。填了就必须是合法端口，
+  // 且不能等于监听端口 —— 相同说明没配对，几乎总是误填。
+  const rawExternal = draft.external_port.trim()
+  if (rawExternal) {
+    const externalPort = Number(rawExternal)
+    if (!Number.isInteger(externalPort) || externalPort < 1 || externalPort > 65535) {
+      err('external_port', '对外端口必须是 1–65535 的整数（留空表示与监听端口相同）')
+    } else if (Number.isInteger(port) && externalPort === port) {
+      err('external_port', '对外端口不能与监听端口相同；若两者一致，请留空')
+    }
+  }
   if (!draft.listen.trim()) err('node-listen', '监听地址必填')
   const sortOrder = Number(draft.sort_order)
   if (!Number.isInteger(sortOrder) || sortOrder < 0) err('node-sort', '排序值必须是非负整数')

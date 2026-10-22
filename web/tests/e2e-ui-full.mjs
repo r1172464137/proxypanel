@@ -101,10 +101,28 @@ async function recordFailure(page, name, expectation, actual, extra = {}) {
   return record(name, expectation, actual, false, { ...extra, ...(shot ? { screenshot: shot } : {}) })
 }
 
+// 未登录页面（/、/login、/redeem）启动时会探测一次当前会话，后端按契约返回
+// 401。Chrome 把这个失败的请求记成一条 "Failed to load resource ... 401"
+// console error，JS 侧无法抑制（fetch 的 catch 不影响浏览器的网络层记录）。
+// 这是 SPA 的常态，不是缺陷，所以单列出来；出现**其他**任何 console error
+// 仍然算 FAIL。
+// console 的 text 里没有请求 URL，必须用 msg.location().url 才能认出是哪一次请求
+// （实测：{url: ".../api/v1/auth/session", line: 0, column: 0}）。
+function isAnonymousSessionProbe(msg) {
+  if (!/status of 401/.test(msg.text())) return false
+  const url = msg.location?.()?.url || ''
+  return /\/api\/v1\/auth\/session$/.test(url)
+}
+
 function attachLogs(page, bucket) {
+  bucket.anonymousProbe = []
   page.on('console', (msg) => {
     if (msg.type() !== 'error') return
     const entry = `${page.url()} :: ${msg.text().split('\n')[0]}`
+    if (isAnonymousSessionProbe(msg)) {
+      bucket.anonymousProbe.push(entry)
+      return
+    }
     bucket.console.push(entry)
     rawConsoleErrors.push(entry)
   })
@@ -422,12 +440,15 @@ async function runRenderingMatrix(browser, state, ids) {
         )
 
         // 3) zero console errors (every message is preserved in messages)
+        const probeNote = bucket.anonymousProbe?.length
+          ? `（另有 ${bucket.anonymousProbe.length} 条未登录会话探测的 401，已豁免）`
+          : ''
         const okConsole = bucket.console.length === 0
         if (!okConsole) {
           record(
             `${name} · console error`,
-            '0 条 console error',
-            `${bucket.console.length} 条：${bucket.console.join(' | ').slice(0, 500)}`,
+            '0 条 console error（未登录页的 401 会话探测除外）',
+            `${bucket.console.length} 条：${bucket.console.join(' | ').slice(0, 500)}${probeNote}`,
             false,
             {
               id: `${id}-console`,
@@ -436,7 +457,7 @@ async function runRenderingMatrix(browser, state, ids) {
             },
           )
         } else {
-          record(`${name} · console error`, '0 条 console error', '0 条', true, { id: `${id}-console` })
+          record(`${name} · console error`, '0 条 console error（未登录页的 401 会话探测除外）', `0 条${probeNote}`, true, { id: `${id}-console` })
         }
 
         // 4) zero pageerror
@@ -865,8 +886,36 @@ try {
       if (!formOk) await snap(adminPage, `交互3_${tpl.key}_表单`)
 
       await adminPage.getByRole('button', { name: '保存节点', exact: true }).click()
-      await adminPage.waitForURL(/\/admin\/nodes$/, { timeout: 15000 }).catch(() => {})
-      await adminPage.waitForTimeout(500)
+      await adminPage.waitForTimeout(900)
+
+      if (tpl.security === 'tls') {
+        // TLS 模板只填占位域名，没有证书文件。产品在这里的正确行为是
+        // **阻断保存并明确说明缺什么**（没有证书的核心起不来，与其让它下发
+        // 到 Agent 才失败，不如在表单里就拦住）。所以这个用例验的是阻断，
+        // 而不是"保存成功"——以前脚本按后者断言，才把正确行为判成 FAIL。
+        const blocked = await adminPage
+          .getByText('TLS 证书文件未配置', { exact: false })
+          .first()
+          .isVisible()
+          .catch(() => false)
+        const stayed = adminPage.url().includes('/admin/nodes/new')
+        record(
+          `交互3 模板 ${tpl.key} 缺证书被阻断`,
+          'TLS 模板未填证书时阻止保存，并提示需要「证书文件路径」/「私钥文件路径」',
+          `停在表单=${stayed}，出现证书提示=${blocked}`,
+          blocked && stayed,
+        )
+        if (!(blocked && stayed)) await snap(adminPage, `交互3_${tpl.key}_缺证书`)
+
+        // 补上证书路径后必须能保存成功，否则阻断就成了死路。
+        await adminPage.locator('#tls-cert-file').fill('/etc/proxypanel/tls/e2e-cert.pem')
+        await adminPage.locator('#tls-key').fill('/etc/proxypanel/tls/e2e-key.pem')
+        await adminPage.getByRole('button', { name: '保存节点', exact: true }).click()
+        await adminPage.waitForURL(/\/admin\/nodes$/, { timeout: 15000 }).catch(() => {})
+        await adminPage.waitForTimeout(600)
+      }
+
+      await adminPage.waitForURL(/\/admin\/nodes$/, { timeout: 5000 }).catch(() => {})
       const inList = await adminPage.getByText(tpl.name, { exact: true }).first().isVisible().catch(() => false)
       record(
         `交互3 模板 ${tpl.key} 保存`,
@@ -922,6 +971,73 @@ try {
       nameInvalid && portInvalid && inlineName && inlinePort,
     )
     if (!(nameInvalid && portInvalid && inlineName && inlinePort)) await snap(adminPage, '交互4_字段校验')
+  }
+
+  /* ---------------- Interaction 4b: 对外端口 ---------------- */
+  console.log('\n=== 交互 4b：节点对外端口 ===')
+  {
+    await adminPage.goto(`${BASE}/admin/nodes/new`, { waitUntil: 'networkidle' })
+    await adminPage.waitForTimeout(400)
+
+    // 两个端口字段的语义必须能从界面读出来：监听端口=本机实际监听，
+    // 对外端口=成员客户端连接的端口（可留空表示相同）。
+    const listenLabel = await adminPage.getByText('监听端口', { exact: true }).first().isVisible().catch(() => false)
+    const externalLabel = await adminPage.getByText('对外端口（可选）', { exact: true }).first().isVisible().catch(() => false)
+    // 留空含义写在 input 的 placeholder 里（不是 text node，getByText 抓不到），
+    // 同时字段下方有一段说明文案。两者任一存在即可。
+    const placeholder = await adminPage.locator('#node-external-port').getAttribute('placeholder')
+    const hint =
+      Boolean(placeholder && placeholder.includes('留空')) ||
+      (await adminPage
+        .getByText('成员客户端实际连接的端口', { exact: false })
+        .first()
+        .isVisible()
+        .catch(() => false))
+    record(
+      '交互4b 字段语义可读',
+      '界面区分「监听端口」与「对外端口（可选）」，并说明留空含义',
+      `监听端口=${listenLabel}, 对外端口=${externalLabel}, 留空提示=${hint}`,
+      listenLabel && externalLabel && hint,
+    )
+
+    // 实时校验：对外端口必须 1-65535。
+    await adminPage.locator('#node-external-port').fill('70000')
+    await adminPage.waitForTimeout(400)
+    const badInvalid = (await adminPage.locator('#node-external-port').getAttribute('aria-invalid')) === 'true'
+    record(
+      '交互4b 对外端口越界校验',
+      '填 70000 时 aria-invalid=true 并显示就地错误',
+      `aria-invalid=${badInvalid}`,
+      badInvalid,
+    )
+
+    if (!badInvalid) await snap(adminPage, '交互4b_对外端口越界')
+
+    // 真实保存 + 服务端回读。
+    const epName = `e2e-外部端口-${Date.now().toString().slice(-6)}`
+    await adminPage.locator('#node-external-port').fill('')
+    await adminPage.locator('#node-name').fill(epName)
+    await adminPage.locator('#node-host').fill('relay.e2e.test')
+    await adminPage.locator('#node-server').selectOption(created.serverId)
+    await adminPage.locator('#node-port').fill('20199')
+    await adminPage.locator('#node-external-port').fill('443')
+    await adminPage.getByRole('button', { name: /保存|创建/ }).first().click()
+    await adminPage.waitForTimeout(1500)
+
+    const epNodes = await apiPage(adminContext, '/api/v1/admin/nodes?limit=200')
+    const epNode = epNodes.find((x) => x.name === epName)
+    const readBack = epNode ? Number(epNode.external_port) : null
+    record(
+      '交互4b 对外端口保存',
+      '界面上填的 443 写入服务端，监听端口仍为 20199',
+      `external_port=${readBack}, port=${epNode?.port}`,
+      Boolean(epNode) && readBack === 443 && Number(epNode.port) === 20199,
+    )
+    if (epNode) {
+      created.nodeIds.push(epNode.id)
+      created.nodeNames.push(epNode.name)
+    }
+    if (!(epNode && readBack === 443)) await snap(adminPage, '交互4b_对外端口保存')
   }
 
   /* ---------------- Interactions 5 & 6: group -> subscription -> member ---------------- */
@@ -1131,7 +1247,18 @@ try {
     const preview = adminPage.getByRole('dialog').filter({ hasText: '批量影响预览' }).last()
     const previewVisible = await preview.waitFor({ state: 'visible', timeout: 15000 }).then(() => true).catch(() => false)
     if (previewVisible) {
-      await preview.getByText(/逐个成员的影响|重新预览|不可执行对象/).first().waitFor({ state: 'visible', timeout: 20000 }).catch(() => {})
+      // 加载中就已经有「重新预览」「取消」按钮了，用它们当就绪信号会立刻返回、
+      // 读到的是 "正在请求影响预览"。必须等 loading 文案消失、表头真正出现。
+      await preview
+        .getByText('正在请求影响预览', { exact: false })
+        .first()
+        .waitFor({ state: 'hidden', timeout: 20000 })
+        .catch(() => {})
+      await preview
+        .getByText('逐个成员的影响', { exact: false })
+        .first()
+        .waitFor({ state: 'visible', timeout: 20000 })
+        .catch(() => {})
     }
     const previewText = previewVisible ? await preview.innerText().catch(() => '') : ''
     const hasPerMember = previewText.includes('逐个成员的影响') && previewText.includes('会发生什么')
