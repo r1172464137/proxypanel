@@ -135,14 +135,31 @@ jobs:
           echo "--- agent -version ---"
           docker run --rm "$AGENT" -version | tee /tmp/agent-version.txt
           grep -q 'proxypanel-agent' /tmp/agent-version.txt
-          echo "--- panel 拒绝缺失配置（预期非零退出） ---"
+          # 镜像内置 nginx，没有证书挂载时必须明确拒绝启动而不是起个 502 站点。
+          echo "--- panel 在没有证书时拒绝启动（预期非零退出） ---"
           set +e
-          docker run --rm "$PANEL" > /tmp/panel-out.txt 2>&1
+          docker run --rm "$PANEL" > /tmp/panel-nocert.txt 2>&1
+          rc=$?
+          set -e
+          cat /tmp/panel-nocert.txt
+          test "$rc" -ne 0
+          grep -q 'cannot read TLS certificate' /tmp/panel-nocert.txt
+
+          # 挂上临时自签证书后，缺 PANEL_MASTER_KEY 应当在面板进程里被拒绝。
+          mkdir -p /tmp/panel-certs
+          openssl req -x509 -newkey rsa:2048 -sha256 -days 1 -nodes             -keyout /tmp/panel-certs/privkey.pem -out /tmp/panel-certs/fullchain.pem             -subj "/CN=smoke.invalid" -addext "subjectAltName=DNS:smoke.invalid" 2>/dev/null
+          echo "--- panel 缺 PANEL_MASTER_KEY（预期非零退出） ---"
+          set +e
+          docker run --rm -v /tmp/panel-certs:/certs:ro "$PANEL" > /tmp/panel-out.txt 2>&1
           rc=$?
           set -e
           cat /tmp/panel-out.txt
           test "$rc" -ne 0
-          grep -q 'PANEL_MASTER_KEY' /tmp/panel-out.txt
+          grep -Eq 'PANEL_MASTER_KEY|DATABASE_URL' /tmp/panel-out.txt
+
+          echo "--- 前端产物与 nginx 配置已打进镜像 ---"
+          docker run --rm --entrypoint /bin/ls "$PANEL" /usr/share/proxypanel/web/index.html
+          docker run --rm --entrypoint /bin/ls "$PANEL" /etc/nginx/nginx.conf
           echo "--- 迁移文件已打进面板镜像 ---"
           docker run --rm --entrypoint /bin/ls "$PANEL" /app/migrations
 
