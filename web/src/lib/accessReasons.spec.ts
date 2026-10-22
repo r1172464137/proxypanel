@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { accessReasonDetails, accessReasonSummary, describeAccessReason } from './accessReasons'
+import { accessReasonDetails, accessReasonSummary, describeAccessReason, describeQuotaSource } from './accessReasons'
 
 // 这些测试锁住"用户能看懂"这件事。
 //
@@ -60,5 +60,23 @@ describe('访问原因映射', () => {
     expect(accessReasonSummary(undefined)).toBe('')
     expect(accessReasonSummary(null)).toBe('')
     expect(accessReasonDetails(undefined)).toEqual([])
+  })
+})
+
+describe('额度来源映射', () => {
+  // 后端 quota_source 只有 subscription / override / unlimited 三种。
+  // 之前 MeStatusView 直接打印原始值（"额度来源：subscription"），
+  // MembersView 里还写了一套三元表达式。
+  it('后端的三种来源都翻成中文', () => {
+    expect(describeQuotaSource('subscription')).toBe('跟随订阅')
+    expect(describeQuotaSource('override')).toBe('单独设置')
+    expect(describeQuotaSource('unlimited')).toBe('不限量')
+  })
+
+  it('空值与未识别的值有合理降级', () => {
+    expect(describeQuotaSource('')).toBe('未知')
+    expect(describeQuotaSource(undefined)).toBe('未知')
+    expect(describeQuotaSource(null)).toBe('未知')
+    expect(describeQuotaSource('future_value')).toBe('future_value')
   })
 })

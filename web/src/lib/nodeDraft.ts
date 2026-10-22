@@ -279,64 +279,91 @@ export function clientKnownKeys(): string[] {
   return ['serverName', 'sni', 'publicKey', 'shortId', 'fingerprint', 'alpn', 'allowInsecure']
 }
 
+/**
+ * 一条校验结果。
+ *
+ * field 是**表单元素的 id**（与模板里的 `id="node-name"` 对应），用来把错误
+ * 定位到具体输入框。没有 field 的条目只出现在汇总区。
+ */
+export interface ValidationItem {
+  field?: string
+  message: string
+}
+
 export interface NodeValidation {
   errors: string[]
   warnings: string[]
+  /** 与 errors 一一对应的结构化条目（含字段 id）。 */
+  errorItems: ValidationItem[]
+  /** 与 warnings 一一对应的结构化条目。 */
+  warningItems: ValidationItem[]
 }
 
 export function validateNodeDraft(draft: NodeDraft): NodeValidation {
+  const errorItems: ValidationItem[] = []
+  const warningItems: ValidationItem[] = []
   const errors: string[] = []
   const warnings: string[] = []
+  // err(field, message) / warn(field, message) 同时写入两条通道，
+  // 汇总区仍然显示 errors/warnings 的纯文本。
+  const err = (field: string | undefined, message: string) => {
+    errors.push(message)
+    errorItems.push({ field, message })
+  }
+  const warn = (field: string | undefined, message: string) => {
+    warnings.push(message)
+    warningItems.push({ field, message })
+  }
 
-  if (!draft.name.trim()) errors.push('节点名称必填')
-  if (!draft.server_id.trim()) errors.push('必须选择所属服务器')
-  if (!draft.host.trim()) errors.push('对外地址（host）必填')
+  if (!draft.name.trim()) err('node-name', '节点名称必填')
+  if (!draft.server_id.trim()) err('node-server', '必须选择所属服务器')
+  if (!draft.host.trim()) err('node-host', '对外地址必填：成员客户端会连这个地址')
   const port = Number(draft.port)
-  if (!Number.isInteger(port) || port < 1 || port > 65535) errors.push('端口必须是 1–65535 的整数')
-  if (!draft.listen.trim()) errors.push('监听地址（listen）必填')
+  if (!Number.isInteger(port) || port < 1 || port > 65535) err('node-port', '端口必须是 1–65535 的整数')
+  if (!draft.listen.trim()) err('node-listen', '监听地址必填')
   const sortOrder = Number(draft.sort_order)
-  if (!Number.isInteger(sortOrder) || sortOrder < 0) errors.push('排序值必须是非负整数')
+  if (!Number.isInteger(sortOrder) || sortOrder < 0) err('node-sort', '排序值必须是非负整数')
 
   const network = String(draft.stream_settings.network ?? '')
-  if (!network) errors.push('stream_settings.network 必填（如 tcp/ws/grpc）')
+  if (!network) err('stream-network', '传输方式必填（tcp / ws / grpc 等）')
   else if (!(NETWORK_OPTIONS as readonly string[]).includes(network)) {
-    warnings.push(`传输 ${network} 不在常用选项中，将按原生 JSON 原样提交，请确认真实核心支持`)
+    warn('stream-network', `传输 ${network} 不在常用选项中，将按原生 JSON 原样提交，请确认真实核心支持`)
   }
 
   const security = String(draft.stream_settings.security ?? 'none')
   if (security === 'reality' && draft.protocol !== 'vless') {
-    errors.push('REALITY 仅支持 VLESS 入站')
+    err('node-protocol', 'REALITY 只能配 VLESS，请先把协议改成 VLESS')
   }
   if (security === 'reality') {
     const view = streamView(draft.stream_settings)
-    if (!view.realityDest.trim()) errors.push('REALITY 需要 dest（回落目标）')
-    if (!view.realityServerNames.trim()) errors.push('REALITY 需要至少一个 serverNames')
-    if (!view.realityPrivateKey.trim()) errors.push('REALITY 需要服务端私钥 privateKey')
-    if (!view.realityShortIds.trim()) warnings.push('REALITY 未填写 shortIds，客户端可能无法连接')
-    if (!view.realityPublicKey.trim()) warnings.push('客户端参数 client_settings.publicKey 为空：成员配置将不可用')
+    if (!view.realityDest.trim()) err('reality-dest', 'REALITY 需要一个伪装目标，例如 www.microsoft.com:443')
+    if (!view.realityServerNames.trim()) err('reality-server-names', 'REALITY 需要至少一个允许的域名')
+    if (!view.realityPrivateKey.trim()) err('reality-private-key', 'REALITY 需要私钥，可点「生成一对」自动生成')
+    if (!view.realityShortIds.trim()) warn('reality-short-ids', '没填短 ID；客户端可能连不上，可以点「生成」')
+    if (!view.realityPublicKey.trim()) warn('client-public-key', '客户端公钥为空，成员配置会不可用')
   }
   if (security === 'tls') {
     const view = streamView(draft.stream_settings)
     if (!view.tlsCertFile || !view.tlsKeyFile) {
-      warnings.push('TLS 证书路径未填写完整；证书文件须位于 Agent 受控路径')
+      warn('tls-cert-file', 'TLS 证书路径没填完整；证书必须在 Agent 的受控目录里')
     }
   }
   if (security !== 'tls' && security !== 'reality' && security !== 'none') {
-    warnings.push(`安全类型 ${security} 未在界面选项中，将按原生 JSON 原样提交`)
+    warn('stream-security', `加密层 ${security} 不在选项里，将按原始 JSON 提交`)
   }
 
   if (draft.protocol === 'vless') {
-    if (!String(draft.protocol_settings.decryption ?? '').trim()) errors.push('VLESS 需要 decryption（通常为 none）')
+    if (!String(draft.protocol_settings.decryption ?? '').trim()) err('protocol-decryption', 'VLESS 需要填 decryption，通常是 none')
   }
   if (draft.protocol === 'shadowsocks') {
     const method = String(draft.protocol_settings.method ?? draft.cipher ?? '')
-    if (!method) errors.push('Shadowsocks 需要加密方法（method/cipher）')
+    if (!method) err('ss-method', 'Shadowsocks 需要选一个加密算法')
     if (method.startsWith('2022-')) {
       if (!String(draft.protocol_settings.password ?? '').trim()) {
-        warnings.push('Shadowsocks 2022 使用多用户主密钥；settings.password 为空时请确认由后端注入')
+        warn('ss-password', '没填服务端密钥；若不由后端注入，节点将无法启动')
       }
     } else if (method && !String(draft.protocol_settings.password ?? '').trim()) {
-      warnings.push('经典 Shadowsocks 入站通常需要 settings.password；如由后端注入可留空')
+      warn('ss-password', '经典 Shadowsocks 通常需要密码')
     }
   }
 
@@ -346,26 +373,26 @@ export function validateNodeDraft(draft: NodeDraft): NodeValidation {
     try {
       parsed = JSON.parse(fallbacks)
     } catch (caught) {
-      errors.push(`fallbacks JSON 解析失败：${caught instanceof Error ? caught.message : String(caught)}`)
+      err('protocol-fallbacks', `回落规则不是合法 JSON：${caught instanceof Error ? caught.message : String(caught)}`)
     }
-    if (parsed !== undefined && !Array.isArray(parsed)) errors.push('fallbacks 必须是 JSON 数组')
+    if (parsed !== undefined && !Array.isArray(parsed)) err('protocol-fallbacks', '回落规则必须是 JSON 数组，例如 []')
   }
 
   if (isRecord(draft.protocol_settings) && 'clients' in draft.protocol_settings) {
-    warnings.push('protocol_settings.clients 由后端注入：前端提交时会移除该字段，避免共享客户端凭据')
+    warn(undefined, 'protocol_settings.clients 由后端注入：前端提交时会移除该字段，避免共享客户端凭据')
   }
   const unknownStream = unknownKeys(draft.stream_settings, streamKnownKeys())
-  if (unknownStream.length) warnings.push(`stream_settings 其它原生键将原样保留：${unknownStream.join(', ')}`)
+  if (unknownStream.length) warn(undefined, `stream_settings 其它原生键将原样保留：${unknownStream.join(', ')}`)
   const unknownProtocol = unknownKeys(draft.protocol_settings, [...protocolKnownKeys(draft.protocol), 'clients'])
-  if (unknownProtocol.length) warnings.push(`protocol_settings 其它原生键将原样保留：${unknownProtocol.join(', ')}`)
+  if (unknownProtocol.length) warn(undefined, `protocol_settings 其它原生键将原样保留：${unknownProtocol.join(', ')}`)
   const unknownClient = unknownKeys(draft.client_settings, clientKnownKeys())
-  if (unknownClient.length) warnings.push(`client_settings 其它键将原样保留：${unknownClient.join(', ')}`)
+  if (unknownClient.length) warn(undefined, `client_settings 其它键将原样保留：${unknownClient.join(', ')}`)
 
   if (draft.server_key.trim()) {
     warnings.push('server_key 属于服务端秘密，只用于面板下发；不会写入成员配置')
   }
 
-  return { errors, warnings }
+  return { errors, warnings, errorItems, warningItems }
 }
 
 export interface NodeBuildResult {

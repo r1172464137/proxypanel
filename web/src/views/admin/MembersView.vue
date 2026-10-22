@@ -7,7 +7,7 @@ import { errorText } from '@/lib/errors'
 import { formatBytes, formatDateTime, formatQuota, fromLocalInput, utcLabel } from '@/lib/format'
 import { buildMemberWrite, draftFromMember, emptyMemberDraft, quotaSource, type MemberDraft } from '@/lib/memberDraft'
 import { pushToast } from '@/lib/toast'
-import { accessReasonSummary } from '@/lib/accessReasons'
+import { accessReasonSummary, describeQuotaSource } from '@/lib/accessReasons'
 import PageHeader from '@/components/PageHeader.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
@@ -373,7 +373,7 @@ function startBatchImpact(): void {
                 </td>
                 <td class="num">
                   {{ formatBytes(member.used_bytes) }} / {{ formatQuota(member.effective_quota_bytes) }}
-                  <span class="cell-sub">来源：{{ quotaSource(member) === 'override' ? '个人覆盖' : quotaSource(member) === 'unlimited' ? '不限量' : quotaSource(member) === 'unknown' ? '列表未提供' : '订阅默认' }}</span>
+                  <span class="cell-sub">额度来源：{{ describeQuotaSource(quotaSource(member)) }}</span>
                 </td>
                 <td class="hide-sm text-xs">
                   <div v-if="member.period_start || member.period_end">

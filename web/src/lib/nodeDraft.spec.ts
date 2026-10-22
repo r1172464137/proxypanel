@@ -143,8 +143,8 @@ describe('buildNodeWrite', () => {
     expect(result.payload).toBeNull()
     expect(result.errors).toContain('节点名称必填')
     expect(result.errors).toContain('必须选择所属服务器')
-    expect(result.errors).toContain('对外地址（host）必填')
-    expect(result.errors).toContain('监听地址（listen）必填')
+    expect(result.errors.some((e) => e.includes('对外地址必填'))).toBe(true)
+    expect(result.errors).toContain('监听地址必填')
     expect(result.errors.some((error) => error.includes('端口'))).toBe(false) // 默认 443 合法
     draft.port = '70000'
     expect(buildNodeWrite(draft).errors.some((error) => error.includes('端口'))).toBe(true)
@@ -157,12 +157,12 @@ describe('buildNodeWrite', () => {
     draft.host = 'h'
     draft.stream_settings = setPath(draft.stream_settings, 'security', 'reality')
     const errors = validateNodeDraft(draft).errors
-    expect(errors.some((error) => error.includes('dest'))).toBe(true)
-    expect(errors.some((error) => error.includes('serverNames'))).toBe(true)
-    expect(errors.some((error) => error.includes('privateKey'))).toBe(true)
+    expect(errors.some((error) => error.includes('伪装目标'))).toBe(true)
+    expect(errors.some((error) => error.includes('允许的域名'))).toBe(true)
+    expect(errors.some((error) => error.includes('私钥'))).toBe(true)
 
     draft.protocol = 'vmess'
-    expect(validateNodeDraft(draft).errors).toContain('REALITY 仅支持 VLESS 入站')
+    expect(validateNodeDraft(draft).errors.some((e) => e.includes('REALITY 只能配 VLESS'))).toBe(true)
   })
 
   it('Shadowsocks 2022 要求方法，密钥留空给警告而非静默', () => {
@@ -173,19 +173,19 @@ describe('buildNodeWrite', () => {
     draft.protocol = 'shadowsocks'
     draft.protocol_settings = {}
     draft.client_settings = {}
-    expect(validateNodeDraft(draft).errors.some((error) => error.includes('加密方法'))).toBe(true)
+    expect(validateNodeDraft(draft).errors.some((error) => error.includes('加密算法'))).toBe(true)
 
     draft.protocol_settings = { method: '2022-blake3-aes-128-gcm' }
     const validation = validateNodeDraft(draft)
     expect(validation.errors).toEqual([])
-    expect(validation.warnings.some((warning) => warning.includes('2022'))).toBe(true)
+    expect(validation.warnings.some((w) => w.includes('服务端密钥'))).toBe(true)
   })
 
   it('fallbacks 非数组被阻止，未知协议键被提示保留', () => {
     const draft = draftFromNode(vlessNode())
     draft.protocol_settings = setPath(draft.protocol_settings, 'fallbacks', { dest: 80 })
     const errors = validateNodeDraft(draft).errors
-    expect(errors).toContain('fallbacks 必须是 JSON 数组')
+    expect(errors.some((e) => e.includes('必须是 JSON 数组'))).toBe(true)
 
     draft.protocol_settings = setPath(vlessNode().protocol_settings, 'customField', 1)
     const warnings = validateNodeDraft(draft).warnings

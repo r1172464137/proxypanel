@@ -89,3 +89,50 @@ export function accessReasonDetails(codes: string[] | undefined | null): AccessR
   if (!codes || codes.length === 0) return []
   return codes.map(describeAccessReason)
 }
+
+/**
+ * 权限判定链的步骤名。
+ *
+ * 键必须与 internal/panel/access/access.go 里 `Step{Step: "…"}` 的字面量一致。
+ * 这些步骤名会出现在 /me/status 的判定表里；直接显示会让用户看到
+ * binding_validity 这种标识符。
+ */
+const STEP_LABELS: Record<string, string> = {
+  account_status: '账户是否正常',
+  proxy_access: '代理权限开关',
+  binding_validity: '订阅绑定是否有效',
+  subscription_access: '订阅访问开关',
+  quota: '是否超出流量',
+}
+
+/** 判定步骤的中文名；未收录的步骤原样回显，便于发现后端新增了步骤。 */
+export function describeAccessStep(step: unknown): string {
+  const key = typeof step === 'string' ? step.trim() : ''
+  if (!key) return '—'
+  return STEP_LABELS[key] ?? key
+}
+
+/** 已知的全部判定步骤名，供测试与文档使用。 */
+export function knownAccessSteps(): string[] {
+  return Object.keys(STEP_LABELS).sort()
+}
+
+/**
+ * 额度来源的中文说明。
+ *
+ * 后端的 quota_source 只有 subscription / override / unlimited 三种，但
+ * 各视图曾各自写一套三元表达式，还有一处直接打印原始值
+ * （"额度来源：subscription"）。
+ */
+const QUOTA_SOURCES: Record<string, string> = {
+  subscription: '跟随订阅',
+  override: '单独设置',
+  unlimited: '不限量',
+  unknown: '未知',
+}
+
+/** 额度来源的中文名；未识别的值原样回显以便发现后端新增。 */
+export function describeQuotaSource(source: string | null | undefined): string {
+  if (!source) return '未知'
+  return QUOTA_SOURCES[source] ?? source
+}

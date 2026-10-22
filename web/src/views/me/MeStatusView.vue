@@ -4,7 +4,7 @@ import { meApi } from '@/api/endpoints'
 import type { MeStatus } from '@/api/types'
 import { useResource } from '@/lib/async'
 import { formatBytes, formatDateTime, formatQuota, prettyJson } from '@/lib/format'
-import { accessReasonDetails, describeAccessReason } from '@/lib/accessReasons'
+import { accessReasonDetails, describeAccessReason, describeAccessStep, describeQuotaSource } from '@/lib/accessReasons'
 import PageHeader from '@/components/PageHeader.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
@@ -26,20 +26,6 @@ const accountStatus = computed(() => {
 
 // 判定链的 step 是内部标识（account_status / proxy_access / binding_…），
 // 列头直接显示这些词对用户没意义，翻成一句话。
-const STEP_LABELS: Record<string, string> = {
-  account_status: '账户是否正常',
-  proxy_access: '代理权限开关',
-  binding_expired: '订阅是否到期',
-  binding: '是否绑定订阅',
-  quota: '是否超出流量',
-  subscription_access: '订阅访问开关',
-  node_authorization: '节点是否授权',
-}
-function stepLabel(step: unknown): string {
-  const key = typeof step === 'string' ? step : ''
-  return STEP_LABELS[key] ?? key ?? '—'
-}
-
 const chain = computed(() => (Array.isArray(access.value?.access_chain) ? access.value!.access_chain! : []))
 </script>
 
@@ -72,7 +58,7 @@ const chain = computed(() => (Array.isArray(access.value?.access_chain) ? access
             <dd class="num">
               {{ formatBytes(access?.used_bytes ?? member?.used_bytes) }} /
               {{ formatQuota(access?.effective_quota_bytes ?? member?.effective_quota_bytes) }}
-              <span v-if="access?.quota_source" class="cell-sub">额度来源：{{ access.quota_source }}</span>
+              <span v-if="access?.quota_source" class="cell-sub">额度来源：{{ describeQuotaSource(access.quota_source) }}</span>
             </dd>
             <dt>周期</dt>
             <dd>
@@ -113,7 +99,7 @@ const chain = computed(() => (Array.isArray(access.value?.access_chain) ? access
                 <thead><tr><th>检查项</th><th>结果</th><th>说明</th></tr></thead>
                 <tbody>
                   <tr v-for="(step, index) in chain" :key="index">
-                    <td>{{ stepLabel(step.step) }}</td>
+                    <td>{{ describeAccessStep(step.step) }}</td>
                     <td><StatusBadge :status="step.result === 'pass' ? 'enabled' : 'failed'" :label="step.result === 'pass' ? '通过' : '未通过'" /></td>
                     <td class="text-sm">{{ step.reason ? describeAccessReason(step.reason).label : (step.detail ?? '—') }}</td>
                   </tr>

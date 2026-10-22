@@ -8,7 +8,7 @@ import { errorText, toApiError } from '@/lib/errors'
 import { formatBytes, formatDateTime, formatQuota, gibToBytes, prettyJson, utcLabel } from '@/lib/format'
 import { quotaSource } from '@/lib/memberDraft'
 import { pushToast } from '@/lib/toast'
-import { accessReasonDetails } from '@/lib/accessReasons'
+import { accessReasonDetails, describeQuotaSource } from '@/lib/accessReasons'
 import PageHeader from '@/components/PageHeader.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
@@ -218,7 +218,7 @@ async function rotateToken(): Promise<void> {
             <dt>已用 / 额度</dt>
             <dd class="num">
               {{ formatBytes(data.used_bytes) }} / {{ formatQuota(data.effective_quota_bytes) }}
-              <span class="cell-sub">来源：{{ quotaSource(data) }}</span>
+              <span class="cell-sub">额度来源：{{ describeQuotaSource(quotaSource(data)) }}</span>
             </dd>
             <dt>配额覆盖</dt>
             <dd>

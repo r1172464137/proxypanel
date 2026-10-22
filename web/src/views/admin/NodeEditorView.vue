@@ -30,6 +30,7 @@ import {
 import { unknownKeys, type JsonObject } from '@/lib/json'
 import { errorText } from '@/lib/errors'
 import { formatDateTime } from '@/lib/format'
+import { NODE_TEMPLATES, newRealityKeyPair, newShortId, type NodeTemplate } from '@/lib/nodeTemplates'
 import { pushToast } from '@/lib/toast'
 import PageHeader from '@/components/PageHeader.vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
@@ -56,6 +57,73 @@ const saveError = ref('')
 const jsonErrors = reactive({ stream: '', protocol: '', client: '' })
 const keepServerKey = ref(true)
 const tab = ref<'structured' | 'advanced'>('structured')
+const showTemplates = ref(false)
+// C7：新建时不主动展示原生 JSON 入口，点一下"需要直接改 JSON？"才放出来。
+// 编辑已有节点时直接可见（运维常用）。
+const advancedAllowed = ref(false)
+const appliedTemplate = ref('')
+const templateNote = ref('')
+
+// 套用模板：直接覆盖协议/传输/密钥相关的字段，保留名称与服务器选择。
+// REALITY 的密钥对需要 WebCrypto，异步生成；其他模板同步完成。
+// 生成一对 REALITY 密钥（私钥 + 公钥一起填），省掉用户去命令行跑 xray x25519。
+async function generateRealityKeys(): Promise<void> {
+  try {
+    const pair = await newRealityKeyPair()
+    streamState.realityPrivateKey = pair.privateKey
+    streamState.realityPublicKey = pair.publicKey
+    if (!streamState.realityFingerprint) streamState.realityFingerprint = 'chrome'
+    templateNote.value = '已生成 REALITY 密钥对。'
+    draft.stream_settings = applyStreamView(draft.stream_settings, streamState)
+  } catch (err) {
+    saveError.value = `密钥生成失败：${err instanceof Error ? err.message : String(err)}`
+  }
+}
+
+async function applyTemplate(tpl: NodeTemplate): Promise<void> {
+  const patch = tpl.build(draft.name || '')
+  appliedTemplate.value = tpl.id
+  templateNote.value = ''
+
+  if (patch.protocol) draft.protocol = patch.protocol
+  if (patch.port) draft.port = patch.port
+  if (patch.flow !== undefined) draft.flow = patch.flow
+  if (patch.cipher !== undefined) draft.cipher = patch.cipher
+  if (patch.server_key !== undefined) draft.server_key = patch.server_key
+  if (patch.stream_settings) draft.stream_settings = patch.stream_settings as NodeDraft['stream_settings']
+  if (patch.protocol_settings) draft.protocol_settings = patch.protocol_settings as NodeDraft['protocol_settings']
+  if (patch.client_settings) draft.client_settings = patch.client_settings as NodeDraft['client_settings']
+
+  // REALITY 模板要生成真实的密钥对，否则保存后节点起不来。
+  if (tpl.id === 'vless-reality') {
+    try {
+      const pair = await newRealityKeyPair()
+      draft.stream_settings = {
+        ...(draft.stream_settings as Record<string, unknown>),
+        realitySettings: {
+          ...((draft.stream_settings as Record<string, unknown>).realitySettings as Record<string, unknown>),
+          privateKey: pair.privateKey,
+          settings: { publicKey: pair.publicKey, fingerprint: 'chrome', spiderX: '/' },
+        },
+      }
+      templateNote.value = '已生成 REALITY 密钥对。下一步：把「回落目标」和「允许的域名」改成你想伪装的站点，再改端口保存。'
+    } catch (err) {
+      templateNote.value = `REALITY 密钥生成失败（${err instanceof Error ? err.message : String(err)}），请手动填写私钥与公钥。`
+    }
+  } else if (tpl.id === 'ss2022') {
+    templateNote.value = '已生成服务端密钥与密码。保存后即可使用，不需要域名或证书。'
+  } else {
+    templateNote.value = '已填好协议与传输。下一步：填「证书域名」并选择证书文件（或在高级模式里贴自签证书）。'
+  }
+
+  // 注意方向：模板写的是 draft，这里必须把 draft 反向灌进各 view。
+  // 不能调 syncDraft()——那是"用户编辑表单 -> 写 draft"的方向，会用尚未刷新
+  // 的旧 protocolState 把模板刚写入的密钥覆盖成空值（实测 password 会变空）。
+  Object.assign(streamState, streamView(draft.stream_settings))
+  Object.assign(protocolState, protocolView(draft.protocol_settings, draft.protocol))
+  Object.assign(clientState, clientView(draft.client_settings))
+}
+
 
 const serverOptions = computed(() =>
   servers.value.map((server) => ({ value: server.id, label: `${server.name} (${server.address})` })),
@@ -74,6 +142,22 @@ const previewDraft = computed<NodeDraft>(() => ({
 }))
 
 const validation = computed(() => validateNodeDraft(previewDraft.value))
+
+// 字段级错误：把校验结果按表单元素 id 分组，让错误直接显示在对应输入框下面，
+// 而不是只在页面底部汇总一次（用户得自己去找是哪一项）。
+const fieldErrors = computed(() => {
+  const map: Record<string, string> = {}
+  for (const item of validation.value.errorItems) {
+    if (!item.field) continue
+    // 同一个字段只显示第一条，避免叠一堆
+    if (!map[item.field]) map[item.field] = item.message
+  }
+  return map
+})
+
+function errorFor(field: string): string {
+  return fieldErrors.value[field] ?? ''
+}
 const showFallbacks = computed(() => draft.protocol === 'vless' || draft.protocol === 'trojan')
 const security = computed(() => String(draft.stream_settings.security ?? streamState.security ?? 'none'))
 
@@ -217,19 +301,57 @@ const cipherValue = computed({
         节点 ID <span class="mono">{{ node.id }}</span> · 版本 {{ node.version }} · 更新于 {{ formatDateTime(node.updated_at) }}
       </div>
 
+      <!-- 新建节点时先选模板：一套可用配置一键填好，用户只需要改名称与端口。
+           编辑已有节点时不显示，避免覆盖现有配置。 -->
+      <section v-if="!isEdit" class="card">
+        <div class="card__header">
+          <h2>用模板快速创建</h2>
+          <div class="card__header-actions">
+            <button type="button" class="btn btn--sm" @click="showTemplates = !showTemplates">
+              {{ showTemplates ? '收起' : '展开' }}
+            </button>
+          </div>
+        </div>
+        <div v-if="showTemplates" class="card__body">
+          <p class="text-sm text-muted" style="margin-bottom: var(--space-3)">
+            选一个模板会自动填好协议、传输、加密层和需要的密钥，你只需要改名称和端口。
+            也可以跳过，直接在下面手动配置。
+          </p>
+          <div class="template-grid">
+            <button
+              v-for="tpl in NODE_TEMPLATES"
+              :key="tpl.id"
+              type="button"
+              class="template-card"
+              :class="{ 'template-card--active': appliedTemplate === tpl.id }"
+              @click="applyTemplate(tpl)"
+            >
+              <strong>{{ tpl.label }}</strong>
+              <span class="template-card__desc">{{ tpl.description }}</span>
+              <span class="template-card__needs">需要准备：{{ tpl.needs }}</span>
+            </button>
+          </div>
+          <p v-if="templateNote" class="banner banner--info" role="status" style="margin-top: var(--space-3)">
+            {{ templateNote }}
+          </p>
+        </div>
+      </section>
+
       <section class="card">
         <div class="card__header"><h2>基本信息</h2></div>
         <div class="card__body grid grid--form">
           <div class="field">
             <label for="node-name">名称</label>
-            <input id="node-name" v-model="draft.name" class="input" required />
+            <input id="node-name" v-model="draft.name" class="input" :class="{ 'input--error': errorFor('node-name') }" required />
+            <p v-if="errorFor('node-name')" class="field__error">{{ errorFor('node-name') }}</p>
           </div>
           <div class="field">
             <label for="node-server">所属服务器</label>
-            <select id="node-server" v-model="draft.server_id" class="select">
+            <select id="node-server" v-model="draft.server_id" class="select" :class="{ 'input--error': errorFor('node-server') }">
               <option value="">请选择</option>
               <option v-for="option in serverOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
             </select>
+            <p v-if="errorFor('node-server')" class="field__error">{{ errorFor('node-server') }}</p>
           </div>
           <div class="field">
             <label for="node-protocol">协议</label>
@@ -239,15 +361,18 @@ const cipherValue = computed({
           </div>
           <div class="field">
             <label for="node-host">对外地址</label>
-            <input id="node-host" v-model="draft.host" class="input mono" placeholder="节点域名或 IP（写入成员配置）" />
+            <input id="node-host" v-model="draft.host" class="input mono" :class="{ 'input--error': errorFor('node-host') }" placeholder="节点域名或 IP（写入成员配置）" />
+            <p v-if="errorFor('node-host')" class="field__error">{{ errorFor('node-host') }}</p>
           </div>
           <div class="field">
             <label for="node-port">对外端口</label>
-            <input id="node-port" v-model="draft.port" class="input" inputmode="numeric" />
+            <input id="node-port" v-model="draft.port" class="input" :class="{ 'input--error': errorFor('node-port') }" inputmode="numeric" />
+            <p v-if="errorFor('node-port')" class="field__error">{{ errorFor('node-port') }}</p>
           </div>
           <div class="field">
             <label for="node-listen">监听地址</label>
-            <input id="node-listen" v-model="draft.listen" class="input mono" placeholder="0.0.0.0" />
+            <input id="node-listen" v-model="draft.listen" class="input mono" :class="{ 'input--error': errorFor('node-listen') }" placeholder="0.0.0.0" />
+            <p v-if="errorFor('node-listen')" class="field__error">{{ errorFor('node-listen') }}</p>
           </div>
           <div class="field">
             <label for="node-sort">排序</label>
@@ -265,8 +390,16 @@ const cipherValue = computed({
 
       <div class="row">
         <button type="button" class="btn" :class="{ 'btn--primary': tab === 'structured' }" @click="tab = 'structured'">结构化参数</button>
-        <button type="button" class="btn" :class="{ 'btn--primary': tab === 'advanced' }" @click="tab = 'advanced'">原生 JSON（高级）</button>
-        <span class="text-xs text-muted">两种方式编辑同一对象；JSON 中的额外字段不会丢失。</span>
+        <template v-if="isEdit || advancedAllowed">
+          <button type="button" class="btn" :class="{ 'btn--primary': tab === 'advanced' }" @click="tab = 'advanced'">原生 JSON（高级）</button>
+          <span class="text-xs text-muted">两种方式编辑同一对象；JSON 中的额外字段不会丢失。</span>
+        </template>
+        <template v-else>
+          <button type="button" class="btn btn--sm" @click="advancedAllowed = true">需要直接改 JSON？</button>
+          <span class="text-xs text-muted">
+            新建时默认用结构化表单，字段说明更清楚。熟悉 Xray 原生配置可以切到 JSON 模式。
+          </span>
+        </template>
       </div>
 
       <template v-if="tab === 'structured'">
@@ -402,24 +535,37 @@ const cipherValue = computed({
               <div class="grid grid--form">
                 <div class="field">
                   <label for="reality-dest">回落目标</label>
-                  <input id="reality-dest" v-model="streamState.realityDest" class="input mono" placeholder="回落目标，如 example.com:443" />
+                  <input id="reality-dest" v-model="streamState.realityDest" class="input mono" :class="{ 'input--error': errorFor('reality-dest') }" placeholder="回落目标，如 example.com:443" />
+                  <p v-if="errorFor('reality-dest')" class="field__error">{{ errorFor('reality-dest') }}</p>
                 </div>
                 <div class="field">
                   <label for="reality-server-names">允许的域名</label>
-                  <input id="reality-server-names" v-model="streamState.realityServerNames" class="input mono" placeholder="逗号分隔" />
+                  <input id="reality-server-names" v-model="streamState.realityServerNames" class="input mono" :class="{ 'input--error': errorFor('reality-server-names') }" placeholder="逗号分隔" />
+                  <p v-if="errorFor('reality-server-names')" class="field__error">{{ errorFor('reality-server-names') }}</p>
                 </div>
                 <div class="field">
                   <label for="reality-private-key">REALITY 私钥</label>
-                  <input id="reality-private-key" v-model="streamState.realityPrivateKey" class="input mono" type="password" autocomplete="off" />
-                  <p class="field__help">仅面板与 Agent 使用，不进入成员配置；日志与页面默认脱敏。</p>
+                  <div class="row">
+                    <input id="reality-private-key" v-model="streamState.realityPrivateKey" class="input mono" :class="{ 'input--error': errorFor('reality-private-key') }" type="password" autocomplete="off" />
+                    <p v-if="errorFor('reality-private-key')" class="field__error">{{ errorFor('reality-private-key') }}</p>
+                    <button type="button" class="btn btn--sm" @click="generateRealityKeys">生成一对</button>
+                  </div>
+                  <p class="field__help">
+                    只有面板和节点自己知道，成员看不到。点「生成一对」会自动填好私钥和公钥。
+                  </p>
                 </div>
                 <div class="field">
                   <label for="reality-short-ids">短 ID 列表</label>
-                  <input id="reality-short-ids" v-model="streamState.realityShortIds" class="input mono" placeholder="逗号分隔，十六进制" />
+                  <div class="row">
+                    <input id="reality-short-ids" v-model="streamState.realityShortIds" class="input mono" placeholder="逗号分隔，十六进制" />
+                    <button type="button" class="btn btn--sm" @click="streamState.realityShortIds = newShortId(8)">生成</button>
+                  </div>
+                  <p class="field__help">一串十六进制，用来区分同时使用同一域名的不同节点。留空也可以工作。</p>
                 </div>
                 <div class="field">
                   <label for="reality-public-key">REALITY 公钥</label>
                   <input id="reality-public-key" v-model="streamState.realityPublicKey" class="input mono" />
+                  <p class="field__help">由私钥推出，会写进成员的客户端配置。点上面的「生成一对」会一起填好。</p>
                 </div>
                 <div class="field">
                   <label for="reality-fingerprint">指纹</label>

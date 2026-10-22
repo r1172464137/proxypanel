@@ -1445,3 +1445,66 @@ th.num {
     animation-duration: 1.4s !important;
   }
 }
+
+/* 节点模板选择：卡片式，一屏看全 5 个模板的作用与前置条件。 */
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-3);
+}
+
+.template-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-3);
+  text-align: left;
+  background: var(--card);
+  border: 2px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+
+.template-card:hover {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
+}
+
+.template-card:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.template-card--active {
+  border-color: var(--primary);
+}
+
+.template-card__desc {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.template-card__needs {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+@media (max-width: 640px) {
+  .template-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 字段级校验：输入框标红 + 就地提示，避免用户到页面底部找错误。 */
+.input--error,
+.select--error {
+  border-color: var(--danger) !important;
+  outline-color: var(--danger);
+}
+
+.field__error {
+  margin: 2px 0 0;
+  font-size: var(--text-xs);
+  color: var(--danger);
+}

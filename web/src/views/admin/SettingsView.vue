@@ -236,6 +236,15 @@ async function submitRecovery(): Promise<void> {
 }
 
 const templateDefaultsPreview = computed(() => stringifyJson(templateDefaults.value))
+
+// 判断这个字段是否真有内容（空对象算空）。
+// 编辑器只在用户真正展开时挂载，避免折叠状态下也留一个空框在 DOM 里。
+const templateEditorOpen = ref(false)
+
+const hasTemplateDefaults = computed(() => {
+  const value = templateDefaults.value
+  return !!value && typeof value === 'object' && Object.keys(value).length > 0
+})
 </script>
 
 <template>
@@ -301,22 +310,47 @@ const templateDefaultsPreview = computed(() => stringifyJson(templateDefaults.va
       <section class="card">
         <div class="card__header"><h2>模板默认设置</h2></div>
         <div class="card__body stack">
-          <template v-if="templateDefaultsKey">
-            <JsonEditor
-              :model-value="templateDefaults"
-              :label="templateDefaultsKey"
-              hint="服务端返回的模板默认值；字段结构由后端契约决定。"
-              @update:model-value="templateDefaults = $event"
-              @update:error="templateJsonError = $event"
-            />
+          <!-- 这个字段是自由结构（后端类型就是 Object），当前一般为空。
+               直接摊开一个空 JSON 编辑器会让人以为"必须填点什么"。
+               有值时才给只读预览，需要改再手动展开编辑器。 -->
+          <template v-if="!templateDefaultsKey">
+            <p class="text-sm text-muted">当前服务端没有这个设置项，无需配置。</p>
           </template>
-          <p v-else class="banner banner--info">
-            服务端未返回模板默认值字段（template_defaults / templates / default_templates）。为避免覆盖未知结构，本页不提交该字段；模板请在下方“客户端模板”管理。
-          </p>
-          <details v-if="templateDefaultsKey">
-            <summary class="text-xs text-muted">当前值预览</summary>
+          <template v-else-if="!hasTemplateDefaults">
+            <p class="text-sm">
+              模板默认值为空。一般情况下这里不需要填写 —— 新建的客户端模板会自动带上合适的默认结构。
+            </p>
+            <details @toggle="templateEditorOpen = ($event.target as HTMLDetailsElement).open">
+              <summary class="text-xs text-muted">确实需要手动设置？</summary>
+              <!-- 只在展开后挂载编辑器：折叠状态下也会出现在 DOM 里，
+                   表现为页面上多了一个空的 {} 框。 -->
+              <div v-if="templateEditorOpen" style="margin-top: var(--space-2)">
+                <JsonEditor
+                  :model-value="templateDefaults"
+                  label="模板默认值（高级）"
+                  hint="填写后会影响新建模板的初始结构。不熟悉时请保持为空。"
+                  @update:model-value="templateDefaults = $event"
+                  @update:error="templateJsonError = $event"
+                />
+              </div>
+            </details>
+          </template>
+          <template v-else>
+            <p class="text-sm">当前已设置以下默认值。修改会写入新建的客户端模板。</p>
             <pre class="code-block">{{ templateDefaultsPreview }}</pre>
-          </details>
+            <details @toggle="templateEditorOpen = ($event.target as HTMLDetailsElement).open">
+              <summary class="text-xs text-muted">编辑</summary>
+              <div v-if="templateEditorOpen" style="margin-top: var(--space-2)">
+                <JsonEditor
+                  :model-value="templateDefaults"
+                  label="模板默认值（高级）"
+                  hint="保存后立即生效。"
+                  @update:model-value="templateDefaults = $event"
+                  @update:error="templateJsonError = $event"
+                />
+              </div>
+            </details>
+          </template>
         </div>
       </section>
 
