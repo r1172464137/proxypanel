@@ -48,8 +48,16 @@ import type {
   UsagePage,
 } from './types'
 
-const ADMIN = '/api/v1/admin'
-const ME = '/api/v1/me'
+/**
+ * API 基地址。默认空字符串 = 同源，与改造前的行为完全一致。
+ *
+ * 前后端分离部署时在构建期注入 VITE_API_BASE（如 https://api.example.com）。
+ * 注意不能带尾部斜杠，这里统一裁掉以免拼出 `//api/v1`。
+ */
+const BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/+$/, '')
+
+const ADMIN = `${BASE}/api/v1/admin`
+const ME = `${BASE}/api/v1/me`
 
 export interface PageQuery {
   limit?: number

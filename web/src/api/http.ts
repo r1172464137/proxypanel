@@ -64,6 +64,10 @@ export interface RequestOptions {
   suppressAuthRedirect?: boolean
 }
 
+// 与 endpoints.ts 使用同一个基地址判断：配置了 VITE_API_BASE 就是跨域部署，
+// 必须用 credentials: 'include'，否则浏览器不会带上会话 Cookie。
+const API_BASE = (import.meta.env.VITE_API_BASE ?? '').trim()
+
 const WRITE_METHODS: HttpMethod[] = ['POST', 'PATCH', 'PUT', 'DELETE']
 
 let csrfToken: string | null = null
@@ -156,7 +160,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       method,
       headers,
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
-      credentials: 'same-origin',
+      credentials: API_BASE ? 'include' : 'same-origin',
       signal: options.signal,
     })
   } catch (caught) {

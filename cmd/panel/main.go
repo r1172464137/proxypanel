@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -119,12 +120,26 @@ func main() {
 		log.Printf("redis: no REDIS_URL configured, login rate limiting uses the bounded local fallback")
 	}
 
+	// 前后端分离部署的可选配置。默认值保持与之前完全一致：
+	// 不配 PANEL_ALLOWED_ORIGINS 就没有 CORS，Cookie 仍是 Strict。
+	cookieSameSite, err := cookieSameSiteFromEnv(dev)
+	if err != nil {
+		log.Fatalf("PANEL_COOKIE_SAMESITE: %v", err)
+	}
+	allowedOrigins := strings.TrimSpace(os.Getenv("PANEL_ALLOWED_ORIGINS"))
+	if allowedOrigins != "" {
+		log.Printf("cors: enabled for %s (前后端分离部署)", allowedOrigins)
+	}
+
 	srv := &api.Server{
 		Store:       st,
 		RateLimiter: limiter,
 		Cfg: api.Config{
 			Dev: dev, Listen: listen, PublicURL: os.Getenv("PANEL_PUBLIC_URL"),
 			RedisDSN: os.Getenv("REDIS_URL"), SessionTTL: 12 * time.Hour,
+			AllowedOrigins: allowedOrigins,
+			CookieSameSite: cookieSameSite,
+			CookieDomain:   strings.TrimSpace(os.Getenv("PANEL_COOKIE_DOMAIN")),
 		},
 	}
 	httpSrv := &http.Server{
@@ -209,4 +224,29 @@ func bootstrapAdmin(ctx context.Context, st *store.Store) error {
 	}
 	log.Printf("bootstrap administrator %q created", username)
 	return nil
+}
+
+// cookieSameSiteFromEnv 把 PANEL_COOKIE_SAMESITE 转成 http.SameSite。
+//
+// 关键校验：SameSite=None 必须配 Secure。浏览器会**静默丢弃**不满足这个组合的
+// Cookie，表现为"登录接口返回 200 但下一个请求就是 401"，极难排查。所以这里
+// 直接让进程启动失败，而不是让线上出现这种幽灵问题。
+func cookieSameSiteFromEnv(dev bool) (http.SameSite, error) {
+	raw := strings.ToLower(strings.TrimSpace(os.Getenv("PANEL_COOKIE_SAMESITE")))
+	switch raw {
+	case "":
+		return http.SameSiteStrictMode, nil
+	case "strict":
+		return http.SameSiteStrictMode, nil
+	case "lax":
+		return http.SameSiteLaxMode, nil
+	case "none":
+		if dev {
+			return 0, fmt.Errorf("SameSite=None 需要 Secure Cookie，而 PANEL_DEV=true 时 Cookie 不带 Secure；请关闭 PANEL_DEV 或改用 lax")
+		}
+		// 非 dev 模式下 Secure 恒为 true（见 handlers.go 的 !s.Cfg.Dev），组合成立。
+		return http.SameSiteNoneMode, nil
+	default:
+		return 0, fmt.Errorf("must be strict, lax or none (got %q)", raw)
+	}
 }

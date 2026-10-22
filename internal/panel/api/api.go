@@ -28,6 +28,15 @@ type Config struct {
 	RedisDSN   string
 	AdminUser  string
 	AdminPass  string
+
+	// AllowedOrigins 是前后端分离部署时的 CORS 白名单（逗号分隔）。
+	// 为空表示同源部署，完全不启用 CORS。
+	AllowedOrigins string
+	// CookieSameSite 控制会话 Cookie 的 SameSite 策略：lax（默认，同站）
+	// 或 none（跨站部署必须）。none 要求 Secure。
+	CookieSameSite http.SameSite
+	// CookieDomain 允许同主域的子域共享会话（如 .example.com）。默认空。
+	CookieDomain string
 }
 
 // Server is the HTTP application.
@@ -93,7 +102,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/admin/recovery-mode/exit",
 		s.requireUser(s.requireAdmin(s.requireCSRF(s.handleExitRecovery))))
 	s.mountAdmin(mux)
-	return s.withRequestID(mux)
+	// CORS 在最外层：预检请求必须在鉴权之前应答，否则跨域写请求永远过不了。
+	return parseAllowedOrigins(s.Cfg.AllowedOrigins).middleware(s.withRequestID(mux))
 }
 
 func (s *Server) mountAdmin(mux *http.ServeMux) {

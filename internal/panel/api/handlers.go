@@ -48,10 +48,25 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 		"status": state, "postgres": "ok", "redis": redisState,
 	})
 }
+
+// cookieSameSite 返回会话 Cookie 的 SameSite 策略。
+//
+// 默认 Strict（与改造前一致，最严格）。前后端分离部署时后端需要返回 None
+// 并配合 Secure，否则浏览器在跨站请求里根本不会带上 Cookie。
+func (s *Server) cookieSameSite() http.SameSite {
+	if s.Cfg.CookieSameSite != 0 {
+		return s.Cfg.CookieSameSite
+	}
+	return http.SameSiteStrictMode
+}
+
 func (s *Server) setSessionCookie(w http.ResponseWriter, token string, expires time.Time) {
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookieName, Value: token, Path: "/", HttpOnly: true,
-		Secure: !s.Cfg.Dev, SameSite: http.SameSiteStrictMode, Expires: expires,
+		Secure:   !s.Cfg.Dev,
+		SameSite: s.cookieSameSite(),
+		Domain:   s.Cfg.CookieDomain,
+		Expires:  expires,
 	})
 }
 
@@ -133,7 +148,12 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, err)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: !s.Cfg.Dev, SameSite: http.SameSiteStrictMode})
+	http.SetCookie(w, &http.Cookie{
+		Name: sessionCookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
+		Secure:   !s.Cfg.Dev,
+		SameSite: s.cookieSameSite(),
+		Domain:   s.Cfg.CookieDomain,
+	})
 	s.audit(r, "auth.logout", "session", sess.ID, nil)
 	s.writeData(w, http.StatusOK, map[string]any{"revoked": true})
 }
