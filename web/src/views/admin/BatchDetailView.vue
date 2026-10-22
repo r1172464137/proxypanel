@@ -44,7 +44,7 @@ function errorTextOf(item: BatchResultItem): string {
   <div>
     <PageHeader
       :title="`批量任务 · ${batchId}`"
-      description="“规则已提交”与“节点已生效”是两件事：只有 succeeded 且回执版本匹配才算生效；失败/超时可在任务页重试。"
+      description="这里是这次批量修改的明细。每条都要等节点那边回报成功才算生效，失败的可以到「任务与同步」重试。"
     >
       <router-link class="btn btn--sm" to="/admin/tasks">任务与同步</router-link>
       <router-link class="btn btn--sm" to="/admin/members">成员</router-link>

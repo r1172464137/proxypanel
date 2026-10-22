@@ -89,7 +89,7 @@ function statusOf(invitation: InvitationRecord): string {
 
 <template>
   <div>
-    <PageHeader title="邀请" description="一次性邀请码用于创建成员（不授予管理员）。兑换为原子操作；列表不展示 code。">
+    <PageHeader title="邀请" description="生成一次性邀请码发给朋友，对方用它自助注册。码只能用一次，用完即失效。">
       <button type="button" class="btn btn--primary" @click="openCreate">生成邀请码</button>
     </PageHeader>
 

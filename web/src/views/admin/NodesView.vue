@@ -53,7 +53,7 @@ async function confirmDelete(): Promise<void> {
 
 <template>
   <div>
-    <PageHeader title="节点" description="节点是代理入口：协议、传输、安全与客户端参数分别编辑；保存后默认重启该节点的独立核心实例。">
+    <PageHeader title="节点" description="节点就是一条代理线路。改完保存会让这条线路短暂断开几秒，正在用的连接会自动重连。">
       <router-link class="btn btn--primary" to="/admin/nodes/new">新建节点</router-link>
     </PageHeader>
 

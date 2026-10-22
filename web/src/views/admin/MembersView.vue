@@ -7,6 +7,7 @@ import { errorText } from '@/lib/errors'
 import { formatBytes, formatDateTime, formatQuota, fromLocalInput, utcLabel } from '@/lib/format'
 import { buildMemberWrite, draftFromMember, emptyMemberDraft, quotaSource, type MemberDraft } from '@/lib/memberDraft'
 import { pushToast } from '@/lib/toast'
+import { accessReasonSummary } from '@/lib/accessReasons'
 import PageHeader from '@/components/PageHeader.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
@@ -77,6 +78,14 @@ const allVisibleSelected = computed(
 /* ---------- 创建 / 编辑 ---------- */
 const formOpen = ref(false)
 const form = reactive<MemberDraft>(emptyMemberDraft())
+
+// 选中订阅的"每人配额"，用来在"跟随订阅"这一项上直接显示当前值，
+// 让用户不点进订阅页也能知道跟的是多少。
+const inheritedQuotaLabel = computed(() => {
+  const sub = subscriptions.value.find((item) => item.id === form.subscription_id)
+  if (!sub) return ''
+  return formatQuota(sub.quota_bytes)
+})
 const editing = ref<MemberRecord | null>(null)
 const saving = ref(false)
 const formError = ref('')
@@ -279,7 +288,7 @@ function startBatchImpact(): void {
 
 <template>
   <div>
-    <PageHeader title="成员" description="账户状态、代理访问、订阅绑定与额度覆盖互相独立；批量操作必须先预览影响再提交。">
+    <PageHeader title="成员" description="成员能不能登录、能不能用代理、有多少流量，是三件独立的事。批量改之前会先让你看一遍影响。">
       <button type="button" class="btn" :disabled="list.loading.value" @click="list.refresh()">刷新</button>
       <button type="button" class="btn btn--primary" @click="openCreate">新建成员</button>
     </PageHeader>
@@ -354,7 +363,7 @@ function startBatchImpact(): void {
                     <StatusBadge :status="member.proxy_access ?? (member.proxy_enabled ? 'enabled' : 'paused_by_admin')" />
                   </div>
                   <span v-if="member.over_quota" class="badge badge--danger" style="margin-left: 4px">已超额</span>
-                  <span v-if="member.access_reasons?.length" class="cell-sub">原因：{{ member.access_reasons.join('、') }}</span>
+                  <span v-if="member.access_reasons?.length" class="cell-sub">{{ accessReasonSummary(member.access_reasons) }}</span>
                 </td>
                 <td>
                   {{ member.subscription_id ? subscriptionNames.get(member.subscription_id) ?? member.subscription_id : '未绑定' }}
@@ -436,21 +445,51 @@ function startBatchImpact(): void {
             </select>
           </div>
           <div class="field">
-            <label for="member-expires">有效期（到期时间）</label>
+            <label for="member-expires">到期时间</label>
             <input id="member-expires" v-model="form.expires_at_local" class="input" type="datetime-local" />
             <p class="field__help">留空表示跟随订阅默认有效期</p>
           </div>
           <div class="field">
-            <label for="member-override">配额覆盖（GiB）</label>
-            <input id="member-override" v-model="form.quota_override_gib" class="input" inputmode="decimal" :disabled="!form.quota_override_enabled" />
+            <span class="field__label">流量额度</span>
             <label class="checkbox">
-              <input v-model="form.quota_override_enabled" type="checkbox" />
-              启用个人覆盖（关闭即恢复继承订阅默认配额）
+              <input v-model="form.quota_override_enabled" type="radio" :value="false" />
+              跟随订阅<template v-if="inheritedQuotaLabel">（当前 {{ inheritedQuotaLabel }}）</template>
             </label>
+            <label class="checkbox">
+              <input v-model="form.quota_override_enabled" type="radio" :value="true" />
+              单独给这个人设置
+            </label>
+            <div v-if="form.quota_override_enabled" class="row" style="margin-top: var(--space-2)">
+              <input
+                id="member-override"
+                v-model="form.quota_override_gib"
+                class="input"
+                inputmode="decimal"
+                placeholder="留空表示不限量"
+                aria-label="单独设置的流量额度（GiB）"
+              />
+              <span class="text-sm text-muted">GiB</span>
+            </div>
+            <p class="field__help">
+              跟随订阅时，这个人的额度等于订阅里设的每人配额；
+              单独设置只影响他自己，其他人不变。留空表示不限量。
+            </p>
           </div>
         </div>
-        <label class="checkbox"><input v-model="form.active" type="checkbox" /> 账户启用（停用会撤销会话）</label>
-        <label class="checkbox"><input v-model="form.proxy_enabled" type="checkbox" /> 允许代理访问（关闭会硬撤权）</label>
+        <label class="checkbox">
+          <input v-model="form.active" type="checkbox" />
+          允许登录
+        </label>
+        <p class="field__help">
+          关掉后这个人立刻无法登录，正在使用的会话失效。重新开启即可恢复，但他需要重新登录。
+        </p>
+        <label class="checkbox">
+          <input v-model="form.proxy_enabled" type="checkbox" />
+          允许使用代理
+        </label>
+        <p class="field__help">
+          关掉后他所有代理连接立即断开，客户端连不上。重新开启后需要重新拉取订阅。
+        </p>
         <div v-if="formWarnings.length" class="banner banner--warn">
           <div>
             <div class="banner__title">提示</div>

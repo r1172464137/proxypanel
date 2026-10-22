@@ -8,6 +8,7 @@ import { errorText, toApiError } from '@/lib/errors'
 import { formatBytes, formatDateTime, formatQuota, gibToBytes, prettyJson, utcLabel } from '@/lib/format'
 import { quotaSource } from '@/lib/memberDraft'
 import { pushToast } from '@/lib/toast'
+import { accessReasonDetails } from '@/lib/accessReasons'
 import PageHeader from '@/components/PageHeader.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
@@ -196,8 +197,13 @@ async function rotateToken(): Promise<void> {
             </dd>
             <dt>访问原因</dt>
             <dd>
-              <template v-if="data.access_reasons?.length">{{ data.access_reasons.join('、') }}</template>
-              <span v-else class="text-muted">服务端未返回原因列表</span>
+              <template v-if="accessReasonDetails(data.access_reasons).length">
+                <div v-for="reason in accessReasonDetails(data.access_reasons)" :key="reason.label" class="stack" style="gap: 2px">
+                  <strong>{{ reason.label }}</strong>
+                  <span class="text-sm text-muted">{{ reason.action }}</span>
+                </div>
+              </template>
+              <span v-else class="text-muted">没有限制，权限正常</span>
             </dd>
             <dt>最后更新</dt>
             <dd>{{ formatDateTime(data.updated_at) }}</dd>

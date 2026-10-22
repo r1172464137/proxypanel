@@ -277,12 +277,12 @@ const cipherValue = computed({
             <div class="grid grid--form">
               <template v-if="draft.protocol === 'vless'">
                 <div class="field">
-                  <label for="protocol-decryption">decryption</label>
+                  <label for="protocol-decryption">加密方式</label>
                   <input id="protocol-decryption" v-model="protocolState.decryption" class="input mono" placeholder="none" />
                   <p class="field__help">VLESS 常用 none</p>
                 </div>
                 <div class="field">
-                  <label for="vless-flow">flow</label>
+                  <label for="vless-flow">流控</label>
                   <select id="vless-flow" v-model="draft.flow" class="select">
                     <option value="">不使用</option>
                     <option value="xtls-rprx-vision">xtls-rprx-vision</option>
@@ -292,7 +292,7 @@ const cipherValue = computed({
 
               <template v-if="draft.protocol === 'vmess'">
                 <div class="field">
-                  <label for="vmess-insecure">disableInsecureEncryption</label>
+                  <label for="vmess-insecure">禁用不安全加密</label>
                   <select id="vmess-insecure" v-model="protocolState.vmessDisableInsecure" class="select">
                     <option value="">不设置（沿用核心默认）</option>
                     <option value="true">true</option>
@@ -303,7 +303,7 @@ const cipherValue = computed({
 
               <template v-if="draft.protocol === 'shadowsocks'">
                 <div class="field">
-                  <label for="ss-method">加密方法（cipher / method）</label>
+                  <label for="ss-method">加密算法</label>
                   <input id="ss-method" v-model="cipherValue" class="input mono" list="ss-methods" placeholder="aes-256-gcm 或 2022-blake3-*" />
                   <datalist id="ss-methods">
                     <option v-for="method in SS_METHOD_OPTIONS" :key="method" :value="method" />
@@ -311,12 +311,12 @@ const cipherValue = computed({
                   <p class="field__help">2022 系列方法需配套多用户主密钥；被核心移除的算法不要声称支持。</p>
                 </div>
                 <div class="field">
-                  <label for="ss-password">settings.password（服务端密钥）</label>
+                  <label for="ss-password">服务端密钥</label>
                   <input id="ss-password" v-model="protocolState.ssPassword" class="input mono" type="password" autocomplete="off" />
                   <p class="field__help">只保存在面板；不写入成员配置。留空表示由后端注入。</p>
                 </div>
                 <div class="field">
-                  <label for="ss-network">settings.network</label>
+                  <label for="ss-network">传输网络</label>
                   <select id="ss-network" v-model="protocolState.ssNetwork" class="select">
                     <option value="">不设置</option>
                     <option value="tcp">tcp</option>
@@ -328,7 +328,7 @@ const cipherValue = computed({
             </div>
 
             <div v-if="showFallbacks" class="field">
-              <label for="protocol-fallbacks">fallbacks（JSON 数组）</label>
+              <label for="protocol-fallbacks">回落规则（高级）</label>
               <textarea
                 id="protocol-fallbacks"
                 v-model="protocolState.fallbacksText"
@@ -356,7 +356,7 @@ const cipherValue = computed({
           <div class="card__body stack">
             <div class="grid grid--form">
               <div class="field">
-                <label for="stream-network">network</label>
+                <label for="stream-network">传输方式</label>
                 <input id="stream-network" v-model="streamState.network" class="input mono" list="networks" />
                 <datalist id="networks">
                   <option v-for="network in NETWORK_OPTIONS" :key="network" :value="network" />
@@ -364,7 +364,7 @@ const cipherValue = computed({
                 <p class="field__help">常用 tcp / ws / grpc / httpupgrade；核心已移除的传输请勿声称支持。</p>
               </div>
               <div class="field">
-                <label for="stream-security">security</label>
+                <label for="stream-security">加密层</label>
                 <select id="stream-security" v-model="streamState.security" class="select">
                   <option v-for="option in SECURITY_OPTIONS" :key="option" :value="option">{{ option }}</option>
                 </select>
@@ -375,19 +375,19 @@ const cipherValue = computed({
               <div class="section-title">TLS</div>
               <div class="grid grid--form">
                 <div class="field">
-                  <label for="tls-sni">tlsSettings.serverName</label>
+                  <label for="tls-sni">证书域名</label>
                   <input id="tls-sni" v-model="streamState.tlsServerName" class="input mono" />
                 </div>
                 <div class="field">
-                  <label for="tls-alpn">tlsSettings.alpn</label>
+                  <label for="tls-alpn">协商协议</label>
                   <input id="tls-alpn" v-model="streamState.tlsAlpn" class="input mono" placeholder="h2, http/1.1" />
                 </div>
                 <div class="field">
-                  <label for="tls-cert">certificates[0].certificateFile</label>
+                  <label for="tls-cert">证书文件路径</label>
                   <input id="tls-cert" v-model="streamState.tlsCertFile" class="input mono" />
                 </div>
                 <div class="field">
-                  <label for="tls-key">certificates[0].keyFile</label>
+                  <label for="tls-key">私钥文件路径</label>
                   <input id="tls-key" v-model="streamState.tlsKeyFile" class="input mono" />
                   <p class="field__help">路径必须位于 Agent 受控目录；不接受任意路径注入。</p>
                 </div>
@@ -398,32 +398,32 @@ const cipherValue = computed({
               <div class="section-title">REALITY</div>
               <div class="grid grid--form">
                 <div class="field">
-                  <label for="reality-dest">realitySettings.dest</label>
+                  <label for="reality-dest">回落目标</label>
                   <input id="reality-dest" v-model="streamState.realityDest" class="input mono" placeholder="回落目标，如 example.com:443" />
                 </div>
                 <div class="field">
-                  <label for="reality-server-names">serverNames</label>
+                  <label for="reality-server-names">允许的域名</label>
                   <input id="reality-server-names" v-model="streamState.realityServerNames" class="input mono" placeholder="逗号分隔" />
                 </div>
                 <div class="field">
-                  <label for="reality-private-key">privateKey（服务端秘密）</label>
+                  <label for="reality-private-key">REALITY 私钥</label>
                   <input id="reality-private-key" v-model="streamState.realityPrivateKey" class="input mono" type="password" autocomplete="off" />
                   <p class="field__help">仅面板与 Agent 使用，不进入成员配置；日志与页面默认脱敏。</p>
                 </div>
                 <div class="field">
-                  <label for="reality-short-ids">shortIds</label>
+                  <label for="reality-short-ids">短 ID 列表</label>
                   <input id="reality-short-ids" v-model="streamState.realityShortIds" class="input mono" placeholder="逗号分隔，十六进制" />
                 </div>
                 <div class="field">
-                  <label for="reality-public-key">settings.publicKey（客户端可见）</label>
+                  <label for="reality-public-key">REALITY 公钥</label>
                   <input id="reality-public-key" v-model="streamState.realityPublicKey" class="input mono" />
                 </div>
                 <div class="field">
-                  <label for="reality-fingerprint">settings.fingerprint</label>
+                  <label for="reality-fingerprint">指纹</label>
                   <input id="reality-fingerprint" v-model="streamState.realityFingerprint" class="input mono" placeholder="chrome" />
                 </div>
                 <div class="field">
-                  <label for="reality-spider">settings.spiderX</label>
+                  <label for="reality-spider">爬虫路径</label>
                   <input id="reality-spider" v-model="streamState.realitySpiderX" class="input mono" />
                 </div>
               </div>
@@ -447,27 +447,27 @@ const cipherValue = computed({
             <p class="text-sm text-muted">面向成员客户端的非秘密参数；服务端私钥一律不写入此处。</p>
             <div class="grid grid--form">
               <div class="field">
-                <label for="client-sni">serverName</label>
+                <label for="client-sni">域名</label>
                 <input id="client-sni" v-model="clientState.serverName" class="input mono" />
               </div>
               <div class="field">
-                <label for="client-public-key">publicKey</label>
+                <label for="client-public-key">公钥</label>
                 <input id="client-public-key" v-model="clientState.publicKey" class="input mono" />
               </div>
               <div class="field">
-                <label for="client-short-id">shortId</label>
+                <label for="client-short-id">短 ID</label>
                 <input id="client-short-id" v-model="clientState.shortId" class="input mono" />
               </div>
               <div class="field">
-                <label for="client-fingerprint">fingerprint</label>
+                <label for="client-fingerprint">指纹</label>
                 <input id="client-fingerprint" v-model="clientState.fingerprint" class="input mono" />
               </div>
               <div class="field">
-                <label for="client-alpn">alpn</label>
+                <label for="client-alpn">协商协议</label>
                 <input id="client-alpn" v-model="clientState.alpn" class="input mono" placeholder="h2, http/1.1" />
               </div>
               <div class="field">
-                <label for="client-insecure">allowInsecure</label>
+                <label for="client-insecure">跳过证书校验</label>
                 <select id="client-insecure" v-model="clientState.allowInsecure" class="select">
                   <option value="">不设置</option>
                   <option value="false">false（推荐）</option>
@@ -488,7 +488,7 @@ const cipherValue = computed({
               服务端已保存节点级秘密：<strong>{{ node?.server_key_set ? '是' : '否/未提供' }}</strong>（明文永不返回）
             </p>
             <div class="field">
-              <label for="node-server-key">server_key</label>
+              <label for="node-server-key">服务端密钥</label>
               <input id="node-server-key" v-model="draft.server_key" class="input mono" type="password" autocomplete="off" />
               <p class="field__help">节点级秘密（如 REALITY 私钥或 SS 主密钥）；不写入成员配置，页面与日志脱敏。</p>
             </div>

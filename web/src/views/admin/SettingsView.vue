@@ -240,7 +240,7 @@ const templateDefaultsPreview = computed(() => stringifyJson(templateDefaults.va
 
 <template>
   <div>
-    <PageHeader title="设置" description="业务时区默认值、通知渠道、保留期、客户端模板与恢复协调模式。">
+    <PageHeader title="设置" description="面板的全局设置：默认时区、通知、数据保留、客户端模板。">
       <span v-if="settings?.version !== undefined" class="text-xs text-muted">版本 {{ settings.version }}</span>
       <button type="button" class="btn" :disabled="loading" @click="load">重新读取</button>
       <button type="button" class="btn btn--primary" :disabled="saving" @click="save">
@@ -258,7 +258,7 @@ const templateDefaultsPreview = computed(() => stringifyJson(templateDefaults.va
         <div class="card__header"><h2>基础</h2></div>
         <div class="card__body grid grid--form">
           <div class="field">
-            <label for="settings-tz">默认业务时区</label>
+            <label for="settings-tz">默认时区</label>
             <input id="settings-tz" v-model="form.timezone" class="input mono" placeholder="Asia/Shanghai" />
             <p class="field__help">订阅必须显式写入时区；此处仅默认值。</p>
           </div>

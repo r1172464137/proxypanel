@@ -48,7 +48,7 @@ const remaining = computed(() => {
 
 <template>
   <div>
-    <PageHeader title="我的用量" description="按周期归属统计；跨周期补报按区间分摊并标注估计值。额度判定以面板账本为准。">
+    <PageHeader title="我的用量" description="查看本期用了多少流量。数字来自实际计费记录；补报的历史数据会标注「估算」。">
       <button type="button" class="btn" :disabled="usage.loading.value" @click="usage.reload()">刷新</button>
     </PageHeader>
 

@@ -7,6 +7,7 @@ import { useResource } from '@/lib/async'
 import { errorText } from '@/lib/errors'
 import { formatBytes, formatDateTime, formatQuota } from '@/lib/format'
 import { pushToast } from '@/lib/toast'
+import { accessReasonDetails } from '@/lib/accessReasons'
 import PageHeader from '@/components/PageHeader.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
@@ -75,25 +76,12 @@ const accessDenied = computed(() => {
   return typeof access?.access === 'boolean' && access.access === false
 })
 
-const REASON_TEXT: Record<string, string> = {
-  no_binding: '账户还没有绑定订阅',
-  binding_expired: '绑定的订阅已到期',
-  subscription_access_paused: '订阅的访问开关已关闭',
-  subscription_archived: '订阅已归档',
-  proxy_paused: '代理访问已被暂停',
-  account_suspended: '账户已停用',
-  account_archived: '账户已归档',
-  over_quota: '已超出配额',
-  no_nodes_authorized: '订阅未授权任何可用节点',
-  node_disabled: '授权节点全部被停用',
-  node_not_authorized: '该节点未授权给此账户',
-}
-
+// 原因码 → 人话。映射放在共享模块里，全站统一，不在各视图各写一份。
 const deniedReasons = computed(() => {
   const access = status.data.value?.access
   const codes = access?.access_reasons ?? []
   const raw = codes.length ? codes : access?.proxy_access ? [access.proxy_access] : []
-  return raw.map((code) => REASON_TEXT[code] ?? `未识别的限制原因：${code}`)
+  return accessReasonDetails(raw)
 })
 
 watch(format, () => {
@@ -176,7 +164,9 @@ function openRotate(): void {
               <strong>当前无代理权限，订阅链接暂不可用。</strong>
             </p>
             <ul v-if="deniedReasons.length" class="stack" style="margin-top: var(--space-3)">
-              <li v-for="reason in deniedReasons" :key="reason" class="text-sm">· {{ reason }}</li>
+              <li v-for="reason in deniedReasons" :key="reason.label" class="text-sm">
+                <strong>{{ reason.label }}</strong>。{{ reason.action }}
+              </li>
             </ul>
             <p class="text-sm" style="margin-top: var(--space-3)">
               现在打开该链接会被服务端拒绝（403 no proxy access），客户端也无法拉取配置。
@@ -250,9 +240,15 @@ function openRotate(): void {
               <dt>到期时间</dt>
               <dd>{{ formatDateTime(status.data.value?.access?.expires_at ?? status.data.value?.member?.expires_at) }}</dd>
             </dl>
-            <p v-if="status.data.value?.access?.access_reasons?.length" class="banner banner--warn" style="margin-top: var(--space-3)">
-              当前访问限制原因：{{ status.data.value?.access?.access_reasons?.join('、') }}
-            </p>
+            <div v-if="accessReasonDetails(status.data.value?.access?.access_reasons).length"
+                 class="banner banner--warn" style="margin-top: var(--space-3)">
+              <div class="banner__title">现在还不能使用代理</div>
+              <ul>
+                <li v-for="reason in accessReasonDetails(status.data.value?.access?.access_reasons)" :key="reason.label">
+                  {{ reason.label }}。{{ reason.action }}
+                </li>
+              </ul>
+            </div>
           </div>
         </section>
       </template>

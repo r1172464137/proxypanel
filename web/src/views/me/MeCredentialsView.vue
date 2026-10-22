@@ -91,10 +91,8 @@ async function rotateCredentials(): Promise<void> {
 
 <template>
   <div>
-    <PageHeader title="凭据" description="订阅链接与代理凭据分开管理：轮换链接只阻止再次下载；轮换代理凭据会硬撤权并中断连接。">
+    <PageHeader title="我的凭据" description="两样东西：一个是订阅链接，一个是每个节点各自的密码。下面分别说明用途和泄露后果。">
       <button type="button" class="btn" :disabled="subscription.loading.value" @click="subscription.reload()">刷新</button>
-      <button type="button" class="btn btn--danger" @click="openCred">轮换代理凭据</button>
-      <button type="button" class="btn" @click="openToken">轮换订阅链接</button>
     </PageHeader>
 
     <div class="stack">
@@ -102,14 +100,44 @@ async function rotateCredentials(): Promise<void> {
       <ErrorState v-else-if="subscription.error.value" :error="subscription.error.value" @retry="subscription.reload()" />
       <template v-else-if="subscription.data.value">
         <section class="card">
-          <div class="card__header"><h2>订阅令牌</h2></div>
+          <div class="card__header">
+            <h2>订阅链接</h2>
+            <div class="card__header-actions">
+              <button type="button" class="btn btn--sm" @click="openToken">换一个链接</button>
+            </div>
+          </div>
+          <div class="card__body">
+            <p class="text-sm">
+              这是一个网址。把它粘进客户端（v2rayN / sing-box / Mihomo 等），客户端就会自动拿到你的所有节点。
+            </p>
+            <p class="text-sm text-muted">
+              换掉之后旧网址失效，但<strong>已经导入客户端的配置照常能用</strong>，正在使用的连接也不会断。
+              只在怀疑链接被别人拿到时才需要换。
+            </p>
+          </div>
           <div class="card__body grid grid--2">
             <div class="stack">
-              <CopyField :value="subscription.data.value.token" label="订阅令牌" mask warning="令牌可重建订阅链接；如泄露请立即轮换。" />
-              <CopyField :value="currentUrl" label="订阅链接（默认格式）" mask />
-              <p class="text-xs text-muted">代理凭据（每个节点的 UUID/密码）由服务端注入并通过订阅输出下发，本页不展示明文。</p>
+              <CopyField :value="currentUrl" label="订阅链接" mask warning="这个链接等同于密码，别转发给别人。" />
             </div>
             <QrPanel :value="currentUrl" />
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card__header">
+            <h2>节点密码</h2>
+            <div class="card__header-actions">
+              <button type="button" class="btn btn--sm btn--danger" @click="openCred">全部换掉</button>
+            </div>
+          </div>
+          <div class="card__body">
+            <p class="text-sm">
+              每个节点各有一份密码（通常是 UUID），由面板自动生成并随订阅链接下发，所以这里不显示明文。
+            </p>
+            <p class="text-sm text-muted">
+              <strong>换掉之后所有设备立刻断开</strong>，已导入的客户端全部失效，必须重新拉取订阅并重新导入才能恢复。
+              只在确认密码被别人拿去用、或者要踢掉某台设备时才用。
+            </p>
           </div>
         </section>
 

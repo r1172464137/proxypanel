@@ -107,7 +107,7 @@ function exportCsv(): void {
 
 <template>
   <div>
-    <PageHeader title="用量" description="按成员 / 节点 / 时间查询。计量以账本为准；跨周期补报按采样区间分摊并标注估计值，网卡流量单列且不参与配额判断。">
+    <PageHeader title="用量" description="按成员或节点查流量。数字来自实际计费记录；补报的历史数据会标注「估算」。网卡总流量单独列出，不参与额度判断。">
       <button type="button" class="btn" :disabled="!items.length" @click="exportCsv">导出当前结果 CSV</button>
       <button type="button" class="btn" :disabled="loading" @click="query()">刷新</button>
     </PageHeader>
@@ -129,14 +129,14 @@ function exportCsv(): void {
           </select>
         </div>
         <p class="field__help" style="grid-column: 1 / -1">
-          时间范围按契约传给服务端（from/to）；若后端尚未实现该筛选，结果会包含全部周期，请以周期列核对。
+          时间范围按周期开始时间筛选。留空表示不限。
         </p>
         <div class="field">
-          <label for="usage-from">起始时间</label>
+          <label for="usage-from">统计起始时间</label>
           <input id="usage-from" v-model="filters.from_local" class="input" type="datetime-local" />
         </div>
         <div class="field">
-          <label for="usage-to">结束时间</label>
+          <label for="usage-to">统计结束时间</label>
           <input id="usage-to" v-model="filters.to_local" class="input" type="datetime-local" />
         </div>
         <div class="row" style="align-self: end">

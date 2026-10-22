@@ -42,7 +42,11 @@ onMounted(() => void list.refresh())
               <tr v-for="entry in list.items.value" :key="entry.id">
                 <td class="nowrap" :title="utcLabel(entry.created_at)">{{ formatDateTime(entry.created_at) }}</td>
                 <td>{{ entry.action ?? '—' }}</td>
-                <td>{{ entry.actor_username ?? entry.actor ?? entry.actor_id ?? '—' }}</td>
+                <td>
+                  <template v-if="entry.actor_username">{{ entry.actor_username }}</template>
+                  <template v-else-if="entry.actor_id">{{ entry.actor_id }}</template>
+                  <span v-else class="text-muted">匿名<template v-if="entry.action === 'auth.login'">（登录事件本身没有操作者）</template></span>
+                </td>
                 <td class="text-xs">
                   {{ entry.target_type ?? '—' }}
                   <span class="cell-sub mono">{{ entry.target_id ?? '' }}</span><span class="cell-sub" v-if="entry.ip || entry.request_id">来源 {{ entry.ip ?? '—' }} · {{ entry.request_id ?? '—' }}</span>

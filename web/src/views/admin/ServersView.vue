@@ -234,7 +234,7 @@ async function generateCode(server: ServerRecord): Promise<void> {
             <p class="field__help">按浏览器本地时间输入，提交为 UTC</p>
           </div>
           <div class="field">
-            <label for="server-cost">成本（最小货币单位）</label>
+            <label for="server-cost">成本（元）</label>
             <input id="server-cost" v-model="form.cost_minor" class="input" inputmode="numeric" placeholder="如 5000 = 50.00" />
           </div>
           <div class="field">

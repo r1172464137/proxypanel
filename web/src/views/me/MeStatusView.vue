@@ -4,6 +4,7 @@ import { meApi } from '@/api/endpoints'
 import type { MeStatus } from '@/api/types'
 import { useResource } from '@/lib/async'
 import { formatBytes, formatDateTime, formatQuota, prettyJson } from '@/lib/format'
+import { accessReasonDetails } from '@/lib/accessReasons'
 import PageHeader from '@/components/PageHeader.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
@@ -69,10 +70,15 @@ const chain = computed(() => (Array.isArray(access.value?.access_chain) ? access
           </dl>
         </div>
         <div class="card__body" style="padding-top: 0">
-          <p v-if="access?.access_reasons?.length" class="banner banner--warn">
-            当前访问限制原因：{{ access.access_reasons.join('、') }}
-          </p>
-          <p v-else-if="access" class="banner banner--info">服务端未返回访问限制原因（判定通过或未提供）。</p>
+          <div v-if="accessReasonDetails(access?.access_reasons).length" class="banner banner--warn">
+            <div class="banner__title">现在还不能使用代理</div>
+            <ul>
+              <li v-for="reason in accessReasonDetails(access?.access_reasons)" :key="reason.label">
+                {{ reason.label }}。{{ reason.action }}
+              </li>
+            </ul>
+          </div>
+          <p v-else-if="access" class="banner banner--info">权限正常，没有限制。</p>
         </div>
       </section>
 

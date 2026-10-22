@@ -52,7 +52,7 @@ async function ack(event: EventRecord): Promise<void> {
 
 <template>
   <div>
-    <PageHeader title="事件与告警" description="节点异常、证书/服务器到期、上报积压、撤权失败等；确认仅代表已知悉，恢复需服务端再次上报。">
+    <PageHeader title="事件与告警" description="这里记录节点异常、到期提醒、上报积压等问题。点「确认」只是标记你已看到，问题本身要等服务端再次上报恢复才会消失。">
       <button type="button" class="btn" :disabled="list.loading.value" @click="list.refresh()">刷新</button>
     </PageHeader>
 

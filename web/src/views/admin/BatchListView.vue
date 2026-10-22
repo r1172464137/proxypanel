@@ -52,7 +52,7 @@ function detailPath(batch: BatchDetail): string {
 
 <template>
   <div>
-    <PageHeader title="批量任务" description="成员/订阅/节点组的批量变更记录：提交后逐对象异步下发，只有 succeeded 且回执版本匹配才算生效。">
+    <PageHeader title="批量任务" description="批量修改的历史记录。提交后逐个成员下发到节点，全部生效才算完成。">
       <router-link class="btn btn--sm" to="/admin/members">成员</router-link>
       <router-link class="btn btn--sm" to="/admin/tasks">任务与同步</router-link>
       <button type="button" class="btn btn--sm" :disabled="list.loading.value" @click="list.refresh()">刷新</button>

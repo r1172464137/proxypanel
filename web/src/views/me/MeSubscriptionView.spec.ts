@@ -58,7 +58,7 @@ describe('MeSubscriptionView 无代理权限', () => {
     const wrapper = await mountView()
     const text = wrapper.text()
     expect(text).toContain('当前无代理权限')
-    expect(text).toContain('账户还没有绑定订阅')
+    expect(text).toContain('还没有绑定订阅')
     wrapper.unmount()
   })
 

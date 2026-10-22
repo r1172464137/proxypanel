@@ -24,7 +24,7 @@ const isEmpty = computed(() => {
 
 <template>
   <div>
-    <PageHeader title="总览" description="面板实时聚合值；节点/Agent 的实际生效状态请以任务与运行时页面为准。">
+    <PageHeader title="总览" description="一屏看关键数字。这些是面板的即时统计；节点是否真的在跑，请看「服务器」里的运行时页。">
       <button type="button" class="btn" :disabled="overview.loading.value" @click="overview.reload()">
         <span v-if="overview.loading.value" class="spinner" aria-hidden="true" />
         <AppIcon v-else name="refresh" :size="15" />

@@ -59,7 +59,7 @@ async function retry(): Promise<void> {
 
 <template>
   <div>
-    <PageHeader title="任务与同步" description="下发/应用/回执状态。只有 succeeded 且回执版本等于期望版本才算“已生效”；timeout 会告警。">
+    <PageHeader title="任务与同步" description="你改的配置要送到节点上才算真的生效。这里看每一条走到哪一步了；标红的可以点重试。">
       <button type="button" class="btn" :disabled="list.loading.value" @click="list.refresh()">刷新</button>
       <button type="button" class="btn" :class="{ 'btn--primary': autoRefresh }" @click="toggleAuto">
         {{ autoRefresh ? '停止自动刷新' : '自动刷新（10s）' }}
