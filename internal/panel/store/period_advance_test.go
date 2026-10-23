@@ -158,6 +158,52 @@ func TestComputeAdvanceRejectsUnknownTimezone(t *testing.T) {
 	}
 }
 
+func TestComputeAdvanceNeverOverlapsPreviousCycle(t *testing.T) {
+	parse := func(s string) time.Time {
+		t.Helper()
+		v, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	for _, tc := range []struct {
+		name, oldStart, oldEnd, at, zone string
+		oldAnchor, nextAnchor            int
+		wantStart, wantEnd               string
+	}{
+		{"anchor-change", "2026-03-15T00:00:00Z", "2026-04-15T00:00:00Z", "2026-04-15T00:00:00Z", "UTC", 15, 31, "2026-04-15T00:00:00Z", "2026-04-30T00:00:00Z"},
+		{"clipped-month", "2026-01-31T00:00:00Z", "2026-02-28T00:00:00Z", "2026-02-28T00:00:00Z", "UTC", 31, 1, "2026-02-28T00:00:00Z", "2026-03-01T00:00:00Z"},
+		{"timezone-east", "2026-10-01T00:00:00Z", "2026-11-01T00:00:00Z", "2026-11-01T00:00:00Z", "Asia/Shanghai", 1, 1, "2026-11-01T00:00:00Z", "2026-11-30T16:00:00Z"},
+		{"timezone-west", "2026-10-01T00:00:00Z", "2026-11-01T00:00:00Z", "2026-11-01T01:00:00Z", "America/New_York", 1, 1, "2026-11-01T00:00:00Z", "2026-11-01T04:00:00Z"},
+		{"exact-short-cycle-end", "2026-03-15T00:00:00Z", "2026-04-15T00:00:00Z", "2026-04-30T00:00:00Z", "UTC", 15, 31, "2026-04-30T00:00:00Z", "2026-05-31T00:00:00Z"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			start, end, at := parse(tc.oldStart), parse(tc.oldEnd), parse(tc.at)
+			m := &domain.Member{
+				PeriodStart: &start, PeriodEnd: &end, PeriodAnchorDay: tc.oldAnchor, PeriodTimezone: "UTC",
+				PendingPeriodRule: &domain.PeriodRule{AnchorDay: tc.nextAnchor, Timezone: tc.zone},
+			}
+			got, err := computeAdvance(m, nil, at)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !got.Advanced || !got.RuleApplied || got.Pending != nil {
+				t.Fatalf("pending rule not consumed at the old boundary: %+v", got)
+			}
+			if !got.Start.Equal(parse(tc.wantStart)) || !got.End.Equal(parse(tc.wantEnd)) {
+				t.Fatalf("transition = [%s,%s), want [%s,%s)", got.Start, got.End, tc.wantStart, tc.wantEnd)
+			}
+			if got.Start.Before(parse(tc.oldEnd)) || at.Before(got.Start) || !at.Before(got.End) {
+				t.Fatalf("transition overlaps history or does not contain now: %+v", got)
+			}
+			if !m.PeriodStart.Equal(parse(tc.oldStart)) || !m.PeriodEnd.Equal(parse(tc.oldEnd)) || m.PendingPeriodRule == nil {
+				t.Fatal("pure cycle calculation mutated persisted input")
+			}
+		})
+	}
+}
+
 func TestComputeAdvanceAppliesTimezoneEditAtFirstBoundaryExactly(t *testing.T) {
 	start := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
 	end := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
@@ -181,7 +227,7 @@ func TestComputeAdvanceAppliesTimezoneEditAtFirstBoundaryExactly(t *testing.T) {
 	if !at.Advanced || !at.RuleApplied || at.Pending != nil || at.Anchor != 15 || at.Timezone != "Asia/Tokyo" {
 		t.Fatalf("edit not applied at the first boundary: %+v", at)
 	}
-	wantStart := time.Date(2026, 3, 14, 15, 0, 0, 0, time.UTC) // March 15 00:00 JST
+	wantStart := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC) // New rules cannot move the start into the old cycle.
 	wantEnd := time.Date(2026, 4, 14, 15, 0, 0, 0, time.UTC)
 	if !at.Start.Equal(wantStart) || !at.End.Equal(wantEnd) {
 		t.Fatalf("new window = %s..%s, want %s..%s", at.Start, at.End, wantStart, wantEnd)

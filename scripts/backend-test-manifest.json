@@ -55,5 +55,23 @@
     ],
     "stories": ["US-PR-008", "US-PR-013"],
     "requires": []
+  },
+  {
+    "id": "store/cycle",
+    "packages": ["./internal/panel/store"],
+    "run": "^TestComputeAdvance",
+    "expected_tests": [
+      "TestComputeAdvanceKeepsRunningCycle",
+      "TestComputeAdvanceRollsEndedCycleToContainingWindow",
+      "TestComputeAdvanceAppliesPendingRuleAtBoundary",
+      "TestComputeAdvanceLeavesMissingCycleAlone",
+      "TestComputeAdvanceWithoutBindingOrRuleIsNoop",
+      "TestComputeAdvanceClipsShortMonths",
+      "TestComputeAdvanceRejectsUnknownTimezone",
+      "TestComputeAdvanceNeverOverlapsPreviousCycle",
+      "TestComputeAdvanceAppliesTimezoneEditAtFirstBoundaryExactly"
+    ],
+    "stories": ["US-PR-005", "US-PR-013"],
+    "requires": []
   }
 ]

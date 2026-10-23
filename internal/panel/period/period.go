@@ -229,6 +229,16 @@ func Window(start time.Time, anchorDay int, loc *time.Location) Boundary {
 	return Boundary{Start: start.UTC(), End: NextBoundary(start, anchorDay, loc)}
 }
 
+// Transition preserves oldEnd as the first new-rule cycle's start, then rolls
+// forward into the calendar cycles aligned with the new rule.
+func Transition(oldEnd time.Time, anchorDay int, loc *time.Location, now time.Time) Boundary {
+	first := Window(oldEnd, anchorDay, loc)
+	if now.Before(first.End) {
+		return first
+	}
+	return Containing(anchorDay, loc, now)
+}
+
 // AllocateSample splits a sampling interval across the supplied candidate
 // cycles by overlap duration. The integer remainder is attributed to the last
 // overlapping slice, matching product.md §8.5 (estimated + boundary_split).

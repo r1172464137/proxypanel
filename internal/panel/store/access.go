@@ -518,7 +518,7 @@ func computeAdvance(m *domain.Member, sub *domain.Subscription, now time.Time) (
 	if err != nil {
 		return out, domain.Validation("invalid cycle timezone %q", tz)
 	}
-	win := period.Containing(anchor, loc, now)
+	win := period.Transition(*m.PeriodEnd, anchor, loc, now)
 	out.Start, out.End, out.Anchor, out.Timezone = win.Start, win.End, anchor, tz
 	out.Advanced = true
 	return out, nil
