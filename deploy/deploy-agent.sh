@@ -18,8 +18,8 @@
 #   sudo bash deploy-agent.sh --dry-run       # 只打印将要执行的操作
 #   sudo bash deploy-agent.sh --yes ...       # 非交互（参数见 --help）
 #
-# 重要：本脚本未经真机验证。项目已验证的是 Windows 本地运行与 Docker 容器运行；
-# systemd 安装路径、真实 VPS 跨机链路都尚未实测。首次使用请先在测试机上跑通。
+# systemd 安装路径尚未在目标生产机验证；首次使用先在隔离节点验收。
+# 脚本级回归不等于已安装/重启过真实宿主服务。
 set -euo pipefail
 
 readonly SCRIPT_VERSION="1.0"
@@ -37,6 +37,20 @@ readonly XRAY_BASE="/opt/proxypanel/xray"
 readonly AGENT_DIR="/opt/proxypanel/agent"
 readonly AGENT_BIN="$AGENT_DIR/agent"
 readonly UNIT_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+readonly CA_FILE="/usr/local/share/ca-certificates/proxypanel-panel.crt"
+
+# ReadWritePaths must not grant writes to system files or other services' data.
+# This deny list is defence in depth, not an exhaustive security boundary.
+# ProtectHome/PrivateTmp also make home and temporary paths unusable for state.
+readonly -a FORBIDDEN_STATE_TREES=(
+  /etc /usr /bin /sbin /lib /lib32 /lib64 /libx32 /boot /dev /proc /sys
+  /run /var/run /var/log /var/lock /var/spool /var/lib/systemd
+  /var/lib/docker /var/lib/postgresql /var/lib/pgsql /var/lib/mysql
+  /var/lib/redis /tmp /var/tmp /home /root /opt/proxypanel
+)
+readonly -a FORBIDDEN_STATE_EXACT=(
+  / /var /var/lib /opt /srv /mnt /media
+)
 
 ASSUME_YES=""
 DRY_RUN=""
@@ -168,7 +182,7 @@ require_systemd() {
 
 check_tools() {
   local missing=()
-  for tool in curl sha256sum unzip install useradd; do
+  for tool in curl sha256sum unzip install useradd realpath mktemp; do
     command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
   done
   if [ ${#missing[@]} -gt 0 ]; then
@@ -265,9 +279,8 @@ collect_inputs() {
     die "从 URL 安装必须提供 --agent-sha256，否则无法校验下载内容"
   fi
 
-  if [ -z "$ARG_STATE_DIR" ]; then
-    ARG_STATE_DIR="$STATE_DIR"
-  fi
+  ARG_STATE_DIR=$(normalize_state_dir "${ARG_STATE_DIR:-$STATE_DIR}")
+  validate_state_dir "$ARG_STATE_DIR"
 
   # 非交互模式（-y）下不再提问可选值：没有 --panel-ca 就按"不用私有 CA"处理，
   # 否则 read 在无 tty 的环境里会立即 EOF 并把部署判定为失败。
@@ -437,29 +450,23 @@ install_panel_ca() {
   [ -n "$ARG_PANEL_CA" ] || return 0
   step "安装私有 CA"
   [ -f "$ARG_PANEL_CA" ] || die "找不到 CA 文件：$ARG_PANEL_CA"
-  local target="/usr/local/share/ca-certificates/proxypanel-panel.crt"
-  install -m 0644 "$ARG_PANEL_CA" "$target"
+  install -m 0644 "$ARG_PANEL_CA" "$CA_FILE"
   if command -v update-ca-certificates >/dev/null 2>&1; then
     update-ca-certificates >/dev/null 2>&1 || warn "update-ca-certificates 返回非零，请手工确认"
     ok "已加入系统信任库"
   else
-    warn "系统没有 update-ca-certificates；请在服务单元中设置 SSL_CERT_FILE=$target"
+    ok "已安装到 $CA_FILE；本机没有 update-ca-certificates"
+    info "单元已通过 Environment=SSL_CERT_FILE=$CA_FILE 指定它"
   fi
 }
 
-install_unit() {
-  step "安装 systemd 单元"
-
-  local script_dir
-  script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-  local candidate="$script_dir/proxypanel-agent.service"
-
-  if [ -f "$candidate" ]; then
-    install -m 0644 "$candidate" "$UNIT_FILE"
-    ok "使用随附的单元文件：$candidate"
-  else
-    info "未找到随附单元文件，写入内置版本"
-    cat > "$UNIT_FILE" <<'EOF'
+# The release installer uses /opt/proxypanel/current; this standalone installer
+# uses /opt/proxypanel/agent. Never copy the release unit into this layout.
+render_unit() {
+  local state_path
+  state_path=$(normalize_state_dir "${ARG_STATE_DIR:-$STATE_DIR}")
+  validate_state_dir "$state_path"
+  cat <<EOF
 [Unit]
 Description=Proxypanel Xray node agent
 After=network-online.target
@@ -467,10 +474,10 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=proxypanel-agent
-Group=proxypanel-agent
-WorkingDirectory=/opt/proxypanel/agent
-ExecStart=/opt/proxypanel/agent/agent -config /etc/proxypanel/agent.json
+User=$SERVICE_ACCOUNT
+Group=$SERVICE_ACCOUNT
+WorkingDirectory=$AGENT_DIR
+ExecStart=$AGENT_BIN -config $CONFIG_FILE
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=75
@@ -480,17 +487,75 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/proxypanel-agent
+ReadWritePaths=$state_path
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+EOF
+  # A nonexistent SSL_CERT_FILE breaks TLS, so override only for an explicit CA.
+  if [ -n "$ARG_PANEL_CA" ]; then
+    printf 'Environment=SSL_CERT_FILE=%s\n' "$CA_FILE"
+  fi
+  cat <<EOF
 
 [Install]
 WantedBy=multi-user.target
 EOF
-    chmod 0644 "$UNIT_FILE"
-  fi
+}
 
+# Canonical form: absolute, exactly one leading slash, no trailing slash.
+normalize_state_dir() {
+  local value=${1:-}
+  while [[ $value == */ && $value != / ]]; do
+    value=${value%/}
+  done
+  printf '%s' "$value"
+}
+
+validate_state_dir() {
+  local value part current='' forbidden
+  local -a parts=()
+  # Normalize first: a typed trailing slash must not change the meaning of the
+  # deny list below (/etc/ has to be rejected exactly like /etc).
+  value=$(normalize_state_dir "${1-}")
+  # No whitespace, controls or systemd %-specifiers: both the unit file and the
+  # JSON config embed this value verbatim.
+  [[ $value =~ ^/[A-Za-z0-9_./-]+$ ]] || die "状态目录必须是无空白/控制字符的绝对路径：$value"
+  for forbidden in "${FORBIDDEN_STATE_EXACT[@]}"; do
+    [ "$value" != "$forbidden" ] || die "拒绝将系统目录用作 Agent 状态目录：$value"
+  done
+  for forbidden in "${FORBIDDEN_STATE_TREES[@]}"; do
+    case "$value" in "$forbidden"|"$forbidden"/*)
+      die "拒绝将系统目录用作 Agent 状态目录：$value" ;;
+    esac
+  done
+  local resolved
+  resolved=$(realpath -m -- "$value")
+  [ "$resolved" = "$value" ] || die "状态路径必须规范化且不能穿过符号链接或包含 ..：$value"
+  IFS='/' read -r -a parts <<< "$value"
+  for part in "${parts[@]}"; do
+    [ -n "$part" ] || continue
+    current="$current/$part"
+    [ ! -L "$current" ] || die "状态路径不能包含符号链接：$current"
+  done
+}
+
+install_unit() {
+  step "安装 systemd 单元"
+  local unit_tmp
+  # The unit embeds the state path and the CA path. Write it 0600 and clean up
+  # through an EXIT trap: validate_state_dir calls die(), which exits the shell
+  # immediately, so an explicit `rm` after render_unit would never run.
+  unit_tmp=$(mktemp)
+  chmod 0600 "$unit_tmp"
+  local had_exit_trap
+  had_exit_trap=$(trap -p EXIT)
+  # shellcheck disable=SC2064 # unit_tmp is expanded now on purpose.
+  trap "rm -f -- '$unit_tmp'" EXIT
+  render_unit > "$unit_tmp" || die "无法生成 systemd 单元"
+  install -m 0644 "$unit_tmp" "$UNIT_FILE"
+  rm -f -- "$unit_tmp"
+  if [ -n "$had_exit_trap" ]; then eval "$had_exit_trap"; else trap - EXIT; fi
   systemctl daemon-reload
   ok "单元已安装：$UNIT_FILE"
 }
@@ -563,18 +628,27 @@ main() {
   install_agent_binary
   prepare_state
   write_config
-  install_panel_ca
-  install_unit
-
   if [ -n "${ARG_KEEP_CONFIG:-}" ]; then
-    ok "沿用现有配置，跳过配置检查与重启"
+    # The preserved config may use a different state directory or CA. Do not
+    # replace its existing unit or trust store using newly supplied parameters.
+    ok "沿用现有配置、服务单元与 CA，跳过配置检查与重启"
+    if [ ! -f "$UNIT_FILE" ]; then
+      warn "现有配置被保留，但 $UNIT_FILE 不存在：本次没有安装单元，服务不会启动。"
+      warn "如确需重新生成单元，请重跑并选择覆盖现有配置。"
+    fi
     report
     return 0
   fi
 
+  install_panel_ca
+  install_unit
   run_config_check
   start_service
   report
 }
 
-main "$@"
+# Sourced by tests (BASH_SOURCE is set) or executed normally. Also tolerate
+# `bash < deploy-agent.sh`, where BASH_SOURCE is unset and set -u would abort.
+if [[ "${BASH_SOURCE[0]:-$0}" == "$0" ]]; then
+  main "$@"
+fi

@@ -18,19 +18,43 @@ func ValidateWebRoot(root string) error {
 	if !dir.IsDir() {
 		return fmt.Errorf("web root is not a directory: %s", root)
 	}
-	f, err := os.Open(filepath.Join(root, "index.html"))
+	f, _, err := openStaticFile(root, "index.html")
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	return f.Close()
+}
+
+// openStaticFile opens name under root and returns only regular files.
+//
+// The boundary is enforced by os.Root while opening, so a symlink (absolute or
+// relative, at any path component) that resolves outside root is rejected. A
+// Stat followed by a separate open would allow that escape and leaves a
+// check/use window.
+//
+// The open is non-blocking: a FIFO that a mispackaged dist happens to contain
+// would otherwise block the request goroutine forever in open(2). Because the
+// file returned here must be a regular file, nothing ever reads from a FIFO.
+func openStaticFile(root, name string) (*os.File, os.FileInfo, error) {
+	r, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer r.Close()
+	f, err := r.OpenFile(name, os.O_RDONLY|openNonBlocking, 0)
+	if err != nil {
+		return nil, nil, err
+	}
 	info, err := f.Stat()
 	if err != nil {
-		return err
+		f.Close()
+		return nil, nil, err
 	}
 	if !info.Mode().IsRegular() {
-		return fmt.Errorf("index.html is not a regular file")
+		f.Close()
+		return nil, nil, fmt.Errorf("%s is not a regular file", name)
 	}
-	return nil
+	return f, info, nil
 }
 
 // newStaticHandler serves a read-only dist directory. Unknown API endpoints and
@@ -43,7 +67,6 @@ func newStaticHandler(root string) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	files := http.FileServer(http.Dir(abs))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			w.Header().Set("Allow", "GET, HEAD")
@@ -66,16 +89,16 @@ func newStaticHandler(root string) (http.Handler, error) {
 		}
 		// Every /assets request is a file request, including extensionless ones.
 		if name == "assets" || strings.HasPrefix(name, "assets/") || path.Ext(name) != "" {
-			info, err := os.Stat(filepath.Join(abs, filepath.FromSlash(name)))
-			if err != nil || !info.Mode().IsRegular() {
+			f, info, err := openStaticFile(abs, filepath.FromSlash(name))
+			if err != nil {
 				http.NotFound(w, r)
 				return
 			}
+			defer f.Close()
 			if name == "index.html" {
-				serveSPAIndex(w, r, abs)
-			} else {
-				files.ServeHTTP(w, r)
+				w.Header().Set("Cache-Control", "no-store")
 			}
+			http.ServeContent(w, r, path.Base(name), info.ModTime(), f)
 			return
 		}
 		serveSPAIndex(w, r, abs)
@@ -83,17 +106,12 @@ func newStaticHandler(root string) (http.Handler, error) {
 }
 
 func serveSPAIndex(w http.ResponseWriter, r *http.Request, root string) {
-	f, err := os.Open(filepath.Join(root, "index.html"))
+	f, info, err := openStaticFile(root, "index.html")
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 	defer f.Close()
-	info, err := f.Stat()
-	if err != nil || !info.Mode().IsRegular() {
-		http.NotFound(w, r)
-		return
-	}
 	// A stale index references old hashed assets, so never cache the entry page.
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

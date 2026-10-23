@@ -1,0 +1,34 @@
+[
+  {
+    "id": "api/static",
+    "packages": ["./internal/panel/api"],
+    "run": "^Test(Static|ValidateWebRoot)",
+    "expected_tests": [
+      "TestStaticRoutes",
+      "TestStaticAPIOnly",
+      "TestValidateWebRoot",
+      "TestStaticSymlinksStayWithinRoot",
+      "TestValidateWebRootRejectsEscapingIndexSymlink",
+      "TestStaticRejectsNonRegularFileWithoutBlocking",
+      "TestValidateWebRootRejectsFifoIndex"
+    ],
+    "stories": ["US-PR-001", "US-PR-017"],
+    "requires": ["unix"]
+  },
+  {
+    "id": "e2e/standalone-agent",
+    "packages": ["./tests/e2e"],
+    "run": "^TestStandaloneAgent",
+    "expected_tests": [
+      "TestStandaloneAgentUnitMatchesInstalledBinary",
+      "TestStandaloneAgentUnitOmitsCAOverrideWithoutPrivateCA",
+      "TestStandaloneAgentRejectsUnsafeStatePath",
+      "TestStandaloneAgentAcceptsNormalStatePath",
+      "TestStandaloneAgentNormalizesTrailingSlashState",
+      "TestStandaloneAgentKeepConfigSkipsUnitAndCA",
+      "TestStandaloneAgentRunsWithoutBashSource"
+    ],
+    "stories": ["US-PR-003", "US-PR-016", "US-PR-017"],
+    "requires": ["unix"]
+  }
+]
