@@ -27,13 +27,13 @@ import (
 	"proxypanel/internal/panel/secrets"
 )
 
-// Store is the panel persistence handle. It uses database/sql with the pgx
-// stdlib driver: pgxpool would require github.com/jackc/puddle/v2, which is not
-// part of the frozen root go.mod (reported to the owner instead of edited).
+// Store is the panel persistence handle.
 type Store struct {
 	DB  *sql.DB
 	Key *secrets.Key
 	Now func() time.Time
+
+	readOnly bool
 }
 
 // Options configures the pool.
@@ -46,28 +46,59 @@ type Options struct {
 	ConnectTimeout time.Duration
 }
 
+// ErrReadOnly marks operations forbidden on the inspection connection.
+var ErrReadOnly = errors.New("store is read-only")
+
 // Open connects, verifies the database and applies pending migrations.
 func Open(ctx context.Context, opts Options) (*Store, error) {
+	s, err := openDatabase(ctx, opts, false)
+	if err != nil {
+		return nil, err
+	}
+	dir := opts.MigrationsDir
+	if dir == "" {
+		dir = os.Getenv("PANEL_MIGRATIONS_DIR")
+	}
+	if dir == "" {
+		dir = "migrations"
+	}
+	if err := s.Migrate(ctx, dir); err != nil {
+		s.Close()
+		return nil, err
+	}
+	return s, nil
+}
+
+// OpenReadOnly inspects an existing or empty database without migrations or a
+// master key. It is not a sandbox for callers that can issue arbitrary SQL.
+func OpenReadOnly(ctx context.Context, opts Options) (*Store, error) {
+	return openDatabase(ctx, opts, true)
+}
+
+func openDatabase(ctx context.Context, opts Options, readOnly bool) (*Store, error) {
 	if strings.TrimSpace(opts.DatabaseURL) == "" {
 		return nil, errors.New("DATABASE_URL is required")
 	}
-	if opts.MasterKey == nil {
+	if !readOnly && opts.MasterKey == nil {
 		return nil, errors.New("PANEL_MASTER_KEY is required")
 	}
 	connConfig, err := pgx.ParseConfig(opts.DatabaseURL)
 	if err != nil {
-		return nil, fmt.Errorf("parse DATABASE_URL: %w", err)
+		return nil, errors.New("invalid DATABASE_URL configuration")
 	}
 	if opts.ConnectTimeout > 0 {
 		connConfig.ConnectTimeout = opts.ConnectTimeout
 	}
-	if opts.SearchPath != "" {
-		// Used by the integration tests: every run owns one schema and never
-		// touches objects outside it.
+	if opts.SearchPath != "" || readOnly {
 		if connConfig.RuntimeParams == nil {
 			connConfig.RuntimeParams = map[string]string{}
 		}
-		connConfig.RuntimeParams["search_path"] = opts.SearchPath
+		if opts.SearchPath != "" {
+			connConfig.RuntimeParams["search_path"] = opts.SearchPath
+		}
+		if readOnly {
+			connConfig.RuntimeParams["default_transaction_read_only"] = "on"
+		}
 	}
 	db := stdlib.OpenDB(*connConfig)
 	if opts.MaxConns > 0 {
@@ -81,17 +112,9 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("postgres unreachable: %w", err)
 	}
-	s := &Store{DB: db, Key: opts.MasterKey, Now: func() time.Time { return time.Now().UTC() }}
-	dir := opts.MigrationsDir
-	if dir == "" {
-		dir = os.Getenv("PANEL_MIGRATIONS_DIR")
-	}
-	if dir == "" {
-		dir = "migrations"
-	}
-	if err := s.Migrate(ctx, dir); err != nil {
-		_ = db.Close()
-		return nil, err
+	s := &Store{DB: db, Now: func() time.Time { return time.Now().UTC() }, readOnly: readOnly}
+	if !readOnly {
+		s.Key = opts.MasterKey
 	}
 	return s, nil
 }
@@ -119,6 +142,9 @@ func (s *Store) now() time.Time {
 // The lock makes concurrent panel starts safe; a checksum mismatch aborts
 // instead of silently re-applying a changed migration.
 func (s *Store) Migrate(ctx context.Context, dir string) error {
+	if s.readOnly {
+		return ErrReadOnly
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return fmt.Errorf("read migrations dir %q: %w", dir, err)
@@ -205,6 +231,9 @@ type querier interface {
 
 // inTx runs fn in a transaction, rolling back on error or panic.
 func (s *Store) inTx(ctx context.Context, fn func(*sql.Tx) error) error {
+	if s.readOnly {
+		return ErrReadOnly
+	}
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return dbErr(err)
@@ -335,6 +364,12 @@ func (s *Store) encryptSecret(plain string) ([]byte, error) {
 	if plain == "" {
 		return nil, nil
 	}
+	if s.readOnly {
+		return nil, ErrReadOnly
+	}
+	if s.Key == nil {
+		return nil, errors.New("PANEL_MASTER_KEY is required")
+	}
 	return s.Key.EncryptString(plain)
 }
 
@@ -342,6 +377,12 @@ func (s *Store) encryptSecret(plain string) ([]byte, error) {
 func (s *Store) decryptSecret(ct []byte) (string, error) {
 	if len(ct) == 0 {
 		return "", nil
+	}
+	if s.readOnly {
+		return "", ErrReadOnly
+	}
+	if s.Key == nil {
+		return "", errors.New("PANEL_MASTER_KEY is required")
 	}
 	return s.Key.DecryptString(ct)
 }
@@ -351,4 +392,3 @@ func newID(prefix string) string { return ids.New(prefix) }
 
 // itoa64 renders a base 10 integer (used for revisions on the wire).
 func itoa64(v int64) string { return strconv.FormatInt(v, 10) }
-

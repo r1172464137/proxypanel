@@ -571,8 +571,11 @@ func TestSubscriptionRuleEditSchedulesImmediatelyForNextBoundary(t *testing.T) {
 	if settled.PeriodAnchorDay != 15 || settled.PeriodTimezone != "Asia/Tokyo" || settled.PendingPeriodRule != nil {
 		t.Fatalf("the first boundary did not consume the edited rule: %+v", settled)
 	}
-	loc, _ := period.LoadTimezone("Asia/Tokyo")
-	want := period.Containing(15, loc, f.cur.End)
+	// This fixture ends at UTC month start; Tokyo's 15th midnight is the 14th at 15:00Z.
+	want := period.Boundary{
+		Start: f.cur.End,
+		End:   time.Date(f.cur.End.Year(), f.cur.End.Month(), 14, 15, 0, 0, 0, time.UTC),
+	}
 	if settled.PeriodStart == nil || !settled.PeriodStart.Equal(want.Start) ||
 		settled.PeriodEnd == nil || !settled.PeriodEnd.Equal(want.End) {
 		t.Fatalf("new cycle = %v..%v, want %+v", settled.PeriodStart, settled.PeriodEnd, want)

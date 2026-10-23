@@ -1,7 +1,9 @@
 [
   {
     "id": "api/static",
-    "packages": ["./internal/panel/api"],
+    "packages": [
+      "./internal/panel/api"
+    ],
     "run": "^Test(Static|ValidateWebRoot)",
     "expected_tests": [
       "TestStaticRoutes",
@@ -12,12 +14,19 @@
       "TestStaticRejectsNonRegularFileWithoutBlocking",
       "TestValidateWebRootRejectsFifoIndex"
     ],
-    "stories": ["US-PR-001", "US-PR-017"],
-    "requires": ["unix"]
+    "stories": [
+      "US-PR-001",
+      "US-PR-017"
+    ],
+    "requires": [
+      "unix"
+    ]
   },
   {
     "id": "e2e/standalone-agent",
-    "packages": ["./tests/e2e"],
+    "packages": [
+      "./tests/e2e"
+    ],
     "run": "^TestStandaloneAgent",
     "expected_tests": [
       "TestStandaloneAgentUnitMatchesInstalledBinary",
@@ -28,12 +37,20 @@
       "TestStandaloneAgentKeepConfigSkipsUnitAndCA",
       "TestStandaloneAgentRunsWithoutBashSource"
     ],
-    "stories": ["US-PR-003", "US-PR-016", "US-PR-017"],
-    "requires": ["unix"]
+    "stories": [
+      "US-PR-003",
+      "US-PR-016",
+      "US-PR-017"
+    ],
+    "requires": [
+      "unix"
+    ]
   },
   {
     "id": "period/calendar",
-    "packages": ["./internal/panel/period"],
+    "packages": [
+      "./internal/panel/period"
+    ],
     "run": "^Test",
     "expected_tests": [
       "TestAnchorInstantAsiaShanghai",
@@ -53,12 +70,17 @@
       "TestLoadTimezoneRejectsHostDependentLocal",
       "TestPrevBoundaryAndCandidateWindows"
     ],
-    "stories": ["US-PR-008", "US-PR-013"],
+    "stories": [
+      "US-PR-008",
+      "US-PR-013"
+    ],
     "requires": []
   },
   {
     "id": "store/cycle",
-    "packages": ["./internal/panel/store"],
+    "packages": [
+      "./internal/panel/store"
+    ],
     "run": "^TestComputeAdvance",
     "expected_tests": [
       "TestComputeAdvanceKeepsRunningCycle",
@@ -71,7 +93,84 @@
       "TestComputeAdvanceNeverOverlapsPreviousCycle",
       "TestComputeAdvanceAppliesTimezoneEditAtFirstBoundaryExactly"
     ],
-    "stories": ["US-PR-005", "US-PR-013"],
+    "stories": [
+      "US-PR-005",
+      "US-PR-013"
+    ],
     "requires": []
+  },
+  {
+    "id": "store/database-baseline",
+    "packages": [
+      "./internal/panel/store"
+    ],
+    "run": "^Test",
+    "expected_tests": [
+      "TestNodeMutationPublishesRevisionInSameCommit",
+      "TestMemberAndCredentialChangesPublishRevision",
+      "TestNodeMoveRevokesOnBothServers",
+      "TestEvaluateAccessAdvancesEndedCycle",
+      "TestSnapshotAdvancesCycleAndReturnsFreshRevision",
+      "TestAdvancePeriodsTick",
+      "TestSubscriptionRuleEditSchedulesImmediatelyForNextBoundary",
+      "TestUsageBatchBooksIntoAdvancedCycle",
+      "TestSnapshotAndEvidenceAreNotTruncatedBeyond200",
+      "TestSubscriptionRuleRepeatedEditsReplaceAndClearPending",
+      "TestSimulateUpdateNodeGroupAllowsNewlyAddedNode",
+      "TestDigestMembersIsOrderInsensitiveAndVersioned",
+      "TestRequestFingerprintBindsPreviewAndConfirmation",
+      "TestDiffNodes",
+      "TestApplySubscriptionPatchObjectValidation",
+      "TestOperationConstantsMatchContract",
+      "TestListBatchesReturnsNewestFirstWithCounters",
+      "TestListBatchesRespectsLimitAndHandlesEmpty",
+      "TestNormalizeRetentionDaysEnforcesFloor",
+      "TestNormalizeBoundsIsAlwaysBounded",
+      "TestCleanupNeverDeletesProtectedTables",
+      "TestCleanupStatementsAreBoundedAndUseThePolicyArguments",
+      "TestCleanupKeepsOpenAlertsAndUndeliveredNotifications",
+      "TestAlertDedupeKeyIsKindAndSubject",
+      "TestObservationSetCompleteness",
+      "TestTruncateMessage",
+      "TestShortDurationAndBytes",
+      "TestDeleteNodeRemovesGroupMembership",
+      "TestArchivedObjectsAreNotUpdatable",
+      "TestComputeAdvanceKeepsRunningCycle",
+      "TestComputeAdvanceRollsEndedCycleToContainingWindow",
+      "TestComputeAdvanceAppliesPendingRuleAtBoundary",
+      "TestComputeAdvanceLeavesMissingCycleAlone",
+      "TestComputeAdvanceWithoutBindingOrRuleIsNoop",
+      "TestComputeAdvanceClipsShortMonths",
+      "TestComputeAdvanceRejectsUnknownTimezone",
+      "TestComputeAdvanceNeverOverlapsPreviousCycle",
+      "TestComputeAdvanceAppliesTimezoneEditAtFirstBoundaryExactly",
+      "TestRecoveryGenerationIsFreshExactJSONInteger",
+      "TestRecoveryGenerationTransaction",
+      "TestRetryTaskReopensDispatchAndPublishesCurrentRevision",
+      "TestRetryTaskRefusals",
+      "TestRetryTaskIsAtomicOnFailure",
+      "TestBatchSetActiveDoesNotTouchProxyEnabled",
+      "TestUpdateMemberActiveDoesNotTouchProxyEnabled",
+      "TestDeleteSubscriptionRemovesTheRow",
+      "TestDeleteSubscriptionCascadesNodeGroupLinks",
+      "TestDeleteSubscriptionRefusesWhenMembersBound",
+      "TestDeleteSubscriptionRemovesArchivedOne",
+      "TestDeleteSubscriptionDetachesArchivedMembers",
+      "TestDeleteSubscriptionStillBlockedByActiveMember"
+    ],
+    "stories": [
+      "US-PR-005",
+      "US-PR-006",
+      "US-PR-009",
+      "US-PR-010",
+      "US-PR-013",
+      "US-PR-014",
+      "US-PR-016",
+      "US-PR-017"
+    ],
+    "requires": [
+      "postgres"
+    ],
+    "timeout_seconds": 300
   }
 ]
