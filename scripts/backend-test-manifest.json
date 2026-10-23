@@ -30,5 +30,30 @@
     ],
     "stories": ["US-PR-003", "US-PR-016", "US-PR-017"],
     "requires": ["unix"]
+  },
+  {
+    "id": "period/calendar",
+    "packages": ["./internal/panel/period"],
+    "run": "^Test",
+    "expected_tests": [
+      "TestAnchorInstantAsiaShanghai",
+      "TestAnchorInstantClipsShortMonths",
+      "TestContainingAndNextBoundary",
+      "TestNextBoundaryIsStrictlyIncreasing",
+      "TestDSTGapTakesFirstValidInstant",
+      "TestDSTAmbiguousTakesEarlierInstant",
+      "TestAllocateSampleAcrossBoundary",
+      "TestAllocateSampleSinglePeriodIsExact",
+      "TestAllocateSampleRemainderGoesToLast",
+      "TestAllocateSampleZeroLengthIsDropped",
+      "TestLoadTimezoneRejectsEmptyAndUnknown",
+      "TestContainingUsesLocalCalendarMonth",
+      "TestPrevBoundaryUsesLocalCalendarMonth",
+      "TestDSTGapAtLargeOffsetAndSkippedDate",
+      "TestLoadTimezoneRejectsHostDependentLocal",
+      "TestPrevBoundaryAndCandidateWindows"
+    ],
+    "stories": ["US-PR-008", "US-PR-013"],
+    "requires": []
   }
 ]

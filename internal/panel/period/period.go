@@ -37,6 +37,9 @@ func LoadTimezone(name string) (*time.Location, error) {
 	if name == "" {
 		return nil, fmt.Errorf("timezone is required")
 	}
+	if name == "Local" {
+		return nil, fmt.Errorf("explicit IANA timezone is required; Local depends on the host")
+	}
 	loc, err := time.LoadLocation(name)
 	if err != nil {
 		return nil, fmt.Errorf("unknown timezone %q", name)
@@ -75,51 +78,38 @@ func AnchorInstant(anchorDay int, loc *time.Location, year int, month time.Month
 // resolveWallClock maps a local wall clock date at 00:00 to a UTC instant.
 func resolveWallClock(year int, month time.Month, day int, loc *time.Location) time.Time {
 	wall := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
-	_, offA := wall.Add(-36 * time.Hour).In(loc).Zone()
-	_, offB := wall.Add(36 * time.Hour).In(loc).Zone()
-	var best time.Time
-	seen := map[int]bool{}
-	for _, off := range []int{offA, offB} {
-		if seen[off] {
-			continue
-		}
-		seen[off] = true
-		inst := wall.Add(-time.Duration(off) * time.Second)
-		if sameWallClock(inst.In(loc), year, month, day) {
-			if best.IsZero() || inst.Before(best) {
-				best = inst
+	_, offset := wall.In(loc).Zone()
+	guess := wall.Add(-time.Duration(offset) * time.Second)
+	// Two days on either side cover IANA date-line skips as well as DST gaps.
+	cursor, limit := guess.Add(-48*time.Hour), guess.Add(48*time.Hour)
+	var exact, afterGap time.Time
+	var hasExact, hasGap bool
+	for !cursor.After(limit) {
+		local := cursor.In(loc)
+		_, offset := local.Zone()
+		_, end := local.ZoneBounds()
+		candidate := wall.Add(-time.Duration(offset) * time.Second)
+		// The local clock is linear only within one constant-offset interval.
+		if !candidate.Before(cursor) && (end.IsZero() || candidate.Before(end)) {
+			if !hasExact || candidate.Before(exact) {
+				exact, hasExact = candidate, true
 			}
+		} else if candidate.Before(cursor) && (!hasGap || cursor.Before(afterGap)) {
+			afterGap, hasGap = cursor, true
 		}
+		if end.IsZero() || !end.After(cursor) {
+			break
+		}
+		cursor = end
 	}
-	if !best.IsZero() {
-		return best.UTC()
+	// Prefer an actual midnight; repeated midnights use the earlier instant.
+	if hasExact {
+		return exact.UTC()
 	}
-	// DST gap: the wall clock never occurred. Take the first instant whose local
-	// wall clock is not before the requested one.
-	start := wall.Add(-3 * time.Hour)
-	for i := 0; i <= 9*60; i++ {
-		inst := start.Add(time.Duration(i) * time.Minute)
-		local := inst.In(loc)
-		ly, lm, ld := local.Date()
-		if ly < year || (ly == year && lm < month) || (ly == year && lm == month && ld < day) {
-			continue
-		}
-		if ly == year && lm == month && ld == day {
-			return inst.UTC()
-		}
-		// Crossed into a later date without ever observing this date: the gap
-		// swallowed the whole day, keep the first instant of the next date.
-		if ly > year || lm > month || ld > day {
-			return inst.UTC()
-		}
+	if hasGap {
+		return afterGap.UTC()
 	}
-	return wall.UTC()
-}
-
-func sameWallClock(t time.Time, year int, month time.Month, day int) bool {
-	y, m, d := t.Date()
-	h, min, sec := t.Clock()
-	return y == year && m == month && d == day && h == 0 && min == 0 && sec == 0
+	return guess.UTC()
 }
 
 // NextBoundary returns the first anchor instant strictly after `after`.
@@ -161,7 +151,7 @@ func Containing(anchorDay int, loc *time.Location, t time.Time) Boundary {
 		loc = time.UTC
 	}
 	at := t.UTC()
-	base := at
+	base := at.In(loc)
 	var start time.Time
 	for delta := 0; delta >= -2; delta-- {
 		month := base.Month() + time.Month(delta)
@@ -178,7 +168,7 @@ func Containing(anchorDay int, loc *time.Location, t time.Time) Boundary {
 		}
 	}
 	if start.IsZero() {
-		start = AnchorInstant(anchorDay, loc, at.Year(), at.Month())
+		start = AnchorInstant(anchorDay, loc, base.Year(), base.Month())
 	}
 	return Boundary{Start: start, End: NextBoundary(start, anchorDay, loc)}
 }
@@ -188,7 +178,7 @@ func PrevBoundary(before time.Time, anchorDay int, loc *time.Location) time.Time
 	if loc == nil {
 		loc = time.UTC
 	}
-	base := before.UTC()
+	base := before.In(loc)
 	var best time.Time
 	for delta := 0; delta >= -3; delta-- {
 		month := base.Month() + time.Month(delta)
@@ -310,5 +300,3 @@ func mulDiv(value int64, part, whole time.Duration) int64 {
 	num.Quo(num, big.NewInt(int64(whole)))
 	return num.Int64()
 }
-
-

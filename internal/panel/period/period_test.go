@@ -181,6 +181,69 @@ func TestLoadTimezoneRejectsEmptyAndUnknown(t *testing.T) {
 	}
 }
 
+func TestContainingUsesLocalCalendarMonth(t *testing.T) {
+	for _, tc := range []struct {
+		name, zone, at, start, end string
+	}{
+		{"east-next-month", "Asia/Shanghai", "2026-10-31T17:00:00Z", "2026-10-31T16:00:00Z", "2026-11-30T16:00:00Z"},
+		{"east-next-year", "Pacific/Kiritimati", "2026-12-31T11:00:00Z", "2026-12-31T10:00:00Z", "2027-01-31T10:00:00Z"},
+		{"west-previous-month", "America/New_York", "2026-11-01T02:00:00Z", "2026-10-01T04:00:00Z", "2026-11-01T04:00:00Z"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			at := ts(t, tc.at)
+			got := Containing(1, mustLoc(t, tc.zone), at)
+			if !got.Start.Equal(ts(t, tc.start)) || !got.End.Equal(ts(t, tc.end)) {
+				t.Fatalf("containing cycle = %+v, want [%s,%s)", got, tc.start, tc.end)
+			}
+			if at.Before(got.Start) || !at.Before(got.End) {
+				t.Fatalf("cycle does not contain requested instant: %+v at %s", got, at)
+			}
+		})
+	}
+}
+
+func TestPrevBoundaryUsesLocalCalendarMonth(t *testing.T) {
+	for _, tc := range []struct {
+		name, zone, at, want string
+	}{
+		{"after-anchor", "Asia/Shanghai", "2026-10-31T17:00:00Z", "2026-10-31T16:00:00Z"},
+		{"exact-anchor-is-exclusive", "Asia/Shanghai", "2026-10-31T16:00:00Z", "2026-09-30T16:00:00Z"},
+		{"next-year", "Pacific/Kiritimati", "2026-12-31T11:00:00Z", "2026-12-31T10:00:00Z"},
+		{"west-previous-month", "America/New_York", "2026-11-01T02:00:00Z", "2026-10-01T04:00:00Z"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := PrevBoundary(ts(t, tc.at), 1, mustLoc(t, tc.zone)); !got.Equal(ts(t, tc.want)) {
+				t.Fatalf("previous boundary = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestDSTGapAtLargeOffsetAndSkippedDate(t *testing.T) {
+	for _, tc := range []struct {
+		zone  string
+		year  int
+		month time.Month
+		day   int
+		want  string
+	}{
+		{"Asia/Tehran", 2021, time.March, 22, "2021-03-21T20:30:00Z"},
+		{"Pacific/Apia", 2011, time.December, 30, "2011-12-30T10:00:00Z"},
+	} {
+		t.Run(tc.zone, func(t *testing.T) {
+			if got := AnchorInstant(tc.day, mustLoc(t, tc.zone), tc.year, tc.month); !got.Equal(ts(t, tc.want)) {
+				t.Fatalf("first valid instant = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoadTimezoneRejectsHostDependentLocal(t *testing.T) {
+	if loc, err := LoadTimezone("Local"); err == nil {
+		t.Fatalf("host-dependent timezone was accepted: %v", loc)
+	}
+}
+
 func TestPrevBoundaryAndCandidateWindows(t *testing.T) {
 	loc := mustLoc(t, "Asia/Shanghai")
 	now := ts(t, "2026-10-20T06:00:00Z") // cycle 2026-09-30T16:00Z .. 2026-10-31T16:00Z
