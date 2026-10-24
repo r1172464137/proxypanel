@@ -75,6 +75,23 @@ run_mode() {
   go test ./tests/e2e -run "$name" -count=1 -v -json "$@" \
     >"$PPF_EVIDENCE/$mode.go-test.json" 2>"$PPF_EVIDENCE/$mode.stderr.log" || rc=$?
   printf '%s\n' "$rc" >"$PPF_EVIDENCE/$mode.rawexit"
+  # A successful go command with zero cases or skipped cases is not a pass.
+  if ! python3 - "$PPF_EVIDENCE/$mode.go-test.json" "$mode" <<'PY'
+import json, sys
+expected = {
+    'unit': {'TestWebDemoPlatformUnitContract', 'TestWebDemoPlatformOwnedCoreDetection'},
+    'systemd': {'TestWebDemoPlatformRealAgentRestart'},
+}[sys.argv[2]]
+with open(sys.argv[1]) as src:
+    events = [json.loads(line) for line in src if line.strip()]
+passed = {e.get('Test') for e in events if e.get('Action') == 'pass'}
+assert expected <= passed, f'expected cases not passed: {expected - passed}'
+assert not any(e.get('Action') in ('fail', 'skip') for e in events), 'failure or skip'
+assert any(e.get('Action') == 'pass' and 'Test' not in e for e in events), 'package not passed'
+PY
+  then
+    rc=1
+  fi
   # Human-readable rendering is derived from the recorded JSON, never re-run.
   python3 - "$PPF_EVIDENCE/$mode.go-test.json" "$PPF_EVIDENCE/$mode.stdout.log" <<'PY' || true
 import json, sys
@@ -103,7 +120,7 @@ PY
 }
 
 run_unit() {
-  run_mode unit TestWebDemoPlatformUnitContract
+  run_mode unit '^(TestWebDemoPlatformUnitContract|TestWebDemoPlatformOwnedCoreDetection)$'
 }
 
 run_systemd() {
@@ -150,7 +167,10 @@ d = pathlib.Path(sys.argv[1]); sha = sys.argv[2]
 ev = json.loads((d / "systemd-agent-restart.json").read_text())
 first = ev.get("first_process", {}).get("exe_sha256")
 second = ev.get("restart_after_kill", {}).get("second_process", {}).get("exe_sha256")
-if not (first == second == sha):
+manifest = json.loads((d / 'run-manifest.json').read_text())
+if ev.get('core_binary_sha256') != manifest.get('core_binary_sha256') or ev.get('core_binary') != manifest.get('core_binary'):
+    raise SystemExit('CORE_INPUT_MISMATCH')
+if not (first == second == sha == ev.get('agent_binary_sha256')):
     print(f"AGENT_SHA_MISMATCH sha={sha} first={first} second={second}")
     sys.exit(4)
 print(f"AGENT_SHA_CONSISTENT {sha}")
@@ -158,6 +178,11 @@ PY
   then
     rc=1
   fi
+fi
+
+if [[ " $PPF_MODES " == *" systemd "* ]] && [ ! -f "$PPF_EVIDENCE/agent-binary.sha256" ]; then
+  echo 'SYSTEMD_RECEIPT_MISSING' >&2
+  rc=1
 fi
 
 find "$PPF_EVIDENCE" -type d -exec chmod 700 {} + 2>/dev/null || true

@@ -415,7 +415,7 @@ func webdemoPlatformProcIdentity(t *testing.T, pid, agentBin string) (webdemoPro
 	if ident.Exe != agentBin {
 		return ident, false
 	}
-	ident.ExeSHA256 = webdemoPlatformSHA(t, ident.Exe)
+	ident.ExeSHA256 = webdemoPlatformSHA(t, "/proc/"+pid+"/exe")
 	want := webdemoPlatformSHA(t, agentBin)
 	if ident.ExeSHA256 != want {
 		t.Fatalf("running process %s is %q (sha256 %s), not the built Agent %q (sha256 %s): cmdline=%q",
@@ -541,13 +541,10 @@ func TestWebDemoPlatformRealAgentRestart(t *testing.T) {
 		t.Fatalf("official core %s missing: %v", webdemoPlatformXrayPath, err)
 	}
 	root := webdemoPlatformRepo(t)
-	// The real official core binary is invoked by the Agent only for its
-	// `version` compatibility probe; this test creates no snapshot instances, so
-	// no core process and no listener ever exists. The shared local web-demo
-	// runtime lock is therefore taken only when it is free (cheap, and honours the
-	// boundary) and the fact is recorded either way, instead of blocking another
-	// owner's real-core scenario.
-	localLock, lockHeld := webdemoPlatformTryLocalLock(t)
+	// Even an `xray version` probe is visible to the other runners' host-wide
+	// /proc snapshots. Acquire the shared lock after compilation, but before any
+	// Agent/core execution, and keep it until unit and fixture cleanup complete.
+	var localLock *os.File
 	t.Cleanup(func() { webdemoPlatformReleaseLocalLock(localLock) })
 	// PrivateTmp=yes hides /tmp and /var/tmp inside the unit, so the fixture
 	// (binary, config, state) must live elsewhere. A sibling dir of the worktree
@@ -592,6 +589,7 @@ func TestWebDemoPlatformRealAgentRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	localLock = webdemoPlatformAcquireLocalLock(t)
 	unit := fmt.Sprintf("ppf-webdemo-f-%d", os.Getpid())
 	cleanup := func() {
 		exec.Command("systemctl", "--user", "stop", unit).Run()
@@ -601,7 +599,7 @@ func TestWebDemoPlatformRealAgentRestart(t *testing.T) {
 
 	evidence := map[string]any{
 		"unit_name":           unit,
-		"local_runtime_lock":  map[string]any{"path": webdemoPlatformLocalLock, "held": lockHeld, "reason": lockReason(lockHeld)},
+		"local_runtime_lock":  map[string]any{"path": webdemoPlatformLocalLock, "held": true, "reason": "held from before Agent/core execution through unit and fixture cleanup"},
 		"agent_binary":        agentBin,
 		"agent_binary_sha256": webdemoPlatformSHA(t, agentBin),
 		"core_binary":         webdemoPlatformXrayPath,
@@ -643,24 +641,35 @@ func TestWebDemoPlatformRealAgentRestart(t *testing.T) {
 	}
 	evidence["capability_bounding_set"] = capRecord
 
-	// RestrictAddressFamilies is actually enforced by this manager (a socket
-	// family outside the list returns EAFNOSUPPORT), so it is reported as
-	// exercised rather than as "cannot probe".
+	// A failed TCP connection is not proof of a denied socket family. Require
+	// AF_UNIX to succeed and AF_INET creation to fail with EAFNOSUPPORT inside
+	// the same real unit; missing commands and manager errors must fail.
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Fatal("python3 missing: address-family probe cannot run")
+	}
 	rafProbe := exec.Command("systemd-run", "--user", "--wait", "--collect", "--pipe",
-		"--property=RestrictAddressFamilies=AF_UNIX",
-		"/bin/bash", "-c", `exec 3<>/dev/tcp/127.0.0.1:9`)
+		"--property=RestrictAddressFamilies=AF_UNIX", python, "-c", `
+import errno, socket
+socket.socket(socket.AF_UNIX, socket.SOCK_STREAM).close()
+try:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+except OSError as exc:
+    if exc.errno != errno.EAFNOSUPPORT:
+        raise
+    print("PPF_AF_UNIX_OK_AF_INET_EAFNOSUPPORT", flush=True)
+else:
+    sock.close()
+    raise SystemExit("AF_INET unexpectedly allowed")
+`)
 	rafOut, rafErr := rafProbe.CombinedOutput()
-	rafRecord := map[string]any{
-		"verdict":      "UNVERIFIED: AF_INET denial not observable with this probe",
-		"probe_output": strings.TrimSpace(string(rafOut)),
+	if rafErr != nil || !strings.Contains(string(rafOut), "PPF_AF_UNIX_OK_AF_INET_EAFNOSUPPORT") {
+		t.Fatalf("address-family denial unproved: %v\n%s", rafErr, rafOut)
 	}
-	if rafErr != nil || strings.Contains(string(rafOut), "No such file or directory") {
-		// bash reports the denied family as "No such file or directory" and exits
-		// non-zero; either signal means the property was applied.
-		rafRecord["verdict"] = "APPLIED: AF_INET denied while AF_UNIX unit ran"
-		rafRecord["applied"] = true
+	evidence["restrict_address_families"] = map[string]any{
+		"verdict": "APPLIED: AF_UNIX succeeded and AF_INET failed with EAFNOSUPPORT",
+		"applied": true, "probe_output": strings.TrimSpace(string(rafOut)),
 	}
-	evidence["restrict_address_families"] = rafRecord
 	unverified := []string{"User=", "Group=", "ProtectSystem=strict", "ProtectHome=true",
 		"ReadWritePaths=", "StateDirectory=", "CapabilityBoundingSet", "AmbientCapabilities", "system unit (PID1)"}
 
@@ -740,7 +749,7 @@ func TestWebDemoPlatformRealAgentRestart(t *testing.T) {
 	evidence["panel_hits_before_kill"] = panel.snapshot()
 	// No snapshot instance was delivered, so the Agent must not have spawned any
 	// core process: only its `version` probe ran.
-	if corePIDs := webdemoPlatformCorePIDs(); len(corePIDs) > 0 {
+	if corePIDs := webdemoPlatformCorePIDs(t, unit); len(corePIDs) > 0 {
 		evidence["core_processes"] = corePIDs
 		t.Errorf("unexpected core process(es) started by this Agent-only scenario: %v", corePIDs)
 	} else {
@@ -836,21 +845,30 @@ func TestWebDemoPlatformRealAgentRestart(t *testing.T) {
 	}
 }
 
-// webdemoPlatformTryLocalLock takes the shared web-demo local runtime lock only
-// if it is free. This scenario starts the Agent but no core process, so it must
-// never block another owner's real-core run.
-func webdemoPlatformTryLocalLock(t *testing.T) (*os.File, bool) {
+// Compilation does not consume the runtime lease. Lock contention is a bounded
+// environment failure, never permission to overlap host-wide process snapshots.
+func webdemoPlatformAcquireLocalLock(t *testing.T) *os.File {
 	t.Helper()
 	f, err := os.OpenFile(webdemoPlatformLocalLock, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
-		t.Logf("local runtime lock unavailable: %v", err)
-		return nil, false
+		t.Fatalf("local runtime lock unavailable: %v", err)
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		f.Close()
-		return nil, false
+	deadline := time.Now().Add(5 * time.Minute)
+	for {
+		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		if err == nil {
+			return f
+		}
+		if err != syscall.EWOULDBLOCK && err != syscall.EAGAIN {
+			f.Close()
+			t.Fatalf("local runtime lock failed: %v", err)
+		}
+		if time.Now().After(deadline) {
+			f.Close()
+			t.Fatal("local runtime lease timeout: environment contention, not a business rejection")
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
-	return f, true
 }
 
 func webdemoPlatformReleaseLocalLock(f *os.File) {
@@ -859,13 +877,6 @@ func webdemoPlatformReleaseLocalLock(f *os.File) {
 	}
 	syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 	f.Close()
-}
-
-func lockReason(held bool) string {
-	if held {
-		return "held for the whole before->cleanup window"
-	}
-	return "not held: another web-demo owner holds it; this test starts no core process (Agent only runs `xray version`)"
 }
 
 func checkExitStatus(err error) any {
@@ -887,12 +898,45 @@ func readFileOr(t *testing.T, path string) string {
 	return string(raw)
 }
 
-// webdemoPlatformCorePIDs lists live core processes of this test's private
-// fixture (path-scoped, never a host-wide guess).
-func webdemoPlatformCorePIDs() []string {
+func webdemoPlatformOwnedCore(args []string, cgroup, unit string) bool {
+	owned := false
+	for _, component := range strings.FieldsFunc(cgroup, func(r rune) bool { return r == '/' || r == '\n' }) {
+		if component == unit+".service" {
+			owned = true
+		}
+	}
+	return owned && len(args) > 1 && filepath.Base(args[0]) == "xray" && args[1] == "run"
+}
+
+func TestWebDemoPlatformOwnedCoreDetection(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		args   []string
+		cgroup string
+		want   bool
+	}{
+		{"owned running core", []string{"/bin/xray", "run", "-config", "/owned/x.json"}, "0::/app.slice/ppf-owned.service", true},
+		{"owned version probe", []string{"/bin/xray", "version"}, "0::/app.slice/ppf-owned.service", false},
+		{"unrelated core", []string{"/bin/xray", "run"}, "0::/app.slice/another.service", false},
+		{"owner prefix collision", []string{"/bin/xray", "run"}, "0::/app.slice/ppf-owned-other.service", false},
+		{"non-core owned process", []string{"/bin/sleep", "600"}, "0::/app.slice/ppf-owned.service", false},
+		{"empty command", nil, "0::/app.slice/ppf-owned.service", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := webdemoPlatformOwnedCore(tc.args, tc.cgroup, "ppf-owned"); got != tc.want {
+				t.Fatalf("owned core=%v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// webdemoPlatformCorePIDs lists running cores in this exact unit's cgroup,
+// never another owner's core and never a version probe.
+func webdemoPlatformCorePIDs(t *testing.T, unit string) []string {
+	t.Helper()
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
-		return nil
+		t.Fatalf("inspect owned core processes: %v", err)
 	}
 	var out []string
 	for _, e := range entries {
@@ -900,16 +944,17 @@ func webdemoPlatformCorePIDs() []string {
 		if _, err := strconv.Atoi(pid); err != nil {
 			continue
 		}
+		cgroup, err := os.ReadFile("/proc/" + pid + "/cgroup")
+		if err != nil {
+			continue
+		}
 		raw, err := os.ReadFile("/proc/" + pid + "/cmdline")
 		if err != nil {
 			continue
 		}
 		args := strings.Split(strings.TrimRight(string(raw), "\x00"), "\x00")
-		for i, a := range args {
-			if strings.HasSuffix(a, "/xray") && i > 0 && args[i-1] == "run" {
-				out = append(out, pid+":"+strings.Join(args, " "))
-				break
-			}
+		if webdemoPlatformOwnedCore(args, string(cgroup), unit) {
+			out = append(out, pid+":"+strings.Join(args, " "))
 		}
 	}
 	return out
