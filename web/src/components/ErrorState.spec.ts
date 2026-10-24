@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ErrorState from './ErrorState.vue'
 import { ApiError } from '@/api/http'
@@ -43,14 +43,17 @@ describe('ErrorState', () => {
   })
 
   it('默认显示“重试”按钮，点击后 emit retry', async () => {
+    const onRetry = vi.fn()
     const wrapper = mount(ErrorState, {
-      props: { error: new ApiError(503, { code: 'DB_UNAVAILABLE', message: '数据库不可用' }) },
+      props: { error: new ApiError(503, { code: 'DB_UNAVAILABLE', message: '数据库不可用' }), onRetry },
     })
 
     const button = wrapper.get('button')
     expect(button.text()).toContain('重试')
     await button.trigger('click')
-    expect(wrapper.emitted('retry')).toHaveLength(1)
+    // Verify delivery to the parent, independent of devtools-based event recording.
+    expect(onRetry).toHaveBeenCalledTimes(1)
+    expect(onRetry).toHaveBeenCalledWith()
   })
 
   it('showRetry=false 时不显示重试按钮', () => {

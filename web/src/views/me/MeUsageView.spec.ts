@@ -3,13 +3,16 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { api, ApiError } from '@/api/http'
 import { unpackMeUsage } from '@/lib/meUsage'
 import { memberSummary } from '@/lib/memberService'
+import { useResource } from '@/lib/async'
 import MeUsageView from './MeUsageView.vue'
+import ErrorState from '@/components/ErrorState.vue'
 
 vi.mock('@/api/endpoints', () => ({ meApi: { status: vi.fn(async () => ({ access: { access: true, effective_quota_bytes: 1000 } })) } }))
 vi.mock('@/api/http', async (importOriginal) => ({ ...await importOriginal<typeof import('@/api/http')>(), api: { get: vi.fn() } }))
 const get = vi.mocked(api.get)
 const wrappers: ReturnType<typeof mount>[] = []
-beforeEach(() => get.mockReset())
+// Returning mockReset() returns the mock itself, which Vitest treats as hook cleanup.
+beforeEach(() => { get.mockReset() })
 afterEach(() => wrappers.splice(0).forEach(wrapper => wrapper.unmount()))
 async function view() {
   const wrapper = mount(MeUsageView)
@@ -19,6 +22,14 @@ async function view() {
 }
 
 describe('成员用量最小闭环', () => {
+  it('资源加载捕获拒绝并保留原始 ApiError', async () => {
+    const error = new ApiError(503, { code: 'NETWORK_ERROR', message: '资源读取失败' })
+    const resource = useResource(async () => { throw error })
+    await expect(resource.reload()).resolves.toBeUndefined()
+    expect(resource.error.value).toBe(error)
+    expect(resource.loading.value).toBe(false)
+    expect(resource.data.value).toBeNull()
+  })
   it('对象解包保留用量与调整，不接受畸形数据作为零记录', () => {
     const page = unpackMeUsage({ items: { usage: [{ up_bytes: 42 }], adjustments: [{ bytes: -7 }] }, next_cursor: 'next' })
     expect(page.items[0]?.up_bytes).toBe(42)
@@ -50,11 +61,22 @@ describe('成员用量最小闭环', () => {
     expect(wrapper.get('[data-testid="usage-next-button"]').attributes('disabled')).toBeDefined()
   })
   it('读取失败显示重试而不是空表或明细零合计', async () => {
-    get.mockRejectedValue(new ApiError(503, { code: 'NETWORK_ERROR', message: '暂时不可达' }))
+    get.mockRejectedValueOnce(new ApiError(503, { code: 'NETWORK_ERROR', message: '暂时不可达' }))
+      .mockResolvedValueOnce({ items: { usage: [{ node_id: '恢复后的节点', up_bytes: 12, down_bytes: 34 }], adjustments: [] }, next_cursor: null })
     const wrapper = await view()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('无法连接面板')
+    expect(wrapper.find('[data-testid="usage-empty-message"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('本页暂无用量记录')
     expect(wrapper.text()).not.toContain('上 0 B')
     expect(wrapper.text()).toContain('重试')
+    expect(get).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('[data-testid="usage-summary-card"]').text()).toContain('1000 B')
+    await wrapper.getComponent(ErrorState).get('button').trigger('click')
+    await flushPromises()
+    expect(get).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('恢复后的节点')
+    expect(wrapper.text()).toContain('上 12 B · 下 34 B')
   })
 })
