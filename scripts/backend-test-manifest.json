@@ -1,11 +1,24 @@
 [
   {
     "id": "api/product-status",
-    "packages": ["./internal/panel/api"],
+    "packages": [
+      "./internal/panel/api"
+    ],
     "run": "^TestProduct(StatusReadModel|SetupEvidence)$",
-    "expected_tests": ["TestProductStatusReadModel", "TestProductSetupEvidence"],
-    "stories": ["US-PR-002", "US-PR-007", "US-PR-008", "US-PR-014", "US-PR-017"],
-    "requires": ["postgres"],
+    "expected_tests": [
+      "TestProductStatusReadModel",
+      "TestProductSetupEvidence"
+    ],
+    "stories": [
+      "US-PR-002",
+      "US-PR-007",
+      "US-PR-008",
+      "US-PR-014",
+      "US-PR-017"
+    ],
+    "requires": [
+      "postgres"
+    ],
     "timeout_seconds": 120
   },
   {
@@ -815,6 +828,45 @@
       "US-PR-008",
       "US-PR-009",
       "US-PR-018"
+    ],
+    "requires": [
+      "postgres"
+    ],
+    "timeout_seconds": 120
+  },
+  {
+    "id": "store/administrator-stop",
+    "packages": [
+      "./internal/panel/store"
+    ],
+    "run": "^TestAdministratorStop",
+    "expected_tests": [
+      "TestAdministratorStopReadyImport",
+      "TestAdministratorStopRejects",
+      "TestAdministratorStopImportRollback"
+    ],
+    "stories": [
+      "US-PR-013",
+      "US-PR-014",
+      "US-PR-016"
+    ],
+    "requires": [
+      "postgres",
+      "unix"
+    ],
+    "timeout_seconds": 120
+  },
+  {
+    "id": "panel/check-cli",
+    "packages": [
+      "./cmd/panel"
+    ],
+    "run": "^TestCheck",
+    "expected_tests": [
+      "TestCheckPreflightWithoutMasterKeyOrMigrations"
+    ],
+    "stories": [
+      "US-PR-016"
     ],
     "requires": [
       "postgres"
