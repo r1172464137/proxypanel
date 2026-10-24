@@ -1,4 +1,4 @@
-# frontend R1：匿名根入口按角色落点（待增量复验）
+# frontend R1：匿名根入口按角色落点（增量验证通过，待独立验收）
 
 ## 来源与实际变化
 
@@ -21,4 +21,5 @@
 - 主阶段计划：`.ai/super-run/product-readiness/web-demo.md`。
 - frontend候选及R0证据：`.ai/quality/product-readiness-frontend-candidate.md`。
 - F生命周期主验：`.ai/evidence/web-demo/F/main-dd40fac-retry-20261024T093138Z-a8941e/main-verification.json`，与本次router变化无关，适用性按Go/fixture/binary输入判断，不重复物理运行。
-- 状态：本文件创建时增量验证尚未运行；以随后生成原始JSON/exit/summary及独立R1报告为准，不将计划冒执行。
+- 实际执行：monitor63，source`00ed7da3906a7f0aac6eb1b2400251524affbfa9`（生产frontend与f38aff4一致），`.ai/evidence/frontend-phase/root-route-r1/20261024T094736Z-4b66c0c1/`。302/302 pass、0failed/skip/todo、2新增root role case实际passed；typecheck/build退出均0，全部frontend输入前后SHA一致，dist逐文件SHA已记录。没有重跑后端/物理服务。
+- 独立frontend R1验收尚待返回；真实完整18故事仍由web-demo承接，不把302 Vitest当整条业务验收或把A原14/7 checkpoint当全绿。

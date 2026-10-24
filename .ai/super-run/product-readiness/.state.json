@@ -139,7 +139,7 @@
           ]
         },
         "test": {
-          "status": "in_progress",
+          "status": "completed",
           "agent_spec": "/home/compile/code/t-tools/agents/frontend-test.md",
           "references": [
             ".ai/design/product-readiness.md",
@@ -157,11 +157,12 @@
             ".ai/evidence/frontend-phase/frozen-706f0ba/20261024T071857Z-1046d1af/summary.json",
             ".ai/evidence/frontend-phase/frozen-706f0ba/20261024T071857Z-1046d1af/vitest.json",
             ".ai/evidence/frontend-phase/frozen-706f0ba/20261024T071857Z-1046d1af/probe/2026-10-24T07-20-06-410Z/report.json",
-            ".ai/evidence/frontend-phase/frozen-706f0ba/20261024T071857Z-1046d1af/main-touch-review.json"
+            ".ai/evidence/frontend-phase/frozen-706f0ba/20261024T071857Z-1046d1af/main-touch-review.json",
+            ".ai/evidence/frontend-phase/root-route-r1/20261024T094736Z-4b66c0c1/summary.json"
           ]
         },
         "accept": {
-          "status": "pending",
+          "status": "in_progress",
           "agent_spec": "/home/compile/code/t-tools/agents/frontend-accept.md",
           "references": [
             ".ai/design/product-readiness.md",
