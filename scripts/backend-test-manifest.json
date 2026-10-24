@@ -68,6 +68,7 @@
       "TestPrevBoundaryUsesLocalCalendarMonth",
       "TestDSTGapAtLargeOffsetAndSkippedDate",
       "TestLoadTimezoneRejectsHostDependentLocal",
+      "TestMonthRollbackKeepsEarlierMidnightBoundary",
       "TestPrevBoundaryAndCandidateWindows"
     ],
     "stories": [
@@ -156,7 +157,8 @@
       "TestDeleteSubscriptionRefusesWhenMembersBound",
       "TestDeleteSubscriptionRemovesArchivedOne",
       "TestDeleteSubscriptionDetachesArchivedMembers",
-      "TestDeleteSubscriptionStillBlockedByActiveMember"
+      "TestDeleteSubscriptionStillBlockedByActiveMember",
+      "TestTransitionCycleUsageCountsAgainstQuota"
     ],
     "stories": [
       "US-PR-005",
@@ -172,5 +174,44 @@
       "postgres"
     ],
     "timeout_seconds": 300
+  },
+  {
+    "id": "agent-state/evidence",
+    "packages": [
+      "./internal/agent/state"
+    ],
+    "run": "^TestUpgradeEvidence",
+    "expected_tests": [
+      "TestUpgradeEvidencePreservesInputAndExportsWholeQueue",
+      "TestUpgradeEvidenceRejectsUncheckpointedWAL",
+      "TestUpgradeEvidenceRejectsUnsupportedState",
+      "TestUpgradeEvidenceRejectsLinkedDatabase"
+    ],
+    "stories": [
+      "US-PR-013",
+      "US-PR-016",
+      "US-PR-017"
+    ],
+    "requires": [
+      "unix"
+    ]
+  },
+  {
+    "id": "store/short-cycle-live",
+    "packages": [
+      "./internal/panel/store"
+    ],
+    "run": "^TestTransitionCycleUsageCountsAgainstQuota$",
+    "expected_tests": [
+      "TestTransitionCycleUsageCountsAgainstQuota"
+    ],
+    "stories": [
+      "US-PR-008",
+      "US-PR-011",
+      "US-PR-013"
+    ],
+    "requires": [
+      "postgres"
+    ]
   }
 ]

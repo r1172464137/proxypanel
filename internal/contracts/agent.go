@@ -8,6 +8,25 @@ import (
 
 const SchemaVersion = "proxypanel.agent/v1"
 
+const AgentEvidenceFormat = "proxypanel.agent-state-evidence/v1"
+
+// AgentStateEvidence is an offline inspection artifact, not an Agent HTTP request.
+// It omits tokens, configuration, user credentials and free-form error payloads.
+type AgentStateEvidence struct {
+	FormatVersion           string       `json:"format_version"`
+	CapturedAt              time.Time    `json:"captured_at"`
+	DatabaseSHA256          string       `json:"database_sha256"`
+	StateSchemaVersion      string       `json:"state_schema_version"`
+	AgentID                 string       `json:"agent_id"`
+	ControlGeneration       string       `json:"control_generation"`
+	AppliedRevision         int64        `json:"applied_revision"`
+	PendingBatches          []UsageBatch `json:"pending_batches"`
+	PendingReportCount      int64        `json:"pending_report_count"`
+	PendingApplyIntentCount int64        `json:"pending_apply_intent_count"`
+	// Legacy absence of an intent table is not proof that no apply was interrupted.
+	ApplyIntentTrackingSupported bool `json:"apply_intent_tracking_supported"`
+}
+
 type RegistrationRequest struct {
 	Code    string `json:"code"`
 	Name    string `json:"name"`

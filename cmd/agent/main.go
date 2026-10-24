@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -28,16 +29,28 @@ func run() error {
 	configPath := flag.String("config", "", "path to the agent JSON configuration file")
 	showVersion := flag.Bool("version", false, "print the agent version and exit")
 	checkOnly := flag.Bool("check", false, "validate the configuration, print a summary and exit")
+	inspectState := flag.String("inspect-state", "", "inspect a consistent checkpointed state backup and print non-secret JSON without starting the Agent")
 	acceptGeneration := flag.String("accept-generation", "",
 		"explicitly accept a new panel control generation on this node (requires -config and a stopped agent)")
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "usage: agent -config <file> [-check]\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "       agent -config <file> -accept-generation <control_generation>\n")
+		fmt.Fprintf(flag.CommandLine.Output(), "       agent -inspect-state <state-backup-directory>\n")
 		fmt.Fprintf(flag.CommandLine.Output(), "       agent -version\n\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
 
+	if *inspectState != "" {
+		if *configPath != "" || *checkOnly || *showVersion || *acceptGeneration != "" {
+			return fmt.Errorf("-inspect-state must be used alone; it does not load live configuration")
+		}
+		evidence, err := state.ReadUpgradeEvidence(context.Background(), *inspectState)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(evidence)
+	}
 	if *showVersion {
 		fmt.Printf("proxypanel-agent %s\n", config.AgentVersion)
 		return nil
