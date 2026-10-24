@@ -786,12 +786,28 @@ func (s *Server) handleAdminUsage(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, err)
 		return
 	}
-	items, err := s.Store.ListUsage(r.Context(), filter)
+	scope := adminUsageScope(r, filter)
+	after, err := s.adminUsageCursor(r, scope)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
 	}
-	s.writeList(w, items, nil)
+	items, err := s.Store.ListAdminUsagePage(r.Context(), filter, after)
+	if err != nil {
+		s.writeError(w, r, err)
+		return
+	}
+	var next *string
+	if len(items) > filter.Limit {
+		items = items[:filter.Limit]
+		last := items[len(items)-1]
+		next, err = s.meNext("admin-usage", scope, []string{meTime(last.PeriodStart), last.MemberID, last.NodeID, meTime(last.PeriodEnd)})
+		if err != nil {
+			s.writeError(w, r, err)
+			return
+		}
+	}
+	s.writeList(w, items, next)
 }
 
 // usageWindow parses the usage query. from/to filter on the cycle start and are
@@ -801,9 +817,22 @@ func usageWindow(r *http.Request) (store.UsageFilter, error) {
 	filter := store.UsageFilter{
 		MemberID: strings.TrimSpace(q.Get("member_id")),
 		NodeID:   strings.TrimSpace(q.Get("node_id")),
-		Limit:    200,
+		Limit:    50,
 	}
 	fields := map[string]string{}
+	for key, values := range q {
+		if len(values) != 1 {
+			if key == "cursor" {
+				return filter, cursorInvalid("invalid")
+			}
+			fields[key] = "invalid"
+		}
+		switch key {
+		case "member_id", "node_id", "from", "to", "limit", "cursor":
+		default:
+			fields[key] = "unknown"
+		}
+	}
 	if raw := strings.TrimSpace(q.Get("from")); raw != "" {
 		if t, err := parseQueryTime(raw); err != nil {
 			fields["from"] = err.Error()
@@ -825,10 +854,18 @@ func usageWindow(r *http.Request) (store.UsageFilter, error) {
 		return filter, domain.Validation("to must be after from").
 			WithFieldErrors(map[string]string{"to": "must be after from"})
 	}
-	if raw := strings.TrimSpace(q.Get("limit")); raw != "" {
-		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
-			filter.Limit = n // the store clamps to its maximum
+	if q.Has("limit") {
+		n, err := strconv.Atoi(q.Get("limit"))
+		if err != nil {
+			return filter, domain.Validation("invalid limit").WithFieldErrors(map[string]string{"limit": "invalid"})
 		}
+		filter.Limit = n
+	}
+	if filter.Limit < 1 {
+		filter.Limit = 1
+	}
+	if filter.Limit > 200 {
+		filter.Limit = 200
 	}
 	return filter, nil
 }

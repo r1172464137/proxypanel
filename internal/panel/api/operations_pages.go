@@ -35,6 +35,9 @@ func (s *Server) operationsPage(r *http.Request, endpoint string) (int, []string
 	}{endpoint, memberFrom(r.Context()).ID, f})
 	scope := string(scopeBytes)
 	fail := func(field, reason string) (int, []string, store.OperationsFilter, string, error) {
+		if field == "cursor" {
+			return 0, nil, f, scope, cursorInvalid(reason)
+		}
 		return 0, nil, f, scope, domain.Validation("invalid list query").WithFieldErrors(map[string]string{field: reason})
 	}
 	if !utf8.ValidString(f.Q) || utf8.RuneCountInString(f.Q) > 64 {

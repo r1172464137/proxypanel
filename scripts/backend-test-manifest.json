@@ -921,6 +921,15 @@
     "timeout_seconds": 120
   },
   {
+    "id": "api/admin-usage-pagination",
+    "packages": ["./internal/panel/api"],
+    "run": "^TestAdminUsagePaginationPostgres$",
+    "expected_tests": ["TestAdminUsagePaginationPostgres"],
+    "stories": ["US-PR-018"],
+    "requires": ["postgres"],
+    "timeout_seconds": 120
+  },
+  {
     "id": "api/admin-core-pagination",
     "packages": [
       "./internal/panel/api"

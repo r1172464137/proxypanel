@@ -440,8 +440,8 @@ func TestUsageWindowParsing(t *testing.T) {
 	if err != nil || filter.Limit != 50 {
 		t.Fatalf("limit pass-through = %+v %v", filter, err)
 	}
-	if _, err := parse("?limit=abc"); err != nil {
-		t.Fatalf("non numeric limit must be ignored, not rejected: %v", err)
+	if _, err := parse("?limit=abc"); err == nil || domain.AsError(err).Code != domain.CodeValidationFailed {
+		t.Fatalf("non numeric limit must be rejected with VALIDATION_FAILED: %v", err)
 	}
 }
 

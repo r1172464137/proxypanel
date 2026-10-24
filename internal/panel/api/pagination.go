@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"proxypanel/internal/panel/domain"
+	"proxypanel/internal/panel/store"
 )
 
 // meCursor is authenticated with the existing master key. Scope includes the
@@ -41,7 +42,7 @@ func (s *Server) mePage(r *http.Request, endpoint, member string) (int, []string
 		return limit, nil, nil
 	}
 	invalid := func() (int, []string, error) {
-		return 0, nil, domain.Validation("invalid list cursor").WithFieldErrors(map[string]string{"cursor": "invalid"})
+		return 0, nil, cursorInvalid("invalid")
 	}
 	if len(raw) > 4096 {
 		return invalid()
@@ -137,3 +138,54 @@ func meNodeKeys(n domain.Node) []string {
 	return []string{strconv.Itoa(n.SortOrder), strings.ToLower(n.Name), n.ID}
 }
 func meTime(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
+
+func cursorInvalid(reason string) error {
+	return domain.E(domain.CodeCursorInvalid, http.StatusBadRequest, "invalid list cursor").WithFieldErrors(map[string]string{"cursor": reason})
+}
+
+func adminPageScope(r *http.Request, endpoint string) string {
+	b, _ := json.Marshal([]string{"admin", endpoint, memberFrom(r.Context()).ID})
+	return string(b)
+}
+
+// Limit is intentionally excluded; equivalent UTC/date filters share a scope.
+func adminUsageScope(r *http.Request, f store.UsageFilter) string {
+	b, _ := json.Marshal([]any{memberFrom(r.Context()).ID, f.MemberID, f.NodeID, f.From, f.To})
+	return string(b)
+}
+
+func (s *Server) adminUsageCursor(r *http.Request, scope string) ([]string, error) {
+	raw := r.URL.Query().Get("cursor")
+	if raw == "" {
+		return nil, nil
+	}
+	if len(raw) > 4096 {
+		return nil, cursorInvalid("invalid")
+	}
+	ct, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return nil, cursorInvalid("invalid")
+	}
+	plain, err := s.Store.Key.Decrypt(ct)
+	if err != nil {
+		return nil, cursorInvalid("invalid")
+	}
+	var c meCursor
+	if json.Unmarshal(plain, &c) != nil || c.Version != 1 || len(c.Keys) != 4 {
+		return nil, cursorInvalid("invalid")
+	}
+	if c.Scope != "admin-usage:"+scope {
+		return nil, cursorInvalid("expired_scope")
+	}
+	for _, k := range c.Keys {
+		if k == "" || len(k) > 512 {
+			return nil, cursorInvalid("invalid")
+		}
+	}
+	for _, i := range []int{0, 3} {
+		if _, err := time.Parse(time.RFC3339Nano, c.Keys[i]); err != nil {
+			return nil, cursorInvalid("invalid")
+		}
+	}
+	return c.Keys, nil
+}

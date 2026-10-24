@@ -95,6 +95,21 @@ func TestOperationsPagesPostgres(t *testing.T) {
 		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 			t.Fatal(err)
 		}
+		if w.Code == 400 {
+			e := body["error"].(map[string]any)
+			fields := e["details"].(map[string]any)["field_errors"].(map[string]any)
+			want := domain.CodeValidationFailed
+			if r.URL.Query().Get("cursor") != "" {
+				want = domain.CodeCursorInvalid
+				reason := fields["cursor"]
+				if reason != "invalid" && reason != "expired_scope" {
+					t.Errorf("cursor reason=%v", reason)
+				}
+			}
+			if e["code"] != want {
+				t.Errorf("query %s: code=%v want=%s", query, e["code"], want)
+			}
+		}
 		return w.Code, body
 	}
 	for _, endpoint := range []string{"agents", "core-instances", "invitations", "batches", "tasks", "events", "audit-logs"} {

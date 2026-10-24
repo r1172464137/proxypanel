@@ -146,20 +146,17 @@ func TestMePaginationPostgres(t *testing.T) {
 				t.Fatal("truncated collection reported complete")
 			}
 			for _, bad := range []string{"!bad!", firstCursor[:len(firstCursor)-3] + "AAA"} {
-				if r := e.mustCall(t, member, "GET", path+"?cursor="+url.QueryEscape(bad), nil); r.status != 400 {
-					t.Fatalf("invalid cursor status %d", r.status)
-				}
+				r := e.mustCall(t, member, "GET", path+"?cursor="+url.QueryEscape(bad), nil)
+				assertCursorError(t, r.status, r.body)
 			}
-			if r := e.mustCall(t, other, "GET", path+"?cursor="+url.QueryEscape(firstCursor), nil); r.status != 400 {
-				t.Fatalf("cross-member cursor=%d", r.status)
-			}
+			r := e.mustCall(t, other, "GET", path+"?cursor="+url.QueryEscape(firstCursor), nil)
+			assertCursorError(t, r.status, r.body)
 			otherEndpoint := "nodes"
 			if endpoint == "nodes" {
 				otherEndpoint = "sessions"
 			}
-			if r := e.mustCall(t, member, "GET", "/api/v1/me/"+otherEndpoint+"?cursor="+url.QueryEscape(firstCursor), nil); r.status != 400 {
-				t.Fatalf("cross-endpoint cursor=%d", r.status)
-			}
+			r = e.mustCall(t, member, "GET", "/api/v1/me/"+otherEndpoint+"?cursor="+url.QueryEscape(firstCursor), nil)
+			assertCursorError(t, r.status, r.body)
 			for _, tc := range []struct {
 				limit string
 				want  int

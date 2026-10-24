@@ -140,6 +140,13 @@ func TestAdminPaginationPostgres(t *testing.T) {
 				if r.status != tc.status {
 					t.Fatalf("%s status %d", tc.query, r.status)
 				}
+				if tc.status == 400 {
+					if strings.Contains(tc.query, "cursor=") {
+						assertCursorError(t, r.status, r.body)
+					} else {
+						r.expect(t, 400, "VALIDATION_FAILED")
+					}
+				}
 				if tc.status == 200 && len(r.body["items"].([]any)) != tc.count {
 					t.Fatalf("%s count mismatch", tc.query)
 				}
@@ -152,14 +159,10 @@ func TestAdminPaginationPostgres(t *testing.T) {
 				continue
 			}
 			r := e.mustCall(t, a, "GET", "/api/v1/admin/"+other+"?cursor="+url.QueryEscape(cursor), nil)
-			if r.status != 400 {
-				t.Fatalf("cross endpoint %s to %s: %d", endpoint, other, r.status)
-			}
+			assertCursorError(t, r.status, r.body)
 		}
 		r := e.mustCall(t, a, "GET", "/api/v1/admin/"+endpoint+"?cursor="+url.QueryEscape(cursor[:len(cursor)/2]), nil)
-		if r.status != 400 {
-			t.Fatal("tampered cursor accepted")
-		}
+		assertCursorError(t, r.status, r.body)
 	}
 	for _, endpoint := range []string{"nodes", "members"} {
 		path := "/api/v1/admin/" + endpoint
@@ -207,9 +210,7 @@ func TestAdminPaginationPostgres(t *testing.T) {
 		c := r.body["next_cursor"].(string)
 		for _, filter := range []string{"q=other", "", "q=Entry&" + map[string]string{"nodes": "server_id=page-001", "members": "subscription_id=page-001"}[endpoint]} {
 			r := e.mustCall(t, a, "GET", path+"?"+filter+"&cursor="+url.QueryEscape(c), nil)
-			if r.status != 400 {
-				t.Fatal("changed filter accepted")
-			}
+			assertCursorError(t, r.status, r.body)
 		}
 		r = e.mustCall(t, a, "GET", path+"?q="+strings.Repeat("x", 65), nil)
 		if r.status != 400 {
@@ -234,7 +235,5 @@ func TestAdminPaginationPostgres(t *testing.T) {
 	}
 	// Even a same-endpoint cursor cannot toggle include_archived.
 	r := e.mustCall(t, a, "GET", "/api/v1/admin/members?include_archived=true&cursor="+url.QueryEscape(firstCursors["members"]), nil)
-	if r.status != 400 {
-		t.Fatal("archive scope changed")
-	}
+	assertCursorError(t, r.status, r.body)
 }

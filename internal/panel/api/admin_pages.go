@@ -28,6 +28,9 @@ func (s *Server) adminPage(r *http.Request, endpoint string) (store.AdminPageOpt
 	p := store.AdminPageOptions{Limit: 50}
 	query := r.URL.Query()
 	invalid := func(field string) (store.AdminPageOptions, error) {
+		if field == "cursor" {
+			return p, cursorInvalid("invalid")
+		}
 		return p, domain.Validation("invalid list %s", field).WithFieldErrors(map[string]string{field: "invalid"})
 	}
 	if raw := query.Get("limit"); raw != "" {
@@ -89,7 +92,7 @@ func (s *Server) adminPage(r *http.Request, endpoint string) (store.AdminPageOpt
 		return invalid("cursor")
 	}
 	var c adminCursor
-	if json.Unmarshal(plain, &c) != nil || c.Version != 1 || c.Scope != "admin:"+endpoint || c.Filters != adminFilters(p) {
+	if json.Unmarshal(plain, &c) != nil || c.Version != 1 || c.Scope != adminPageScope(r, endpoint) || c.Filters != adminFilters(p) {
 		return invalid("cursor")
 	}
 	want := 2
@@ -111,7 +114,7 @@ func (s *Server) adminPage(r *http.Request, endpoint string) (store.AdminPageOpt
 func writeAdminPage[T any](s *Server, w http.ResponseWriter, r *http.Request, endpoint string, p store.AdminPageOptions, page store.AdminPage[T]) {
 	var next *string
 	if page.Next != nil {
-		plain, err := json.Marshal(adminCursor{1, "admin:" + endpoint, adminFilters(p), page.Next})
+		plain, err := json.Marshal(adminCursor{1, adminPageScope(r, endpoint), adminFilters(p), page.Next})
 		if err != nil {
 			s.writeError(w, r, err)
 			return
