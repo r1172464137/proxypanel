@@ -33,17 +33,20 @@ type Store struct {
 	Key *secrets.Key
 	Now func() time.Time
 
-	readOnly bool
+	readOnly            bool
+	upgradeEvidenceFile string
+	migrationsDir       string
 }
 
 // Options configures the pool.
 type Options struct {
-	DatabaseURL    string
-	MasterKey      *secrets.Key
-	MigrationsDir  string
-	MaxConns       int
-	SearchPath     string
-	ConnectTimeout time.Duration
+	DatabaseURL         string
+	MasterKey           *secrets.Key
+	MigrationsDir       string
+	MaxConns            int
+	SearchPath          string
+	ConnectTimeout      time.Duration
+	UpgradeEvidenceFile string
 }
 
 // ErrReadOnly marks operations forbidden on the inspection connection.
@@ -65,6 +68,14 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 	if err := s.Migrate(ctx, dir); err != nil {
 		s.Close()
 		return nil, err
+	}
+	readiness, err := s.CheckUpgradeReadiness(ctx, false)
+	if err != nil || readiness.Status != "ready" {
+		s.Close()
+		if err != nil {
+			return nil, fmt.Errorf("post-migration readiness unavailable: %w", err)
+		}
+		return nil, fmt.Errorf("post-migration readiness %s: %v", readiness.Status, readiness.Checks)
 	}
 	return s, nil
 }
@@ -112,7 +123,18 @@ func openDatabase(ctx context.Context, opts Options, readOnly bool) (*Store, err
 		_ = db.Close()
 		return nil, fmt.Errorf("postgres unreachable: %w", err)
 	}
-	s := &Store{DB: db, Now: func() time.Time { return time.Now().UTC() }, readOnly: readOnly}
+	evidenceFile := opts.UpgradeEvidenceFile
+	if evidenceFile == "" {
+		evidenceFile = os.Getenv("PANEL_UPGRADE_EVIDENCE_FILE")
+	}
+	dir := opts.MigrationsDir
+	if dir == "" {
+		dir = os.Getenv("PANEL_MIGRATIONS_DIR")
+	}
+	if dir == "" {
+		dir = "migrations"
+	}
+	s := &Store{DB: db, Now: func() time.Time { return time.Now().UTC() }, readOnly: readOnly, upgradeEvidenceFile: evidenceFile, migrationsDir: dir}
 	if !readOnly {
 		s.Key = opts.MasterKey
 	}
@@ -175,13 +197,21 @@ func (s *Store) Migrate(ctx context.Context, dir string) error {
 		_, _ = conn.ExecContext(context.WithoutCancel(ctx), "SELECT pg_advisory_unlock($1)", lockKey)
 	}()
 
-	if _, err := conn.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
-		version text PRIMARY KEY,
-		checksum text NOT NULL,
-		applied_at timestamptz NOT NULL DEFAULT now()
-	)`); err != nil {
-		return fmt.Errorf("create schema_migrations: %w", err)
+	s.migrationsDir = dir
+	// Check under the existing migration lock, before even schema_migrations DDL.
+	inspection, err := conn.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return err
 	}
+	proof, err := s.checkUpgradeReadinessQ(ctx, inspection, true)
+	_ = inspection.Rollback()
+	if err != nil {
+		return fmt.Errorf("upgrade preflight unavailable: %w", err)
+	}
+	if proof.Status != "ready" {
+		return fmt.Errorf("upgrade preflight %s: %v", proof.Status, proof.Checks)
+	}
+	expected := proof.DatabaseSHA256
 
 	for _, name := range files {
 		body, err := os.ReadFile(filepath.Join(dir, name))
@@ -191,7 +221,14 @@ func (s *Store) Migrate(ctx context.Context, dir string) error {
 		sum := sha256.Sum256(body)
 		checksum := hex.EncodeToString(sum[:])
 		var existing string
-		err = conn.QueryRowContext(ctx, "SELECT checksum FROM schema_migrations WHERE version = $1", name).Scan(&existing)
+		var registry bool
+		if err = conn.QueryRowContext(ctx, `SELECT to_regclass('schema_migrations') IS NOT NULL`).Scan(&registry); err != nil {
+			return err
+		}
+		err = sql.ErrNoRows
+		if registry {
+			err = conn.QueryRowContext(ctx, "SELECT checksum FROM schema_migrations WHERE version = $1", name).Scan(&existing)
+		}
 		switch {
 		case err == nil:
 			if existing != checksum {
@@ -205,11 +242,41 @@ func (s *Store) Migrate(ctx context.Context, dir string) error {
 		if err != nil {
 			return err
 		}
+		// Freeze old facts for recheck + DDL + evidence import. No business
+		// writer can alter the proof after it has been validated in this tx.
+		if err := lockUpgradeTables(ctx, tx); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		fresh, err := s.checkUpgradeReadinessQ(ctx, tx, true)
+		if err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		if fresh.Status != "ready" || fresh.DatabaseSHA256 != expected || fresh.EvidenceSHA256 != proof.EvidenceSHA256 {
+			_ = tx.Rollback()
+			return errors.New("upgrade evidence or database changed; rerun preflight")
+		}
+		if _, err := tx.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, string(body)); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("apply migration %s: %w", name, err)
 		}
+		if name == "0005_period_and_owner_history.sql" {
+			if err := s.importUpgradeEvidenceTx(ctx, tx, fresh); err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("import migration %s evidence: %w", name, err)
+			}
+		}
 		if _, err := tx.ExecContext(ctx, "INSERT INTO schema_migrations (version, checksum) VALUES ($1, $2)", name, checksum); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		_, expected, err = readUpgradeSnapshot(ctx, tx)
+		if err != nil {
 			_ = tx.Rollback()
 			return err
 		}

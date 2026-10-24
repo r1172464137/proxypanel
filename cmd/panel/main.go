@@ -69,6 +69,9 @@ func listenMode(dev bool) (tls bool, reason string, err error) {
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.LUTC)
+	if len(os.Args) > 1 && os.Args[1] == "check" {
+		os.Exit(runCheck(context.Background(), os.Args[2:], os.Stdout, os.Stderr))
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -97,10 +100,11 @@ func main() {
 		log.Fatalf("PANEL_MASTER_KEY: %v", err)
 	}
 	st, err := store.Open(ctx, store.Options{
-		DatabaseURL:   os.Getenv("DATABASE_URL"),
-		MasterKey:     key,
-		MigrationsDir: env("PANEL_MIGRATIONS_DIR", "migrations"),
-		MaxConns:      16,
+		DatabaseURL:         os.Getenv("DATABASE_URL"),
+		MasterKey:           key,
+		MigrationsDir:       env("PANEL_MIGRATIONS_DIR", "migrations"),
+		MaxConns:            16,
+		UpgradeEvidenceFile: os.Getenv("PANEL_UPGRADE_EVIDENCE_FILE"),
 	})
 	if err != nil {
 		log.Fatalf("database: %v", err)

@@ -1,18 +1,21 @@
 package store
 
 import (
+	"context"
+	"database/sql"
+
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jackc/pgx/v5"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
-	"syscall"
 	"time"
 
 	"proxypanel/internal/contracts"
@@ -274,66 +277,65 @@ type upgradeFileFingerprint struct {
 	info os.FileInfo
 }
 
-func sameUpgradeFile(a, b os.FileInfo) bool {
-	if !os.SameFile(a, b) || a.Mode() != b.Mode() || a.Size() != b.Size() || !a.ModTime().Equal(b.ModTime()) {
-		return false
+// lockUpgradeTables prevents the checked old facts changing through the import.
+// The random-schema test harness and production both use current_schema only.
+func lockUpgradeTables(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, `SELECT tablename FROM pg_tables WHERE schemaname=current_schema() ORDER BY tablename`)
+	if err != nil {
+		return err
 	}
-	// Include change time, but not access time (our own read can update it).
-	left, leftOK := a.Sys().(*syscall.Stat_t)
-	right, rightOK := b.Sys().(*syscall.Stat_t)
-	return leftOK && rightOK && left.Ctim == right.Ctim
+	var names []string
+	for rows.Next() {
+		var name string
+		if err = rows.Scan(&name); err != nil {
+			rows.Close()
+			return err
+		}
+		names = append(names, name)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		if _, err = tx.ExecContext(ctx, `LOCK TABLE `+pgx.Identifier{name}.Sanitize()+` IN SHARE ROW EXCLUSIVE MODE`); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-// Walk pinned roots rather than following a path between Lstat and Open.
-// Each component must be a real directory and the leaf a regular file.
-// Root confinement also prevents a racing symlink from escaping its parent.
-func openUpgradeFile(path string) (*os.File, error) {
-	volume := filepath.VolumeName(path)
-	root, err := os.OpenRoot(volume + string(filepath.Separator))
+// importUpgradeEvidenceTx is called only after 0005 DDL, in that same file's
+// transaction and before its success registration. It never updates old rows.
+func (s *Store) importUpgradeEvidenceTx(ctx context.Context, tx *sql.Tx, proof *UpgradeReadiness) error {
+	if proof == nil || proof.Status != "ready" {
+		return errors.New("ready proof required")
+	}
+	for _, p := range proof.periods {
+		source := "proven_ledger"
+		if p.ProvenanceFile == "" {
+			source = "proven_current"
+		}
+		if err := recordMemberPeriodTx(ctx, tx, PeriodRecord{MemberID: p.MemberID, PeriodStart: p.Start, PeriodEnd: p.End, AnchorDay: p.AnchorDay, Timezone: p.Timezone, Source: source}); err != nil {
+			return err
+		}
+	}
+	for _, o := range proof.owners {
+		var confirmed any
+		if o.ValidTo != nil {
+			confirmed = *o.ValidTo
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO node_server_history (id,node_id,server_id,agent_id,valid_from,valid_to,released_revision,release_confirmed_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, newID("own"), o.NodeID, o.ServerID, o.AgentID, o.ValidFrom, o.ValidTo, o.ReleasedRevision, confirmed); err != nil {
+			return err
+		}
+	}
+	detail, err := json.Marshal(map[string]any{"evidence_sha256": proof.EvidenceSHA256, "database_sha256": proof.DatabaseSHA256, "period_count": len(proof.periods), "owner_count": len(proof.owners), "pending_batches": proof.PendingBatches, "duplicate_batches": proof.DuplicateBatches})
 	if err != nil {
-		return nil, err
+		return err
 	}
-	defer func() { _ = root.Close() }()
-	parts := strings.Split(strings.TrimPrefix(strings.TrimPrefix(path, volume), string(filepath.Separator)), string(filepath.Separator))
-	for i, part := range parts {
-		before, err := root.Lstat(part)
-		if err != nil {
-			return nil, err
-		}
-		if i == len(parts)-1 {
-			if !before.Mode().IsRegular() {
-				return nil, fmt.Errorf("not a regular evidence file: %q", path)
-			}
-			// No-follow closes the Lstat/Open race; nonblocking prevents a
-			// raced FIFO from hanging before its descriptor can be checked.
-			file, err := root.OpenFile(part, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
-			if err != nil {
-				return nil, err
-			}
-			after, err := file.Stat()
-			if err != nil || !sameUpgradeFile(before, after) {
-				_ = file.Close()
-				return nil, fmt.Errorf("evidence changed while opening %q: %v", path, err)
-			}
-			return file, nil
-		}
-		if !before.IsDir() {
-			return nil, fmt.Errorf("not a real evidence directory: %q", part)
-		}
-		next, err := root.OpenRoot(part)
-		if err != nil {
-			return nil, err
-		}
-		after, err := next.Stat(".")
-		entry, entryErr := root.Lstat(part)
-		if err != nil || entryErr != nil || !sameUpgradeFile(before, after) || !sameUpgradeFile(before, entry) {
-			_ = next.Close()
-			return nil, fmt.Errorf("evidence directory changed: %q", part)
-		}
-		_ = root.Close()
-		root = next
-	}
-	return nil, errors.New("missing evidence filename")
+	_, err = tx.ExecContext(ctx, `INSERT INTO audit_logs (id,action,target_type,detail) VALUES ($1,'upgrade.evidence.import','migration',$2)`, newID("aud"), detail)
+	return err
 }
 
 func readUpgradeFile(path string, limit int64) ([]byte, upgradeFileFingerprint, error) {
