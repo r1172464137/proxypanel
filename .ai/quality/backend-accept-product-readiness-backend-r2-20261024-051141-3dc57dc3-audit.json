@@ -1,0 +1,42 @@
+{
+  "feature": "product-readiness",
+  "phase": "backend",
+  "validation_revision": 2,
+  "document_candidate": "3263ae477800659251c7b99fb8da60f7e1d530a6",
+  "runtime_evidence_candidate": "269e4e25ec4693c184cc7ebf493595ec1a97136a",
+  "main_root": "/home/compile/Work/proxypanel",
+  "independent_checks": {
+    "main_and_worktree_head_match_document_candidate": true,
+    "git_diff_runtime_candidate_to_HEAD_excluding_ai": [],
+    "main_status_tracked_and_untracked_excluding_ai": [],
+    "design_and_decision_working_changes": [],
+    "source_cache_checks": [
+      {"cache": ".ai/design/product-readiness/backend-contract.json", "source": ".ai/design/product-readiness/backend.md", "sha256": "360c772016e827d31b9dca38405928a3515b1839cbb182972a49398f7ee4280d", "matched": true, "body_unchanged_except_source_sha256": true},
+      {"cache": ".ai/design/product-readiness/frontend-dependencies.json", "source": ".ai/design/product-readiness/frontend.md", "sha256": "3388a8c707090e327f6d0652c406ff7c11570acd706030e28326261bdeba0df3", "matched": true, "body_unchanged_except_source_sha256": true}
+    ],
+    "R1_targeted_input_hashes": {"count": 243, "mismatches": []},
+    "R1_helper_input_hashes": {"count": 243, "mismatches": []},
+    "R1_raw_jsonl_reparsed": {
+      "run_id": "20261024T043929Z-cfa40b23",
+      "selections": 12,
+      "unique_failure": "TestUpgradeDeliveryHelper",
+      "failure_selections": ["store/upgrade-preflight", "upgrade/delivery", "store/database-baseline"],
+      "root_skips": [],
+      "expected_root_absences": [],
+      "relevant_passing_roots": ["TestReadinessPublicContractSameSnapshot", "TestReadinessPublicContractUnverifiedSchema", "TestUpgradeReadinessUsesConfiguredStoreNotRequestPath", "TestCheckPreflightWithoutMasterKeyOrMigrations"]
+    },
+    "R1_helper_raw_jsonl_reparsed": {"run_id": "20261024T044330Z-2501669e", "passed_roots": 8, "failures": [], "skips": [], "missing": []},
+    "physical_fault_receipt": {"run_id": "20261024T044830Z-578ec0f2", "candidate_matched": true, "source_files": 239, "source_before_and_after_mismatches": [], "scenario_log_pass_markers": 3, "scenario_log_skip_markers": 0, "scenario_exit_codes": [0, 0, 0], "owned_pg_cleanup_exit": 0, "owned_pg_absent": true, "host_mount_absent": true, "temporary_directory_removed": true, "original_objects_unchanged": true},
+    "data_plane_receipt": {"run_id": "20261024T124820-3ab371f2", "candidate_matched": true, "source_files": 227, "source_mismatches": [], "fixture_assets": 10, "fixture_mismatches": [], "status": "pass", "owned_postgres_exit": 0, "temporary_directory_removed": true, "existing_cores_unchanged": true},
+    "panel_artifact": {"path": ".ai/evidence/backend-test/r1-integrated-targeted/panel", "ELF": true, "sha256": "f00741e3f56a54460ac919e7942ce298e31fd29321335dedfcdc0420f77eb0de", "embedded_vcs_revision": "269e4e25ec4693c184cc7ebf493595ec1a97136a", "embedded_vcs_modified": false, "embedded_module_version": "v0.0.0-20261024043718-269e4e25ec46"},
+    "static_validation_evidence_reviewed": {"design_gate": "passed", "finding_count": 0, "decision_closure_logs_passed": 3, "rerun": false},
+    "D2_boundary": "DEC013 explicitly agent-owned, new unpublished diagnostic representation; no product, permission, risk acceptance or existing legacy compatibility change found",
+    "wire_semantics": "canonical boolean|null; Go *bool without omitempty; shared MarshalJSON for HTTP/CLI; TS boolean|null; Vue strict true/false/unknown branches; unknown/fail retained in blockers",
+    "optional_buildinfo_query": "Explicit guessed Go path absent (exit127), then PATH Go absent; no build or test attempted. Read-only ELF embedded build metadata inspection used instead; original R1 validated build evidence retained.",
+    "deployment_reuse": "R1 independent audit and handoff retained; actual root contains spa-current, spa-upgrade, api-current, api-upgrade, refs, result, artifact associations and cleanup receipt; no remote rerun"
+  },
+  "tests_executed_this_revision": [],
+  "state_files_read_or_written": false,
+  "runtime_resources_created": false,
+  "scope": "R1-C1 closure and evidence applicability only, not a new full historical review"
+}

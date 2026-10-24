@@ -271,3 +271,11 @@ R1正式只读accept已派发：`01a16c43-1caf-75a9-8640-ad398506106a`，Sol hig
 ## R1仅规范类型不一致拒绝；revision2仅做来源收口
 
 R1正式报告.ai/quality/backend-accept-product-readiness-backend-r1-20261024-050900-009359c1.md有效REJECTED；所有实际业务/物理故障/升级/消费者门禁已通过，唯一P1是主设计boolean与既有boolean|null不同。主会话作为设计/API责任人依据既有unknown不伪造原则裁决D2：nullable为未发布诊断字段的表示细化，不改权限/业务/风险门禁/legacy兼容；DEC013明确agent来源，非伪造用户决策。现已同步唯一backend规范、主/前端追踪及两派生缓存源hash；长期API/TS/代码已一致。此次只改.ai来源/状态，不改任何runtime/test/fixture/lock/config，因此R1运行证据可按相关输入原样复用；不重造物理故障/全跑542。状态revision2 dev in_progress/test pending/accept pending，最小来源闭合核验后R2独立仅复核R1-C1，不扩大验收范围。
+
+R2单点独立accept会话 `01a16c50-e974-75a9-8640-ad3a17e94239`，Sol high；只复核R1-C1规范性来源闭合。文档候选3263ae4，运行证据269e4e2，git差异全部.ai元数据，无代码/测试/fixture/锁/配置变化；无其他活跃任务。来源结构门禁及三个决策闭合扫描已passed；旧R1拒绝仍保留。返回后必须核对新报告与结构化结论，主不得代放行。若通过仅完成backend，不自动进入frontend/web-demo。
+
+## backend阶段正式完成（仅本phase）
+
+R2独立报告.ai/quality/backend-accept-product-readiness-backend-r2-20261024-051141-3dc57dc3.md，结构完整、必要gates全passed（Rust/OpenAPI有范围依据N/A）、findings为空，结论ACCEPTED。主已核验报告与audit存在，未改结论。状态backend dev/test/accept均completed，validation_revision2保留，current_phase=null；阶段汇总.ai/quality/product-readiness-backend-stage-result.json。
+本轮自有PG已再次验证owner/purpose/data_dir/UID/binarySHA后按精确data_dir正常关闭，pg_ctl status3及pidfile消失；原共享PG/Redis/Agent/旧.devdb未操作，私有owner/test.env/数据目录保留供未来获授权测试。cleanup证据.ai/evidence/backend-test/owned-postgres-final-cleanup.json。
+后续未完成phase：frontend、web-demo，须用户显式启动；准备技术资产不算正式阶段通过。后续必须关闭R2报告列出的18故事/各状态与移动键盘主题、完整UI-Agent-client-ledger旅程、全部支持平台/Vision/双Agent离线UDP/部分完成、真实DB恢复/Agent及核心跨版/systemd/实际host nginx和公网CA；本后端完成不表示整个feature业务验收完成。

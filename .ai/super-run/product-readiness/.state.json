@@ -1,6 +1,6 @@
 {
   "feature": "product-readiness",
-  "current_phase": "backend",
+  "current_phase": null,
   "active_phases": [
     "backend",
     "frontend",
@@ -8,7 +8,7 @@
   ],
   "phases": {
     "backend": {
-      "status": "in_progress",
+      "status": "completed",
       "plan": ".ai/super-run/product-readiness/backend.md",
       "tasks": {
         "dev": {
@@ -86,7 +86,7 @@
           ]
         },
         "accept": {
-          "status": "in_progress",
+          "status": "completed",
           "agent_spec": "/home/compile/code/t-tools/agents/backend-accept.md",
           "references": [
             ".ai/design/product-readiness.md",
@@ -98,7 +98,9 @@
           ],
           "evidence": [
             ".ai/quality/backend-accept-product-readiness-backend-20261024-034457.md",
-            ".ai/quality/backend-accept-product-readiness-backend-r1-20261024-050900-009359c1.md"
+            ".ai/quality/backend-accept-product-readiness-backend-r1-20261024-050900-009359c1.md",
+            ".ai/quality/backend-accept-product-readiness-backend-r2-20261024-051141-3dc57dc3.md",
+            ".ai/quality/backend-accept-product-readiness-backend-r2-20261024-051141-3dc57dc3-audit.json"
           ]
         }
       },

@@ -1,0 +1,18 @@
+{
+  "feature": "product-readiness",
+  "phase": "backend",
+  "status": "completed",
+  "acceptance_result": "ACCEPTED",
+  "validation_revision": 2,
+  "runtime_verified_candidate": "269e4e25ec4693c184cc7ebf493595ec1a97136a",
+  "canonical_contract_candidate": "3263ae477800659251c7b99fb8da60f7e1d530a6",
+  "report_path": ".ai/quality/backend-accept-product-readiness-backend-r2-20261024-051141-3dc57dc3.md",
+  "runtime_changed_after_verification": false,
+  "original_failed_reports_preserved": true,
+  "owned_postgres_fixture": "stopped; owner directory retained; shared services untouched",
+  "remaining_phases": [
+    "frontend",
+    "web-demo"
+  ],
+  "feature_business_acceptance_complete": false
+}
