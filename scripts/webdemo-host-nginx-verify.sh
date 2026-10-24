@@ -69,9 +69,7 @@ cleanup() {
     nginx_stop
   fi
   stop_panel
-  if [ "$PG_STARTED" = 1 ] && [ -n "$WORK" ]; then
-    "$PG_BIN/pg_ctl" -D "$WORK/pg/data" -m fast stop >>"$EVIDENCE/pg-stop.log" 2>&1
-  fi
+  stop_pg
   if [ -n "${PG_SOCK:-}" ] && [ -d "$(dirname "$PG_SOCK")" ]; then
     rm -rf "$(dirname "$PG_SOCK")"
   fi
@@ -543,6 +541,14 @@ nginx_start() {
   check_ok "nginx master started as host user from extracted ELF (mode=$mode, prefix=$prefix)"
 }
 
+stop_pg() {
+  if [ "${PG_STARTED:-0}" = 1 ] && [ -n "${WORK:-}" ]; then
+    "$PG_BIN/pg_ctl" -D "$WORK/pg/data" -m fast stop >>"$EVIDENCE/pg-stop.log" 2>&1 || true
+    PG_STARTED=0
+  fi
+  return 0
+}
+
 stop_panel() {
   if [ -n "$PANELPID" ] && kill -0 "$PANELPID" 2>/dev/null; then
     kill -TERM "$PANELPID" 2>/dev/null || true
@@ -758,6 +764,7 @@ main() {
   fi
   nginx_stop
   stop_panel
+  stop_pg
   # Chromium creates caches under the temporary HOME; re-assert owner-only modes.
   chmod -R go-rwx "$HOME_ISO" "$WORK/nginx" "$WORK/nss" "$WORK/pg" "$WORK/pki" 2>/dev/null || true
   leftover_check
