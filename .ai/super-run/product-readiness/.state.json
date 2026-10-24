@@ -185,12 +185,12 @@
       }
     },
     "web-demo": {
-      "status": "in_progress",
+      "status": "blocked",
       "plan": ".ai/super-run/product-readiness/web-demo.md",
       "validation_revision": 0,
       "tasks": {
         "dev": {
-          "status": "in_progress",
+          "status": "blocked",
           "agent_spec": "/home/compile/code/t-tools/agents/web-demo-dev.md",
           "references": [
             ".ai/design/product-readiness.md",
@@ -206,7 +206,9 @@
             "/home/compile/code/t-tools/guides/web-demo/selector-strategy.md",
             "/home/compile/code/t-tools/protocols/diagnostic-report-contract.md"
           ],
-          "evidence": []
+          "evidence": [
+            ".ai/quality/product-readiness-stage-delivery-20261024.md"
+          ]
         },
         "accept": {
           "status": "pending",

@@ -1,0 +1,27 @@
+{
+  "status": "partial_delivery_not_production_approved",
+  "application_candidate": "0e1adbd17e1c4596029a203a8f0bbdf5c781286d",
+  "preview": "https://192.168.5.203:8445/admin/overview",
+  "preview_runtime_candidate": "706f0ba8abe0d9193c12436509264670040f2852",
+  "preview_health": "readyz ok; four healthy; checked 2026-10-24T10:31Z",
+  "frontend_acceptance": "R1 ACCEPTED_WITH_IMPROVEMENTS",
+  "frontend_tests": 302,
+  "real_chain": {
+    "passed": 10,
+    "skipped": 13,
+    "full18stories": false
+  },
+  "real_host_nginx_hostings": 2,
+  "user_systemd_agent_lifecycle": "verified; no system-unit claim",
+  "backend": "reopened revision3; startup/recovery blocked on Agent evidence gate",
+  "web_demo": "blocked; final independent acceptance not run",
+  "package": {
+    "source": "0e1adbd17e1c4596029a203a8f0bbdf5c781286d",
+    "archive": ".ai/evidence/stage-delivery/20261024/product-readiness-stage-linux-amd64.tar.gz",
+    "bytes": 11515330,
+    "sha256": "39ff1e5772cf44b1c09de6053b98de327ab5d96f628f0a8a38659a731682fa5f",
+    "status": "partial_preview_candidate_not_production_release"
+  },
+  "handoff": ".ai/quality/product-readiness-stage-delivery-20261024.md",
+  "generated_at": "2026-10-24T10:43:22.066118+00:00"
+}

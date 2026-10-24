@@ -116,3 +116,9 @@ F：真实部署/两托管TLS/安装systemd能力与安全隔离验证，专用w
 B返回428eca6+c9a7fb4，raw证据B/final2声明TCP/真实SOCKS5 UDP、双Agent在线撤权/离线到期/partial/旧回执与回滚/崩溃实际运行；D返回a4b568b，raw证据D/20261024T172004-7436510b声明旧Agent原SQLite/outbox→新Agent原ID/payload排空、两官方core双向切换与安全拒绝。主尚未合并或采信全PASS；只读定向01a16d4b-8f4b-75a9-8640-ad7674912097核对两组租约/原进程保护/具体oracle与D旧产物SHA256SUMS来源，20min内报告具体证据，不修改源码/运行环境，也非正式accept。
 
 当前原始修正任务：A2=01a16d44-806d-75a9-8640-ad74f45f3d91，E2=01a16d3d-b186-75a9-8640-ad7281011b7e，host-nginx同原01a16d1b-d579-75a9-8640-ad71e140ad53恢复；C原备份恢复尚待交。Root两文件f38aff4单独做无物理服务的302测试/typecheck/build，锁/依赖输入未变的R0 audit复用，之后独立frontend只读R1；不因此声称全部业务故事已完。
+
+## 用户等待止损后的阶段交付
+
+用户“到底还要多久，我等不及了”，主已承诺15分钟硬限，只固定当前候选/缺口，不再启动新任务或把必要未测算通过。阶段交付索引`.ai/quality/product-readiness-stage-delivery-20261024.{md,json}`，实际11.5MB Linux amd64阶段包在私有evidence，含SHA清单且不含凭据/状态。源码候选0e1adbd，8445仍上一阶段706且10:31四healthy/readyzok；不冒新首页已热更，不在使用中强制重启有Agent风险的面板。
+
+frontend R1已独立ACCEPTED_WITH_IMPROVEMENTS，302/0skip，5P2；后台Open/恢复可用性发现真实缺陷，backend revision3重新pending，web-demo dev/phase明确blocked，未执行最终accept。A2主已核对4测试输入SHA、10pass/13skip原receipt，无18/18；合并后只补原进程/tmp保护和Agent/Redis身份、测试fixture opt-in、查询时限，不将未重跑的小改算绿。B修2446f5c当前仅编译/静态，D修仅收阶段产物，E修b0b8f35未完成主整合；原坏证据不复用。下一步必须先启动材料门禁D2与最小代码修复/正反Open对照，再有界完整故事及最终独立验收；本次阶段包不允许正式投产/已有Agent升级恢复。
