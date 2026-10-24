@@ -198,7 +198,7 @@ async function save(): Promise<void> {
       await adminApi.servers.update(form.id, { ...payload, version: form.version })
     } else {
       await adminApi.servers.create(payload)
-      savedMessage.value = '已保存服务器。下一步：生成接入注册码，交给部署人员后等待管理程序心跳。'
+      savedMessage.value = '已保存服务器。下一步：生成一键安装命令，在节点机执行后等待 Agent 心跳。'
     }
     formOpen.value = false
     await list.refresh()
@@ -373,7 +373,7 @@ const columns = [
 <template>
   <div class="space-y-6">
     <p v-if="savedMessage" role="status" data-testid="server-save-result">{{ savedMessage }}</p>
-    <PageHeader title="服务器" description="机器档案与 Agent 注册入口。注册码一次性、15 分钟内有效。">
+    <PageHeader title="服务器" description="机器档案与 Agent 一键安装入口。安装命令中的注册码一次性、15 分钟内有效。">
       <Button variant="outline" :disabled="list.loading.value" @click="refreshAll">刷新</Button>
       <Button data-testid="server-create-button" @click="openCreate">新建服务器</Button>
     </PageHeader>
@@ -402,7 +402,7 @@ const columns = [
       :list="list"
       :columns="columns"
       empty-title="还没有服务器档案"
-      empty-description="登记服务器地址与到期信息后，可生成一次性注册码给该机器的 Agent。"
+      empty-description="登记服务器地址与到期信息后，可生成一键安装命令接入该机器的 Agent。"
       loading-label="正在读取服务器"
       :count-label="countLabel"
     >
@@ -437,7 +437,7 @@ const columns = [
         </template>
         <template v-else>
           <div class="flex flex-wrap items-center gap-1.5">
-            <Button size="sm" variant="outline" @click="generateCode(item)">注册码</Button>
+            <Button :data-testid="`server-install-button-${item.id}`" size="sm" variant="outline" @click="generateCode(item)">一键安装</Button>
             <Button size="sm" variant="outline" @click="openEdit(item)">编辑</Button>
             <Button size="sm" variant="destructive" @click="deleteTarget = item">归档</Button>
           </div>
@@ -517,7 +517,7 @@ const columns = [
       </ul>
     </ConfirmDialog>
 
-    <AppModal :open="codeOpen" title="一次性 Agent 注册码" size="sm" @close="codeOpen = false">
+    <AppModal :open="codeOpen" title="一键安装 Agent" size="md" @close="codeOpen = false">
       <div class="space-y-4">
         <p class="text-sm text-muted-foreground">
           服务器：<strong class="text-foreground">{{ codeTarget?.name }}</strong> · 仅可使用一次，15 分钟内有效；关闭后不保证能再次查看。
@@ -529,7 +529,23 @@ const columns = [
           <AlertDescription class="break-all">{{ codeError }}</AlertDescription>
         </Alert>
         <template v-if="code">
-          <CopyField data-testid="registration-code-value" :value="code.code" label="注册码" warning="仅显示一次，注册码仅可使用一次；复制不等于接入成功，请等待管理程序心跳。" />
+          <CopyField
+            v-if="code.installer_available && code.install_command"
+            data-testid="agent-install-command"
+            :value="code.install_command"
+            label="在节点机执行这一行"
+            warning="命令包含一次性注册码，15 分钟内有效。仅在目标节点机执行；成功后等待本页显示 Agent 在线。"
+          />
+          <Alert v-else>
+            <AlertTitle>一键安装暂不可用</AlertTitle>
+            <AlertDescription>{{ code.installer_reason || '面板没有配置同版本 Agent 安装包，请使用下方注册码手工安装。' }}</AlertDescription>
+          </Alert>
+          <details class="rounded-md border border-border p-3">
+            <summary class="cursor-pointer text-sm">手工安装 / 查看注册码</summary>
+            <div class="mt-3">
+              <CopyField data-testid="registration-code-value" :value="code.code" label="注册码" warning="仅显示一次、仅可使用一次；不要发到群聊或工单。" />
+            </div>
+          </details>
           <p class="text-xs text-muted-foreground">过期时间：{{ formatDateTime(code.expires_at) }}</p>
         </template>
       </div>

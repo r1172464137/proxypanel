@@ -133,6 +133,8 @@
 | GET | `/api/v1/auth/session` | 当前身份 + `csrf_token` |
 | GET | `/healthz` | 进程存活（不查依赖） |
 | GET | `/readyz` | 依赖就绪（PostgreSQL / Redis） |
+| GET | `/install-agent.sh` | 当前 Panel 渲染的一键安装脚本；不含注册码或永久 token |
+| GET | `/install-agent/linux-{amd64\|arm64}` | 与当前 Panel 同提交构建的 Agent 二进制；脚本按启动时固定的 SHA256 校验 |
 | GET | `/sub/{token}` | 客户端订阅输出，`?format=` 见下方 |
 
 ### 5.2 成员自助（`member` 及以上）
@@ -162,7 +164,7 @@
 |---|---|
 | GET / POST | `/api/v1/admin/servers` |
 | GET / PATCH / DELETE | `/api/v1/admin/servers/{id}` |
-| POST | `/api/v1/admin/servers/{id}/registration-codes` |
+| POST | `/api/v1/admin/servers/{id}/registration-codes` | 生成一次性注册码；配置安装器时同时返回 `installer_available=true` 与 `install_command` |
 | GET / POST | `/api/v1/admin/nodes` |
 | GET / PATCH / DELETE | `/api/v1/admin/nodes/{id}` |
 | GET / POST | `/api/v1/admin/node-groups` |
@@ -273,10 +275,12 @@ CSRF=$(curl -sS -c $J -X POST "$PANEL/api/v1/auth/login" \
 
 api() { curl -sS -b $J -H "X-CSRF-Token: $CSRF" -H 'Content-Type: application/json' "$@"; }
 
-# 建服务器 → 拿一次性注册码给 Agent
+# 建服务器 → 生成一键安装命令
 SRV=$(api -X POST "$PANEL/api/v1/admin/servers" \
   -d '{"name":"hk-01","address":"hk01.example.com","region":"hk"}' | jq -r .data.id)
-api -X POST "$PANEL/api/v1/admin/servers/$SRV/registration-codes" -d '{}'
+INSTALL=$(api -X POST "$PANEL/api/v1/admin/servers/$SRV/registration-codes" -d '{}')
+echo "$INSTALL" | jq -r .data.install_command
+# 在目标节点机执行上面的命令；若 installer_available=false，读取 installer_reason 并走手工安装。
 
 # 建节点（TLS 必须配证书，否则 400）
 api -X POST "$PANEL/api/v1/admin/nodes" -d '{

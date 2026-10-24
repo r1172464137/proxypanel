@@ -68,7 +68,7 @@ function revision(applied: unknown, desired: unknown) {
       <TabsList class="flex h-auto flex-wrap"><TabsTrigger value="runtime" class="min-h-11">运行状态</TabsTrigger><TabsTrigger value="recovery" class="min-h-11">恢复核对</TabsTrigger><TabsTrigger value="upgrade" class="min-h-11">升级与恢复</TabsTrigger></TabsList>
       <TabsContent value="runtime" class="space-y-4">
         <p class="text-sm">本次读取时间：{{ formatDateTime(checkedAt) }}。核心实例回执不代表端口可达，端口与客户端连接均未验证。</p>
-        <DataTable data-testid="runtime-agent-table" :list="agents" :columns="columns" empty-title="暂无管理程序" empty-description="登记服务器并生成注册码后，等待管理程序接入。" loading-label="正在读取管理程序" :count-label="`本页 ${agents.items.value.length} 个，不代表全部服务器`">
+        <DataTable data-testid="runtime-agent-table" :list="agents" :columns="columns" empty-title="暂无管理程序" empty-description="登记服务器并执行一键安装命令后，等待 Agent 接入。" loading-label="正在读取管理程序" :count-label="`本页 ${agents.items.value.length} 个，不代表全部服务器`">
           <template #row="{ item, columnIndex }">
             <span v-if="columnIndex === 0">{{ item.name || item.id || '未提供名称' }}<span class="block text-xs">{{ item.server_id || '服务器归属未知' }}</span></span>
             <span v-else-if="columnIndex === 1">{{ item.online === true ? '管理程序在线' : item.online === false && item.last_heartbeat_at ? '曾在线，现已离线' : item.online === false ? '尚无在线证据' : '在线状态未知' }}<span class="block">{{ formatDateTime(item.last_heartbeat_at) }}</span></span>

@@ -198,7 +198,17 @@ docker compose up -d panel
 ### 6. 接上 Agent
 
 Agent 在节点机上运行，主动通过面板 HTTPS 入口拉取快照。
-在 **资源 → 服务器 → 注册码** 中复制一次性代码，只能用一次，15 分钟内有效。
+在 **资源 → 服务器 → 一键安装 Agent** 中生成命令，只能用一次，15 分钟内有效。优先直接在目标节点机执行页面给出的命令：
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL 'https://panel.example.com/install-agent.sh' \
+  -o /tmp/proxypanel-agent-install.sh \
+  && sudo bash /tmp/proxypanel-agent-install.sh -key '页面生成的一次性注册码'
+```
+
+脚本自动检测 amd64/arm64，从当前 Panel 下载同版 Agent 并核对 SHA256，再安装官方 Xray、配置和 systemd。执行后回到页面等待“Agent 在线”；命令成功不等于代理流量已验证，仍需完成下文真实客户端测试。
+
+私有 CA 尚未进入系统信任、裸进程 Panel 未配置同版 Agent 文件，或需要手工控制安装目录时，使用下面的手工路径。
 
 在节点机下载官方 Xray 并核对摘要（示例 amd64，arm64 替换为 `Xray-linux-arm64-v8a.zip`）：
 

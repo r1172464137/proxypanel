@@ -22,7 +22,7 @@
 # 脚本级回归不等于已安装/重启过真实宿主服务。
 set -euo pipefail
 
-readonly SCRIPT_VERSION="1.0"
+readonly SCRIPT_VERSION="1.1"
 
 # 与 internal/agent/xray/version.go 的闭合白名单保持一致；
 # 版本不符时 Agent 会明确拒绝启动，不会静默降级。
@@ -52,13 +52,13 @@ readonly -a FORBIDDEN_STATE_EXACT=(
   / /var /var/lib /opt /srv /mnt /media
 )
 
-ASSUME_YES=""
+ASSUME_YES="${PROXYPANEL_INSTALL_ASSUME_YES:-}"
 DRY_RUN=""
 ARG_AGENT_BINARY=""
 ARG_AGENT_URL=""
 ARG_AGENT_SHA256=""
-ARG_XRAY_VERSION=""
-ARG_PANEL_URL=""
+ARG_XRAY_VERSION="${PROXYPANEL_INSTALL_XRAY_VERSION:-}"
+ARG_PANEL_URL="${PROXYPANEL_INSTALL_PANEL_URL:-}"
 ARG_REGISTRATION_CODE=""
 ARG_PANEL_CA=""
 ARG_STATE_DIR=""
@@ -91,6 +91,7 @@ usage() {
   --agent-sha256 HEX      下载文件的 SHA256（不校验会拒绝执行）
   --xray-version V        指定 Xray 版本，可选：26.3.27 / 26.3.23
   --panel-url URL         面板地址（必须是 https://）
+  -key C                  面板生成的一次性注册码（--registration-code 的简写）
   --registration-code C   一次性注册码（会进入 shell 历史，建议交互输入）
   --panel-ca PATH         面板使用私有 CA 时的 CA 证书文件
   --state-dir PATH        状态目录，默认 /var/lib/proxypanel-agent
@@ -112,7 +113,7 @@ while [ $# -gt 0 ]; do
     --agent-sha256)      ARG_AGENT_SHA256=${2:?}; shift 2 ;;
     --xray-version)      ARG_XRAY_VERSION=${2:?}; shift 2 ;;
     --panel-url)         ARG_PANEL_URL=${2:?}; shift 2 ;;
-    --registration-code) ARG_REGISTRATION_CODE=${2:?}; shift 2 ;;
+    -key|--key|--registration-code) ARG_REGISTRATION_CODE=${2:?}; shift 2 ;;
     --panel-ca)          ARG_PANEL_CA=${2:?}; shift 2 ;;
     --state-dir)         ARG_STATE_DIR=${2:?}; shift 2 ;;
     --dry-run)           DRY_RUN=1; shift ;;
@@ -173,6 +174,22 @@ detect_arch() {
   if [ "$ARCH" = "aarch64" ]; then
     warn "aarch64 未做过运行时验收，只在构建层面验证过。"
   fi
+}
+
+# The panel-served installer injects same-release artifact URLs and hashes.
+# Explicit CLI --agent-* options always win. Missing architecture data falls
+# back to the original interactive source selection instead of an unchecked URL.
+apply_generated_defaults() {
+  [ -z "$ARG_AGENT_BINARY" ] || return 0
+  [ -z "$ARG_AGENT_URL" ] || return 0
+  case "$ARCH" in
+    x86_64)
+      ARG_AGENT_URL=${PROXYPANEL_INSTALL_AGENT_URL_AMD64:-}
+      ARG_AGENT_SHA256=${PROXYPANEL_INSTALL_AGENT_SHA256_AMD64:-} ;;
+    aarch64)
+      ARG_AGENT_URL=${PROXYPANEL_INSTALL_AGENT_URL_ARM64:-}
+      ARG_AGENT_SHA256=${PROXYPANEL_INSTALL_AGENT_SHA256_ARM64:-} ;;
+  esac
 }
 
 require_systemd() {
@@ -275,8 +292,10 @@ collect_inputs() {
     esac
   fi
 
-  if [ -n "$ARG_AGENT_URL" ] && [ -z "$ARG_AGENT_SHA256" ]; then
-    die "从 URL 安装必须提供 --agent-sha256，否则无法校验下载内容"
+  if [ -n "$ARG_AGENT_URL" ]; then
+    case "$ARG_AGENT_URL" in https://*) ;; *) die "Agent 下载地址必须使用 https://" ;; esac
+    [ -n "$ARG_AGENT_SHA256" ] || die "从 URL 安装必须提供 --agent-sha256，否则无法校验下载内容"
+    [[ $ARG_AGENT_SHA256 =~ ^[0-9a-fA-F]{64}$ ]] || die "Agent SHA256 必须是 64 位十六进制"
   fi
 
   ARG_STATE_DIR=$(normalize_state_dir "${ARG_STATE_DIR:-$STATE_DIR}")
@@ -618,6 +637,7 @@ main() {
   require_root
   require_linux
   detect_arch
+  apply_generated_defaults
   require_systemd
   check_tools
   check_disk

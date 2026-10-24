@@ -62,8 +62,19 @@ server {
     #     add_header X-Content-Type-Options nosniff always;
     # }
 
-    # A/B 共用：API 不回退成 HTML。
+    # A/B 共用：API 与 Agent 安装文件不回退成 HTML。
     location /api/ { proxy_pass http://proxypanel_api; }
+    location = /install-agent.sh {
+        proxy_pass http://proxypanel_api/install-agent.sh;
+        access_log off;
+        add_header Cache-Control "no-store" always;
+        add_header X-Content-Type-Options nosniff always;
+    }
+    location /install-agent/ {
+        proxy_pass http://proxypanel_api;
+        access_log off;
+        add_header X-Content-Type-Options nosniff always;
+    }
     location /sub/ {
         proxy_pass http://proxypanel_api;
         # 订阅路径含令牌，不写 access log，也不缓存上游响应。

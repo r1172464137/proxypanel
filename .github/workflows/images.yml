@@ -205,6 +205,9 @@ jobs:
           docker run --rm --entrypoint /bin/sh "$PANEL" -ec '
             test -f /usr/share/proxypanel/web/index.html
             test -d /app/migrations
+            test -x /app/install/deploy-agent.sh
+            test -x /app/install/agents/linux-amd64/agent
+            test -x /app/install/agents/linux-arm64/agent
             test "$(id -u)" != 0
             ! command -v nginx
           '
@@ -231,6 +234,7 @@ jobs:
             docker run -d --name "$APP" --network "$NET" \
               -p 127.0.0.1::8080 -e "PANEL_MASTER_KEY=$KEY" \
               -e "DATABASE_URL=postgres://postgres:smoke-password@$DB:5432/postgres?sslmode=disable" \
+              -e "PANEL_PUBLIC_URL=https://panel.example.invalid" \
               -e "PANEL_WEB_ROOT=$ROOT" "$PANEL"
             PORT=$(docker port "$APP" 8080/tcp | awk -F: '{print $NF}')
             URL="http://127.0.0.1:$PORT"
@@ -239,6 +243,11 @@ jobs:
               sleep 1
             done
             curl -fsS "$URL/readyz"
+            curl -fsS "$URL/install-agent.sh" | grep -q 'PROXYPANEL_INSTALL_AGENT_SHA256_AMD64'
+            curl -fsS "$URL/install-agent/linux-amd64" -o /tmp/agent-from-panel
+            chmod +x /tmp/agent-from-panel
+            /tmp/agent-from-panel -version | grep -q proxypanel-agent
+            rm -f /tmp/agent-from-panel
             test "$(curl -s -o /dev/null -w '%{http_code}' "$URL/assets/missing.js")" = 404
             test "$(curl -s -o /dev/null -w '%{http_code}' "$URL/api/unknown")" = 404
             if [ "$MODE" = spa ]; then

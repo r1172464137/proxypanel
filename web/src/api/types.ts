@@ -112,6 +112,9 @@ export interface ServerWrite {
 export interface RegistrationCode {
   code: string
   expires_at: string
+  installer_available: boolean
+  install_command?: string
+  installer_reason?: string
 }
 
 export interface NodeRecord {

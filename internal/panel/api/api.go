@@ -41,6 +41,9 @@ type Config struct {
 	WebRoot string
 	// CookieDomain 允许同主域的子域共享会话（如 .example.com）。默认空。
 	CookieDomain string
+	// AgentInstaller enables the public, immutable same-release installer
+	// artifacts. Registration still requires an admin-created one-time code.
+	AgentInstaller *AgentInstallerConfig
 }
 
 // Server is the HTTP application.
@@ -72,6 +75,8 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /readyz", s.handleReadyz)
+	mux.HandleFunc("GET /install-agent.sh", s.handleAgentInstallerScript)
+	mux.HandleFunc("GET /install-agent/{arch}", s.handleAgentInstallerBinary)
 
 	mux.HandleFunc("POST /api/v1/auth/login", s.handleLogin)
 	mux.HandleFunc("GET /api/v1/auth/session", s.requireUser(s.handleSession))

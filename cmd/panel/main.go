@@ -30,6 +30,51 @@ func env(key, def string) string {
 	return def
 }
 
+func loadAgentInstaller(publicURL string) (*api.AgentInstallerConfig, error) {
+	scriptPath := strings.TrimSpace(os.Getenv("PANEL_AGENT_INSTALLER_PATH"))
+	explicit := scriptPath != "" || strings.TrimSpace(os.Getenv("PANEL_AGENT_BINARY_AMD64")) != "" || strings.TrimSpace(os.Getenv("PANEL_AGENT_BINARY_ARM64")) != ""
+	if scriptPath == "" {
+		for _, candidate := range []string{"/app/install/deploy-agent.sh", "deploy/deploy-agent.sh"} {
+			if info, err := os.Stat(candidate); err == nil && info.Mode().IsRegular() {
+				scriptPath = candidate
+				break
+			}
+		}
+	}
+	artifacts := map[string]string{
+		"amd64": strings.TrimSpace(os.Getenv("PANEL_AGENT_BINARY_AMD64")),
+		"arm64": strings.TrimSpace(os.Getenv("PANEL_AGENT_BINARY_ARM64")),
+	}
+	defaults := map[string]string{
+		"amd64": "/app/install/agents/linux-amd64/agent",
+		"arm64": "/app/install/agents/linux-arm64/agent",
+	}
+	configured := false
+	for arch, path := range artifacts {
+		if path == "" {
+			if info, err := os.Stat(defaults[arch]); err == nil && info.Mode().IsRegular() {
+				artifacts[arch] = defaults[arch]
+			}
+		}
+		if artifacts[arch] != "" {
+			configured = true
+		}
+	}
+	if scriptPath == "" || !configured {
+		if explicit {
+			return nil, errors.New("PANEL_AGENT_INSTALLER_PATH requires at least one PANEL_AGENT_BINARY_* artifact")
+		}
+		return nil, nil
+	}
+	if !strings.HasPrefix(strings.TrimSpace(publicURL), "https://") {
+		if explicit {
+			return nil, errors.New("one-click Agent install requires an HTTPS PANEL_PUBLIC_URL")
+		}
+		return nil, nil
+	}
+	return api.LoadAgentInstaller(scriptPath, publicURL, "26.3.27", artifacts)
+}
+
 func isLoopback(host string) bool {
 	switch host {
 	case "127.0.0.1", "::1", "localhost":
@@ -160,6 +205,13 @@ func main() {
 	} else {
 		log.Printf("web: PANEL_WEB_ROOT not set, serving API only (static files must be hosted separately)")
 	}
+	installer, err := loadAgentInstaller(os.Getenv("PANEL_PUBLIC_URL"))
+	if err != nil {
+		log.Fatalf("agent installer: %v", err)
+	}
+	if installer != nil {
+		log.Printf("agent installer: enabled for %d architecture(s)", len(installer.Artifacts))
+	}
 
 	srv := &api.Server{
 		Store:       st,
@@ -171,6 +223,7 @@ func main() {
 			CookieSameSite: cookieSameSite,
 			CookieDomain:   strings.TrimSpace(os.Getenv("PANEL_COOKIE_DOMAIN")),
 			WebRoot:        webRoot,
+			AgentInstaller: installer,
 		},
 	}
 	httpSrv := &http.Server{

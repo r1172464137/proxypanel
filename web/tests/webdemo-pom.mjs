@@ -54,7 +54,7 @@ export class ServersPage {
     await this.page.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click()
     const response = await created
     expect(response.status()).toBe(201)
-    await expect(this.page.getByTestId('server-save-result')).toContainText('下一步：生成接入注册码')
+    await expect(this.page.getByTestId('server-save-result')).toContainText('下一步：生成一键安装命令')
     return (await response.json()).data
   }
 
@@ -66,10 +66,11 @@ export class ServersPage {
    */
   async registrationCode(name) {
     await this.open()
-    await this.row(name).getByRole('button', { name: '注册码', exact: true }).click()
-    await expect(this.page.getByTestId('registration-code-value')).toBeVisible()
+    await this.row(name).getByRole('button', { name: '一键安装', exact: true }).click()
     const dialog = this.page.getByRole('dialog')
-    await expect(dialog).toContainText('复制不等于接入成功')
+    await expect(dialog).toContainText('15 分钟内有效')
+    await dialog.getByText('手工安装 / 查看注册码', { exact: true }).click()
+    await expect(this.page.getByTestId('registration-code-value')).toBeVisible()
     await this.page.getByTestId('registration-code-value').getByRole('button', { name: '复制', exact: true }).click()
     const code = (await this.page.evaluate(() => navigator.clipboard.readText())).trim()
     await expect(this.page.getByTestId('registration-code-value')).not.toBeEmpty()

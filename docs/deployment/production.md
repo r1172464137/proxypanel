@@ -88,6 +88,16 @@ server {
         add_header Cache-Control no-store always;
     }
 
+    location = /install-agent.sh {
+        proxy_pass http://panel_api/install-agent.sh;
+        access_log off;
+        add_header Cache-Control "no-store" always;
+    }
+    location /install-agent/ {
+        proxy_pass http://panel_api;
+        access_log off;
+    }
+
     location = /healthz { proxy_pass http://panel_api/healthz; }
     location = /readyz  { proxy_pass http://panel_api/readyz; }
 

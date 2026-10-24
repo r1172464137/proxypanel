@@ -3,7 +3,7 @@ import { computed } from 'vue'
 type SetupStep = { key: string; state: string; reason?: string }
 const props = defineProps<{ setup?: { steps: SetupStep[]; completed_count: number; blocking_reason?: string } }>()
 const steps = [
-  { key: 'servers', title: '接入服务器', to: '/admin/servers', detail: '登记机器，生成注册码，再核对管理程序心跳。' },
+  { key: 'servers', title: '接入服务器', to: '/admin/servers', detail: '登记机器，生成一键安装命令，再核对 Agent 心跳。' },
   { key: 'nodes', title: '创建节点', to: '/admin/nodes/new', detail: '配置连接入口，保存后核对同步任务。' },
   { key: 'node_groups', title: '组织节点组', to: '/admin/node-groups', detail: '将交付的节点加入组，供服务方案引用。' },
   { key: 'subscriptions', title: '建立服务方案', to: '/admin/subscriptions/new', detail: '选择节点组、每人额度、周期与有效期。' },

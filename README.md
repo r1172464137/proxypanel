@@ -190,7 +190,19 @@ Panel 只提供 API；宿主 nginx 直接提供 `web/dist`，并将 `/api/`、`/
 
 ## Agent 与节点
 
-Agent 配置示例：
+服务器页面默认生成一行安装命令：
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL 'https://panel.example.com/install-agent.sh' \
+  -o /tmp/proxypanel-agent-install.sh \
+  && sudo bash /tmp/proxypanel-agent-install.sh -key '一次性注册码'
+```
+
+Panel 镜像携带同一提交构建的 amd64/arm64 Agent。安装脚本自动检测架构、从当前 Panel 下载二进制并核对 SHA256，再下载和校验官方 Xray、写配置、安装 systemd 并启动服务。注册码绑定当前服务器、15 分钟有效且只能使用一次；永久 Agent token 只在注册后写入节点状态目录。
+
+如果一键安装不可用，页面会明确显示原因并保留手工注册码。常见原因是裸进程部署没有配置同版 Agent 文件，或 `PANEL_PUBLIC_URL` 不是 HTTPS；不会回退到未校验的下载。
+
+手工配置示例：
 
 ```json
 {

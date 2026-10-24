@@ -210,6 +210,33 @@ main
 	}
 }
 
+func TestStandaloneAgentGeneratedOneLineDefaults(t *testing.T) {
+	script := deploymentLibrary(t)
+	cmd := exec.Command("/bin/bash", "-c", `
+set -- -key one-time-code
+source "$LIBRARY"
+ARCH=x86_64
+apply_generated_defaults
+printf '%s|%s|%s|%s|%s\n' "$ARG_REGISTRATION_CODE" "$ARG_PANEL_URL" "$ARG_XRAY_VERSION" "$ARG_AGENT_URL" "$ARG_AGENT_SHA256"
+`)
+	sha := strings.Repeat("a", 64)
+	cmd.Env = append(os.Environ(),
+		"LIBRARY="+script,
+		"PROXYPANEL_INSTALL_PANEL_URL=https://panel.example.com",
+		"PROXYPANEL_INSTALL_XRAY_VERSION=26.3.27",
+		"PROXYPANEL_INSTALL_AGENT_URL_AMD64=https://panel.example.com/install-agent/linux-amd64",
+		"PROXYPANEL_INSTALL_AGENT_SHA256_AMD64="+sha,
+		"PROXYPANEL_INSTALL_ASSUME_YES=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("generated defaults: %v: %s", err, out)
+	}
+	want := "one-time-code|https://panel.example.com|26.3.27|https://panel.example.com/install-agent/linux-amd64|" + sha
+	if strings.TrimSpace(string(out)) != want {
+		t.Fatalf("generated defaults=%q, want %q", out, want)
+	}
+}
+
 // Stdin execution must reach the real entry guard without BASH_SOURCE.
 // Stub only its installation dispatch so this test cannot modify the host.
 func TestStandaloneAgentRunsWithoutBashSource(t *testing.T) {

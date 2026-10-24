@@ -59,6 +59,13 @@ try:
             binary=source/'bin/amd64/panel'; binary.parent.mkdir(parents=True,exist_ok=True)
             env=os.environ.copy(); env.update(CGO_ENABLED='0',GOOS='linux',GOARCH='amd64',GOTOOLCHAIN='local')
             sp.run([go,'build','-trimpath','-buildvcs=false','-o',str(binary),'./cmd/panel'],cwd=source,env=env,stdout=log,stderr=sp.STDOUT,check=True,timeout=240)
+            # Current panel images serve same-release Agent artifacts for the
+            # one-line installer. Build both node architectures into the exact
+            # archived source context; older Dockerfiles simply ignore them.
+            for arch in ('amd64','arm64'):
+                agent=source/'bin'/arch/'agent'; agent.parent.mkdir(parents=True,exist_ok=True)
+                agent_env=env.copy(); agent_env['GOARCH']=arch
+                sp.run([go,'build','-trimpath','-buildvcs=false','-o',str(agent),'./cmd/agent'],cwd=source,env=agent_env,stdout=log,stderr=sp.STDOUT,check=True,timeout=240)
             (out/(kind+'-go-version.txt')).write_bytes(sp.check_output([go,'version','-m',str(binary)]))
             artifacts[kind]={'ref':sha,'panel_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),
                 'web_tree':sp.check_output(['git','rev-parse',sha+':web'],cwd=root,text=True).strip(),

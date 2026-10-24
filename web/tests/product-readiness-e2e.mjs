@@ -481,7 +481,7 @@ try {
     const stateBadge = await row.getByTestId('server-agent-state').innerText()
     assert.match(stateBadge, /未接入|离线|未知/, 'copying a code must not claim a connected Agent')
     const agentSection = await row.innerText()
-    return { before: before.trim(), agentStateBefore: stateBadge.trim(), codeShownOnce: true, nextStepCopy: '下一步：生成接入注册码', serverRow: redact(agentSection.split('\n').slice(0, 4).join(' | ')), agentEffect: 'real registration happens later through the owned AgentSupervisor' }
+    return { before: before.trim(), agentStateBefore: stateBadge.trim(), codeShownOnce: true, nextStepCopy: '下一步：生成一键安装命令', serverRow: redact(agentSection.split('\n').slice(0, 4).join(' | ')), agentEffect: 'real registration happens later through the owned AgentSupervisor' }
   })
 
   // Member side: invitation created in the UI, redeemed in the UI.

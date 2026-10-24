@@ -208,7 +208,7 @@ const isEmpty = computed(() => {
       <EmptyState
         v-if="isEmpty"
         title="尚未添加服务器"
-        description="先登记服务器并生成一次性注册码，再添加节点与服务方案。"
+        description="先登记服务器并生成一键安装命令，再添加节点与服务方案。"
         icon="server"
       >
         <Button as-child>

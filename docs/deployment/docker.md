@@ -51,19 +51,38 @@ example **不是外部数据库版**。改用外部实例需要自行修改 DSN�
 例如在仓库根目录为 amd64 构建（需要 Go、Docker；arm64 相应替换架构）：
 
 ```bash
-mkdir -p bin/amd64
+mkdir -p bin/amd64 bin/arm64
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false \
   -o bin/amd64/panel ./cmd/panel
+# Panel 镜像同时携带两个架构的同版 Agent，供页面生成一键安装命令。
+for arch in amd64 arm64; do
+  CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -buildvcs=false \
+    -o "bin/$arch/agent" ./cmd/agent
+done
 docker build --build-arg TARGETARCH=amd64 -f deploy/Dockerfile.panel \
   -t proxypanel-panel:local .
 ```
 
-构建上下文必须有 `bin/<arch>/panel`、`migrations/` 和前端**源码** `web/`；Dockerfile
+构建上下文必须有 `bin/<arch>/panel`、`bin/{amd64,arm64}/agent`、`migrations/`、`deploy/deploy-agent.sh` 和前端**源码** `web/`；Dockerfile
 的 Node 阶段自行执行 `npm ci` 与 `npm run build`，不依赖宿主预先生成 `web/dist`。
 为避免上下文过大，不要携带不需要的 `web/node_modules`、历史构建产物或秘密文件。
 在复制出的 compose 中把 `panel.image` 改成 `proxypanel-panel:local` 后再启动；
 `PANEL_TAG` 只替换 bundle 的远程镜像标签，不能把它变成本地镜像名。
 本地镜像不要执行下文的 `docker compose pull panel`，升级时重新构建即可。
+
+## 一键安装 Agent
+
+当前 Panel 镜像携带同一提交构建的 amd64/arm64 Agent 和安装脚本。配置了 HTTPS `PANEL_PUBLIC_URL` 后，服务器页面会生成：
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL 'https://panel.example.com/install-agent.sh' \
+  -o /tmp/proxypanel-agent-install.sh \
+  && sudo bash /tmp/proxypanel-agent-install.sh -key '一次性注册码'
+```
+
+脚本自动检测架构、从当前 Panel 下载同版 Agent、核对启动时固定的 SHA256，再下载并核对官方 Xray、写配置和安装 systemd。注册码绑定服务器、15 分钟有效且只能消费一次；永久 Agent token 不进入浏览器。`/install-agent.sh` 与 `/install-agent/` 必须由 nginx 反代给 Panel，模板已包含对应 location。
+
+裸进程部署可通过 `PANEL_AGENT_INSTALLER_PATH`、`PANEL_AGENT_BINARY_AMD64`、`PANEL_AGENT_BINARY_ARM64` 指定同版文件；路径缺失、文件不是普通文件或 `PANEL_PUBLIC_URL` 不是 HTTPS 时，一键安装会禁用而不是回退到未校验下载。
 
 ## 宿主机 nginx 与前端归属
 
@@ -156,6 +175,8 @@ nginx 应覆盖写入 `X-Forwarded-For $remote_addr`，而不是透传客户端�
 | `PANEL_PUBLIC_URL` | 否 | 空 | 空时订阅 URL 回退为 `http://` + LISTEN；Compose 强制填写正确的 HTTPS 入口 |
 | `PANEL_MIGRATIONS_DIR` | 否 | `migrations` | 镜像设 `/app/migrations` |
 | `PANEL_WEB_ROOT` | 否 | 空（API-only） | 镜像及 Compose 默认 `/usr/share/proxypanel/web`；显式空关闭 SPA |
+| `PANEL_AGENT_INSTALLER_PATH` | 否 | 自动检测/空 | 镜像设 `/app/install/deploy-agent.sh`；裸进程可指定同版脚本，缺失则禁用一键安装 |
+| `PANEL_AGENT_BINARY_AMD64` / `PANEL_AGENT_BINARY_ARM64` | 否 | 自动检测/空 | 镜像内置两个架构；裸进程只公布实际配置且通过启动指纹校验的同版 Agent |
 | `PANEL_DEV` | 否 | `false` | 强制回环监听、Cookie 去 Secure；仅裸进程本机开发，不用于本篇 Docker bridge 部署 |
 | `PANEL_TRUST_REVERSE_PROXY` | 否 | `false` | 允许反代终止 TLS 的明文监听；镜像设 `true`，不再强制回环 |
 | `PANEL_TLS_CERT` / `PANEL_TLS_KEY` | 否 | 空 | 成对提供则 Go 自己开 TLS，可监听任意地址；优先于反代路径。本文 HTTP upstream 不应设置它们 |

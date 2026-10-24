@@ -5,6 +5,7 @@
 #
 # 构建上下文由 CI 组装，需包含：
 #   bin/<arch>/panel   —— CGO_ENABLED=0 交叉编译的 linux 二进制
+#   bin/{amd64,arm64}/agent —— 面板一键安装为节点提供的同版 Agent
 #   migrations/        —— SQL 迁移（面板启动时按 PANEL_MIGRATIONS_DIR 读取）
 #   web/               —— 前端构建产物（npm run build 的 dist 目录内容）
 #
@@ -44,11 +45,15 @@ WORKDIR /app
 # TARGETARCH 由 buildx 按 --platform 自动注入，用于挑选对应架构的二进制。
 ARG TARGETARCH
 COPY --chown=65532:65532 bin/${TARGETARCH}/panel /app/panel
+COPY --chown=65532:65532 bin/amd64/agent /app/install/agents/linux-amd64/agent
+COPY --chown=65532:65532 bin/arm64/agent /app/install/agents/linux-arm64/agent
+COPY --chown=65532:65532 deploy/deploy-agent.sh /app/install/deploy-agent.sh
 COPY --chown=65532:65532 migrations /app/migrations
 # 前端产物：面板以 65532 身份读取，普通权限即可。
 COPY --from=web --chown=65532:65532 /web/dist /usr/share/proxypanel/web
 
-RUN chmod 0755 /app/panel
+RUN chmod 0755 /app/panel /app/install/deploy-agent.sh \
+    /app/install/agents/linux-amd64/agent /app/install/agents/linux-arm64/agent
 
 # 面板在容器里必须监听所有接口，宿主机 nginx 才能通过容器网络连进来。
 # 明文 HTTP 由 PANEL_TRUST_REVERSE_PROXY 显式承认（TLS 在宿主 nginx 终止）。
@@ -59,7 +64,10 @@ RUN chmod 0755 /app/panel
 ENV PANEL_LISTEN=0.0.0.0:8080 \
     PANEL_TRUST_REVERSE_PROXY=true \
     PANEL_MIGRATIONS_DIR=/app/migrations \
-    PANEL_WEB_ROOT=/usr/share/proxypanel/web
+    PANEL_WEB_ROOT=/usr/share/proxypanel/web \
+    PANEL_AGENT_INSTALLER_PATH=/app/install/deploy-agent.sh \
+    PANEL_AGENT_BINARY_AMD64=/app/install/agents/linux-amd64/agent \
+    PANEL_AGENT_BINARY_ARM64=/app/install/agents/linux-arm64/agent
 
 # 8080 是容器端口。对外暴露的 443 由宿主机 nginx 提供，不在这个镜像里。
 EXPOSE 8080

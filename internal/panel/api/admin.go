@@ -190,7 +190,11 @@ func (s *Server) handleRegistrationCode(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	s.audit(r, "agent.registration_code", "server", serverID, nil)
-	s.writeData(w, http.StatusCreated, map[string]any{"id": id, "code": code, "expires_at": expires})
+	command, available, reason := s.agentInstallCommand(code)
+	s.writeData(w, http.StatusCreated, map[string]any{
+		"id": id, "code": code, "expires_at": expires,
+		"installer_available": available, "install_command": command, "installer_reason": reason,
+	})
 }
 
 func (s *Server) handleListNodes(w http.ResponseWriter, r *http.Request) {

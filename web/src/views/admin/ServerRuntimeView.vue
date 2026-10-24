@@ -159,7 +159,7 @@ const agentLayer = computed<LayerCard>(() => {
     }
   }
 
-  if (rows.every(row => !row.heartbeat)) return { title: '① 管理程序', status: '未接入', summary: '已注册但尚未上报心跳', details: ['等待管理程序首次上线；可重新生成注册码交给部署人员'], tone: 'warn' }
+  if (rows.every(row => !row.heartbeat)) return { title: '① 管理程序', status: '未接入', summary: '已注册但尚未上报心跳', details: ['等待 Agent 首次上线；可重新生成一键安装命令'], tone: 'warn' }
   const online = rows.filter((row) => row.online)
   const tone: LayerTone = online.length === rows.length ? 'ok' : online.length === 0 ? 'danger' : 'warn'
   // 离线时给出最近一次心跳，用于判断是刚掉线还是长期失联。
@@ -323,7 +323,7 @@ const layers = computed<LayerCard[]>(() => [agentLayer.value, instanceLayer.valu
         <router-link to="/admin/servers">返回服务器</router-link>
       </Button>
       <Button as-child variant="outline"><router-link to="/admin/runtime">返回运行总览</router-link></Button>
-      <Button data-testid="server-registration-code-button" @click="generateCode">生成接入注册码</Button>
+      <Button data-testid="server-registration-code-button" @click="generateCode">一键安装 Agent</Button>
     </PageHeader>
 
     <ErrorState v-if="server.error.value" :error="server.error.value" @retry="server.reload()" />
@@ -371,9 +371,9 @@ const layers = computed<LayerCard[]>(() => [agentLayer.value, instanceLayer.valu
           <EmptyState
             v-else-if="!scopedAgents.length"
             title="该服务器未注册 Agent"
-            description="使用一次性注册码在该机器上启动 Agent；注册码只会展示一次。"
+            description="生成一行安装命令，在该机器执行后等待 Agent 自动注册并上报心跳。"
           >
-            <Button @click="generateCode">生成一次性注册码</Button>
+            <Button @click="generateCode">生成一键安装命令</Button>
           </EmptyState>
           <template v-else>
             <Alert v-if="agentsUnscoped" class="mb-3">
@@ -485,7 +485,7 @@ const layers = computed<LayerCard[]>(() => [agentLayer.value, instanceLayer.valu
       </Card>
     </div>
 
-    <AppModal :open="codeOpen" title="一次性 Agent 注册码" size="sm" @close="codeOpen = false">
+    <AppModal :open="codeOpen" title="一键安装 Agent" size="md" @close="codeOpen = false">
       <div class="space-y-4">
         <p v-if="codeLoading" class="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 class="animate-spin" aria-hidden="true" /> 正在生成…
@@ -494,7 +494,22 @@ const layers = computed<LayerCard[]>(() => [agentLayer.value, instanceLayer.valu
           <AlertDescription class="break-all">{{ codeError }}</AlertDescription>
         </Alert>
         <template v-if="code">
-          <CopyField data-testid="registration-code-value" :value="code.code" label="注册码" warning="仅显示一次，仅可使用一次。复制不等于接入成功，请等待管理程序心跳。" />
+          <CopyField
+            v-if="code.installer_available && code.install_command"
+            data-testid="agent-install-command"
+            :value="code.install_command"
+            label="在节点机执行这一行"
+            warning="命令包含一次性注册码，15 分钟内有效。仅在目标节点机执行；安装后本页会自动刷新在线状态。"
+          />
+          <Alert v-else>
+            <AlertDescription>{{ code.installer_reason || '面板没有配置同版本 Agent 安装包，请使用下方注册码手工安装。' }}</AlertDescription>
+          </Alert>
+          <details class="rounded-md border border-border p-3">
+            <summary class="cursor-pointer text-sm">手工安装 / 查看注册码</summary>
+            <div class="mt-3">
+              <CopyField data-testid="registration-code-value" :value="code.code" label="注册码" warning="仅显示一次、仅可使用一次；不要发到群聊或工单。" />
+            </div>
+          </details>
           <p class="text-xs text-muted-foreground">过期时间：{{ formatDateTime(code.expires_at) }}</p>
         </template>
       </div>
