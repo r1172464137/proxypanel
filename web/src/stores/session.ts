@@ -3,7 +3,7 @@ import { computed, reactive } from 'vue'
 import { authApi } from '@/api/endpoints'
 import { setCsrfToken } from '@/api/http'
 import type { ApiError } from '@/api/http'
-import type { User } from '@/api/types'
+import type { SessionPayload, User } from '@/api/types'
 import { toApiError } from '@/lib/errors'
 
 export type SessionStatus = 'unknown' | 'loading' | 'ready' | 'anonymous'
@@ -20,9 +20,17 @@ export const sessionState = reactive<SessionState>({
   error: null,
 })
 
-let inflight: Promise<void> | null = null
+let inflight: { epoch: number; promise: Promise<void> } | null = null
+// 身份 epoch：clear/markAnonymous/login 成功会推进 epoch，使已发出的只读会话请求失效。
+let identityEpoch = 0
+
+function invalidatePendingSession(): void {
+  identityEpoch += 1
+  inflight = null
+}
 
 export function clearSession(): void {
+  invalidatePendingSession()
   sessionState.status = 'anonymous'
   sessionState.user = null
   sessionState.error = null
@@ -37,6 +45,7 @@ export function clearSession(): void {
  * 浏览器把这记进 console（fetch 层无法阻止 4xx 被记录），每个页面 4 条噪音。
  */
 export function markAnonymous(): void {
+  invalidatePendingSession()
   sessionState.status = 'anonymous'
   sessionState.user = null
   sessionState.error = null
@@ -45,16 +54,27 @@ export function markAnonymous(): void {
 
 export async function ensureSession(force = false): Promise<void> {
   if (!force && sessionState.status === 'ready') return
-  if (inflight) return inflight
+  if (inflight && inflight.epoch === identityEpoch) return inflight.promise
+  const epoch = identityEpoch
   sessionState.status = 'loading'
-  inflight = (async () => {
+  let started: Promise<SessionPayload>
+  try {
+    started = Promise.resolve(authApi.session())
+  } catch (caught) {
+    started = Promise.reject(caught)
+  }
+  const entry = { epoch, promise: Promise.resolve() }
+  entry.promise = (async () => {
     try {
-      const payload = await authApi.session()
+      const payload = await started
+      if (epoch !== identityEpoch) return
       sessionState.user = payload.user
       setCsrfToken(payload.csrf_token)
       sessionState.status = 'ready'
       sessionState.error = null
     } catch (caught) {
+      // 已被 clear/markAnonymous/login 取代的读取不得回写旧身份或错误。
+      if (epoch !== identityEpoch) return
       const error = toApiError(caught)
       sessionState.user = null
       setCsrfToken(null)
@@ -66,14 +86,18 @@ export async function ensureSession(force = false): Promise<void> {
         sessionState.error = error
       }
     } finally {
-      inflight = null
+      // 只释放自己登记的 singleflight，避免旧请求清掉 clear 后新发起的读取。
+      if (inflight === entry) inflight = null
     }
   })()
-  return inflight
+  inflight = entry
+  return entry.promise
 }
 
 export async function login(username: string, password: string): Promise<void> {
   const payload = await authApi.login(username, password)
+  // 登录成功即身份切换：此前的只读会话请求一律作废，不能再回写旧 user/CSRF。
+  invalidatePendingSession()
   sessionState.user = payload.user
   setCsrfToken(payload.csrf_token)
   sessionState.status = 'ready'
