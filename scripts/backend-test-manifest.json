@@ -344,7 +344,9 @@
   },
   {
     "id": "protocol/handshake-review",
-    "packages": ["./internal/panel/clientconfig"],
+    "packages": [
+      "./internal/panel/clientconfig"
+    ],
     "run": "^Test(SavedNodeTLSHandshakeSucceedsAfterNormalization|HistoricalLegacyTLSRowHandshakesAtBuild|ReviewTLSVerifyAndMixedHalvesHandshake|ReviewTLSSameHalfMixCorePrefersFile|XrayGRPCClientCarriesServiceName|SavedNodeRealityHandshakePayload)$",
     "expected_tests": [
       "TestSavedNodeTLSHandshakeSucceedsAfterNormalization",
@@ -354,8 +356,39 @@
       "TestXrayGRPCClientCarriesServiceName",
       "TestSavedNodeRealityHandshakePayload"
     ],
-    "stories": ["US-PR-011"],
-    "requires": ["xray"],
+    "stories": [
+      "US-PR-011"
+    ],
+    "requires": [
+      "xray"
+    ],
     "timeout_seconds": 120
+  },
+  {
+    "id": "agent-state/atomic-commit",
+    "packages": [
+      "./internal/agent/state"
+    ],
+    "run": "^(TestMeasureWritesBaselineAndBatchInOneTransaction|TestMeasureComputesDeltasAndRebasesCounterReset|TestMeasureSeparatesCoreGenerations|TestBatchLifecycleRequiresAcknowledgement|TestQueueDepthCapacity|TestReportsOutbox|TestInstanceRecords|TestIdentityAndGenerationHistory|TestCommitSnapshotAtomicRollbackAndRestart|TestCommitSnapshotFailedApplyRetainsIntent|TestCommitSnapshotRejectsStaleIntent|TestCommitSnapshotSerializesWithMeasure)$",
+    "expected_tests": [
+      "TestMeasureWritesBaselineAndBatchInOneTransaction",
+      "TestMeasureComputesDeltasAndRebasesCounterReset",
+      "TestMeasureSeparatesCoreGenerations",
+      "TestBatchLifecycleRequiresAcknowledgement",
+      "TestQueueDepthCapacity",
+      "TestReportsOutbox",
+      "TestInstanceRecords",
+      "TestIdentityAndGenerationHistory",
+      "TestCommitSnapshotAtomicRollbackAndRestart",
+      "TestCommitSnapshotFailedApplyRetainsIntent",
+      "TestCommitSnapshotRejectsStaleIntent",
+      "TestCommitSnapshotSerializesWithMeasure"
+    ],
+    "stories": [
+      "US-PR-011",
+      "US-PR-013"
+    ],
+    "requires": [],
+    "timeout_seconds": 60
   }
 ]

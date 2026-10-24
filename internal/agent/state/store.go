@@ -370,6 +370,18 @@ type InstanceRecord struct {
 
 // RecordInstance upserts one instance record.
 func (s *Store) RecordInstance(ctx context.Context, rec InstanceRecord) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := recordInstanceTx(ctx, tx, rec); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func recordInstanceTx(ctx context.Context, tx *sql.Tx, rec InstanceRecord) error {
 	cfg := strings.TrimSpace(string(rec.Config))
 	config := []byte(nil)
 	if cfg != "" {
@@ -387,11 +399,6 @@ func (s *Store) RecordInstance(ctx context.Context, rec InstanceRecord) error {
 	if updated.IsZero() {
 		updated = time.Now().UTC()
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
 	_, err = tx.ExecContext(ctx, `INSERT INTO instances(node_id, config_hash, core_generation, state, error, applied_user_count, config, users, next_expiry, updated_at)
 		VALUES(?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(node_id) DO UPDATE SET
@@ -408,7 +415,7 @@ func (s *Store) RecordInstance(ctx context.Context, rec InstanceRecord) error {
 	if err != nil {
 		return fmt.Errorf("record instance %s: %w", rec.NodeID, err)
 	}
-	return tx.Commit()
+	return nil
 }
 
 // Instances returns all persisted instance records ordered by node id.
