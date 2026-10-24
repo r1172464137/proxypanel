@@ -25,6 +25,7 @@ type ReadinessCheck struct {
 }
 type UpgradeReadiness struct {
 	Status           string           `json:"status"`
+	StopVerification string           `json:"stop_verification,omitempty"`
 	Phase            string           `json:"phase"`
 	Checks           []ReadinessCheck `json:"checks"`
 	DatabaseSHA256   string           `json:"database_sha256,omitempty"`
@@ -158,6 +159,7 @@ type upgradeAgent struct {
 	Version    string
 	Generation int64 `json:"control_generation"`
 	Applied    int64 `json:"applied_revision"`
+	Desired    int64 `json:"desired_revision"`
 }
 type upgradeNode struct {
 	ID       string
@@ -362,14 +364,16 @@ func (s *Store) checkUpgradeReadinessQ(ctx context.Context, q querier, preflight
 		if x.StateSchemaVersion != "1" {
 			r.add("AGENT_SCHEMA_UNSUPPORTED", "unknown", 1, "Use a reviewed exporter for the actual agent state schema; do not relabel state.")
 		}
-		if !x.ApplyIntentTrackingSupported {
-			r.add("AGENT_INTENT_UNPROVEN", "unknown", 1, "Legacy exporter has no durable execution journal. Supply independent per-instance execution reconciliation and stop verification; do not manufacture an intent or relabel the artifact. Zero is not proof.")
+		if input.StopReview == nil {
+			if !x.ApplyIntentTrackingSupported {
+				r.add("AGENT_INTENT_UNPROVEN", "unknown", 1, "Legacy journal is unavailable; provide administrator-reviewed per-instance execution reconciliation instead. Do not manufacture intent records.")
+			}
+			r.add("AGENT_STOP_UNVERIFIED", "unknown", 1, "Provide a structured administrator-reviewed stop record with restart fence, process identity/termination observations, ordered capture and complete instance/window reconciliation. Hashes alone do not prove stop.")
+		} else if err := verifyAdministratorStop(a, input, data, r); err != nil {
+			r.add("AGENT_STOP_REVIEW_INVALID", "blocked", 1, "Administrator stop review failed: "+err.Error()+". Correct external materials; do not migrate.")
+		} else {
+			r.StopVerification = "管理员核对 / administrator-reviewed external observations; not independently observed by panel"
 		}
-		// LoadUpgradeEvidence authenticates attachment bytes, not their claim.
-		// Neither legacy count=0 nor D's committed snapshot proves OS/service
-		// quiescence. Until a reviewed external verifier consumes those facts,
-		// explicitly retain this gap even for supported=true/count=0.
-		r.add("AGENT_STOP_UNVERIFIED", "unknown", 1, "Stop attachment is hash-bound but not independently verified. Need Agent/server identity, service restart fence, observed exit/OS absence of every core, capture ordering, and per-instance execution reconciliation against PG generation/revision and owner windows. No legacy intent record is required.")
 		if x.PendingReportCount != 0 || x.PendingApplyIntentCount != 0 {
 			r.add("AGENT_EXECUTION_PENDING", "blocked", 1, "Complete and acknowledge execution/reporting with the old service before stopping it.")
 		}

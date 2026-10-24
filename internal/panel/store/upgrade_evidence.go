@@ -37,13 +37,16 @@ type UpgradeEvidence struct {
 }
 
 type AgentEvidenceInput struct {
-	AgentID               string                  `json:"agent_id"`
-	File                  string                  `json:"file"`
-	SHA256                string                  `json:"sha256"`
-	ObservedAgentVersion  string                  `json:"observed_agent_version"`
-	StoppedEvidenceFile   string                  `json:"stopped_evidence_file"`
-	StoppedEvidenceSHA256 string                  `json:"stopped_evidence_sha256"`
-	Export                *UpgradeAgentStateInput `json:"-"`
+	AgentID               string `json:"agent_id"`
+	File                  string `json:"file"`
+	SHA256                string `json:"sha256"`
+	ObservedAgentVersion  string `json:"observed_agent_version"`
+	StoppedEvidenceFile   string `json:"stopped_evidence_file"`
+	StoppedEvidenceSHA256 string `json:"stopped_evidence_sha256"`
+	// Opt-in to the strict administrator-reviewed stop record in the existing attachment.
+	StopReviewFormat string                  `json:"stop_review_format,omitempty"`
+	StopReview       *UpgradeStopReview      `json:"-"`
+	Export           *UpgradeAgentStateInput `json:"-"`
 }
 
 // UpgradeAgentStateInput is the complete sanitized offline AgentStateEvidence
@@ -129,7 +132,7 @@ func LoadUpgradeEvidence(path string) (*UpgradeEvidence, error) {
 		if err != nil || len(want) != sha256.Size {
 			return nil, fmt.Errorf("invalid SHA256 for %q", name)
 		}
-		data, err := read(filepath.Join(filepath.Dir(abs), name), 0)
+		data, err := read(filepath.Join(filepath.Dir(abs), name), upgradeManifestLimit)
 		if err != nil {
 			return nil, fmt.Errorf("evidence %q: %w", name, err)
 		}
@@ -158,8 +161,23 @@ func LoadUpgradeEvidence(path string) (*UpgradeEvidence, error) {
 		if a.Export.AgentID != a.AgentID {
 			return nil, fmt.Errorf("agent ID mismatch for %q", a.File)
 		}
-		if _, err := reference(a.StoppedEvidenceFile, a.StoppedEvidenceSHA256); err != nil {
+		stop, err := reference(a.StoppedEvidenceFile, a.StoppedEvidenceSHA256)
+		if err != nil {
 			return nil, err
+		}
+		if a.StopReviewFormat != "" {
+			if a.StopReviewFormat != UpgradeStopReviewFormat {
+				return nil, fmt.Errorf("unsupported stop review format %q", a.StopReviewFormat)
+			}
+			a.StopReview = new(UpgradeStopReview)
+			if err := decodeUpgradeJSON(stop, a.StopReview); err != nil {
+				return nil, fmt.Errorf("administrator stop review: %w", err)
+			}
+			for _, record := range a.StopReview.Records {
+				if _, err := reference(record.File, record.SHA256); err != nil {
+					return nil, err
+				}
+			}
 		}
 	}
 	for i, p := range evidence.PeriodAssertions {
@@ -330,7 +348,7 @@ func (s *Store) importUpgradeEvidenceTx(ctx context.Context, tx *sql.Tx, proof *
 			return err
 		}
 	}
-	detail, err := json.Marshal(map[string]any{"evidence_sha256": proof.EvidenceSHA256, "database_sha256": proof.DatabaseSHA256, "period_count": len(proof.periods), "owner_count": len(proof.owners), "pending_batches": proof.PendingBatches, "duplicate_batches": proof.DuplicateBatches})
+	detail, err := json.Marshal(map[string]any{"evidence_sha256": proof.EvidenceSHA256, "database_sha256": proof.DatabaseSHA256, "period_count": len(proof.periods), "owner_count": len(proof.owners), "pending_batches": proof.PendingBatches, "duplicate_batches": proof.DuplicateBatches, "stop_verification": proof.StopVerification})
 	if err != nil {
 		return err
 	}

@@ -44,6 +44,9 @@ func runCheck(ctx context.Context, args []string, out, stderr io.Writer) int {
 		}
 	} else {
 		fmt.Fprintf(out, "upgrade readiness: %s\n", r.Status)
+		if r.StopVerification != "" {
+			fmt.Fprintln(out, r.StopVerification)
+		}
 		for _, c := range r.Checks {
 			fmt.Fprintf(out, "%s %s count=%d: %s\n", c.Status, c.Code, c.Count, c.Remedy)
 		}
