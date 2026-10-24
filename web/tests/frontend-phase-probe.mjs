@@ -364,12 +364,26 @@ try {
     await ap.goto(base + '/admin/setup')
     await ap.waitForLoadState('networkidle')
     const label = (await ap.getByTestId('setup-progress-label').innerText()).trim()
-    const known = overview.setup.steps.every((s) => s.state !== 'unknown')
-    if (known) {
-      assert.equal(label, `${overview.setup.completed_count}/6 步已完成`, `progress label ${label} != real count ${overview.setup.completed_count}`)
+    const unknownSteps = overview.setup.steps.filter((s) => s.state === 'unknown')
+    // The confirmed aggregate is legal knowledge and must be shown as-is; unknown
+    // steps are reported separately and never folded into the count or pending.
+    const countKnown = Number.isInteger(overview.setup.completed_count) && overview.setup.completed_count >= 0 && overview.setup.completed_count <= 6
+    assert.equal(countKnown, true, `API completed_count out of range: ${overview.setup.completed_count}`)
+    assert.equal(label, `已确认完成 ${overview.setup.completed_count}/6 步`, `progress label ${label} != real count ${overview.setup.completed_count}`)
+    const unknownNote = ap.getByTestId('setup-progress-unknown')
+    if (unknownSteps.length > 0) {
+      await expect(unknownNote).toBeVisible()
+      const unknownText = (await unknownNote.innerText()).trim()
+      assert.equal(unknownText, `${unknownSteps.length} 步状态未知，未计入已完成`, `unknown note ${unknownText} != ${unknownSteps.length} unknown step(s)`)
+      assert.ok(unknownSteps.length < 6, 'unknown steps must be a subset, not every step')
+      assert.ok(overview.setup.completed_count < 6, 'a partially unknown setup cannot claim 6/6')
     } else {
-      assert.ok(label.includes('进度未知'), `unknown step states must not be presented as a count: ${label}`)
-      assert.doesNotMatch(label, /\b[0-6]\/6\b/, 'a partial count would fabricate progress while a step is unknown')
+      await expect(unknownNote).toHaveCount(0)
+    }
+    for (const step of unknownSteps) {
+      const cellText = await ap.getByTestId(`setup-step-${step.key}`).innerText()
+      assert.ok(cellText.includes('状态未知'), `${step.key}: unknown step must read 状态未知, got ${cellText}`)
+      assert.ok(!cellText.includes('待完成'), `${step.key}: unknown must not be shown as pending`)
     }
     for (const step of overview.setup.steps) {
       const cell = ap.getByTestId(`setup-step-${step.key}`)
@@ -382,12 +396,13 @@ try {
     assert.notEqual(traffic.state, 'completed', 'no traffic exists; traffic step must not be completed')
     const apiStates = overview.setup.steps.map((s) => `${s.key}=${s.state}`)
     observations.push({
-      name: 'setup summary with a legitimately unknown traffic step',
-      value: { label, completedCount: overview.setup.completed_count, apiStates, note: 'summary hides the known count when any step is unknown; per-step states are still truthful' },
+      name: 'setup summary keeps the API confirmed count and reports unknown steps separately',
+      value: { label, completedCount: overview.setup.completed_count, unknownKeys: unknownSteps.map((s) => s.key), apiStates },
     })
     return {
       realCompletedCount: overview.setup.completed_count,
       progressLabel: label,
+      unknownKeys: unknownSteps.map((s) => s.key),
       perStepStates: apiStates,
       trafficState: traffic.state,
       fabricatedPartialCount: false,
@@ -667,13 +682,13 @@ try {
     try {
       const page = await login(c, 'admin', '**/admin/overview')
       const facts = []
-      facts.push(await assertMobilePage(page, '/admin/overview', 'workbench', ['workbench-refresh']))
+      facts.push(await assertMobilePage(page, '/admin/overview', 'workbench', ['workbench-refresh', 'overview-tasks-link']))
       facts.push(await assertMobilePage(page, '/admin/setup', 'setup', ['setup-refresh-button']))
       facts.push(await assertMobilePage(page, '/admin/runtime', 'runtime', ['runtime-refresh-button']))
       facts.push(
         await assertMobilePage(page, '/admin/runtime#recovery', 'runtime recovery tab', ['recovery-enter-button']),
       )
-      facts.push(await assertMobilePage(page, '/admin/members', 'members', ['member-refresh-button', 'member-q-input']))
+      facts.push(await assertMobilePage(page, '/admin/members', 'members', ['member-refresh-button', 'member-q-input', `member-username-${memberId}`]))
       facts.push(await assertMobilePage(page, `/admin/batches/${batchId}`, 'batch detail', []))
       for (const fact of facts) {
         assert.equal(fact.coarsePointer, true)

@@ -199,7 +199,7 @@ const isEmpty = computed(() => {
           <CardContent>
             <p class="text-2xl font-semibold tabular">{{ formatNumber(data.pending_tasks) }}</p>
             <p class="mt-1 text-xs text-muted-foreground">
-              <router-link to="/admin/tasks" class="underline-offset-4 hover:underline">查看任务与回执</router-link>
+              <router-link to="/admin/tasks" data-testid="overview-tasks-link" class="inline-flex min-h-11 items-center underline-offset-4 hover:underline">查看任务与回执</router-link>
             </p>
           </CardContent>
         </Card>

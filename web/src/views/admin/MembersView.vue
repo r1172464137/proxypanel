@@ -474,7 +474,7 @@ const columns = [
           />
         </template>
         <template v-else-if="columnIndex === 1">
-          <router-link :to="`/admin/members/${item.id}`" class="font-medium hover:underline">{{ item.username }}</router-link>
+          <router-link :to="`/admin/members/${item.id}`" :data-testid="`member-username-${item.id}`" class="inline-flex min-h-11 items-center font-medium hover:underline">{{ item.username }}</router-link>
           <span class="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
             {{ item.role === 'admin' ? '管理员' : '成员' }}
             <Badge v-if="item.quota_override_enabled" variant="outline" class="border-transparent bg-brand text-brand-foreground">配额覆盖</Badge>
