@@ -12,7 +12,7 @@
       "plan": ".ai/super-run/product-readiness/backend.md",
       "tasks": {
         "dev": {
-          "status": "pending",
+          "status": "completed",
           "agent_spec": "/home/compile/code/t-tools/agents/backend-dev.md",
           "references": [
             ".ai/design/product-readiness.md",
@@ -60,11 +60,13 @@
             ".ai/evidence/deployment/dual-hosting/r1-final-269e4e2/verified-summary.json",
             ".ai/quality/product-readiness-backend-r2-source-closure.md",
             ".ai/evidence/checksum-source-r2/verification.json",
-            ".ai/diagnose/webdemo-restore-startup-readiness-20261024T1200Z.md"
+            ".ai/diagnose/webdemo-restore-startup-readiness-20261024T1200Z.md",
+            ".ai/quality/product-readiness-backend-r3-handoff.md",
+            ".ai/evidence/backend-test/20261024T113542Z-7676d17a/result.json"
           ]
         },
         "test": {
-          "status": "pending",
+          "status": "completed",
           "agent_spec": "/home/compile/code/t-tools/agents/backend-test.md",
           "references": [
             ".ai/design/product-readiness.md",
@@ -83,7 +85,9 @@
             ".ai/evidence/r1-final-269e4e2/frontend-data-fault/result.json",
             ".ai/evidence/deployment/dual-hosting/r1-final-269e4e2/verified-summary.json",
             ".ai/quality/product-readiness-backend-r2-source-closure.md",
-            ".ai/evidence/checksum-source-r2/verification.json"
+            ".ai/evidence/checksum-source-r2/verification.json",
+            ".ai/quality/product-readiness-backend-r3-handoff.md",
+            ".ai/evidence/backend-test/20261024T113542Z-7676d17a/result.json"
           ]
         },
         "accept": {

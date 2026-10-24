@@ -176,8 +176,17 @@ func TestUpgradeReadinessLegacyAndUnknown(t *testing.T) {
 	}
 	upgradeSeedAgent(t, st)
 	r := upgradeReady(t, st)
-	if r.Status != "unknown" || !upgradeHas(r, "AGENT_EVIDENCE_MISSING") {
-		t.Fatalf("%+v", r)
+	if r.Status != "ready" || upgradeHas(r, "AGENT_EVIDENCE_MISSING") {
+		t.Fatalf("schema-current restart must not require upgrade-transition evidence: %+v", r)
+	}
+}
+
+func TestUpgradeReadinessPendingAgentRequiresEvidence(t *testing.T) {
+	st := upgradeTestStore(t, true)
+	upgradeSeedAgent(t, st)
+	r := upgradeReady(t, st)
+	if len(r.Pending) == 0 || r.Status != "unknown" || !upgradeHas(r, "AGENT_EVIDENCE_MISSING") {
+		t.Fatalf("pending migration must retain the stopped-Agent evidence gate: %+v", r)
 	}
 }
 func TestUpgradeReadinessACKLostAndHashMismatch(t *testing.T) {

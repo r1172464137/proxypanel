@@ -821,6 +821,7 @@
     "expected_tests": [
       "TestUpgradeReadinessEmptyReadOnlyAndMigrate",
       "TestUpgradeReadinessLegacyAndUnknown",
+      "TestUpgradeReadinessPendingAgentRequiresEvidence",
       "TestUpgradeReadinessACKLostAndHashMismatch",
       "TestUpgradeReadinessSchemaOneCannotClaimIntents",
       "TestUpgradeReadinessImportRollback",
@@ -834,6 +835,7 @@
       "TestUpgradeOpenControlledMigration",
       "TestUpgradeOpenFinalProofRecheck",
       "TestUpgradeOpenPostMigrationSemantics",
+      "TestUpgradeOpenSchemaCurrentAgentWithoutTransitionEvidence",
       "TestReadinessPublicContractSameSnapshot",
       "TestReadinessPublicContractUnverifiedSchema"
     ],
@@ -1207,7 +1209,7 @@
       "./internal/panel/store",
       "./cmd/panel"
     ],
-    "run": "^(TestUpgradeDeliveryHelper|TestAdministratorStopReadyImport|TestAdministratorStopRejects|TestAdministratorStopImportRollback|TestUpgradeOpenControlledMigration|TestUpgradeOpenFinalProofRecheck|TestUpgradeOpenPostMigrationSemantics|TestCheckPreflightWithoutMasterKeyOrMigrations)$",
+    "run": "^(TestUpgradeDeliveryHelper|TestAdministratorStopReadyImport|TestAdministratorStopRejects|TestAdministratorStopImportRollback|TestUpgradeOpenControlledMigration|TestUpgradeOpenFinalProofRecheck|TestUpgradeOpenPostMigrationSemantics|TestUpgradeOpenSchemaCurrentAgentWithoutTransitionEvidence|TestCheckPreflightWithoutMasterKeyOrMigrations)$",
     "expected_tests": [
       "TestUpgradeDeliveryHelper",
       "TestAdministratorStopReadyImport",
@@ -1216,6 +1218,7 @@
       "TestUpgradeOpenControlledMigration",
       "TestUpgradeOpenFinalProofRecheck",
       "TestUpgradeOpenPostMigrationSemantics",
+      "TestUpgradeOpenSchemaCurrentAgentWithoutTransitionEvidence",
       "TestCheckPreflightWithoutMasterKeyOrMigrations"
     ],
     "stories": [

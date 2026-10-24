@@ -19,6 +19,7 @@
 | DEC-product-readiness-015 | D2 | delivery.stage-preview | 每个阶段验收通过后部署到203供用户查看，报告入口/版本/验证结果；保持前后端同候选，部署前核对备份与只读升级门禁 | 用户希望及时看到阶段效果；新增部署授权不等于清库、丢队列或绕过迁移证明，需停流/破坏性恢复时先说明 | user | 最新“每完成一个阶段部署到203，我也想看看效果”明确建议 | task/test/delivery | 部署需要影响现有流量/资料且未具备安全前置，或用户改变预览环境 | — |
 | DEC-product-readiness-016 | D2 | delivery.preview203-isolation | 阶段预览选择203独立HTTPS 8445与独立新库，现有8443/数据库/Agent不动；不把空库预览当旧数据升级验证 | 用户在“独立预览8445/升级现有8443”结构化选择中明确选择前者，避免本次查看效果影响旧环境 | user | 本轮203部署方式明确回答 | task/test/delivery | 用户明确改选原环境升级或要求复用旧数据 | — |
 | DEC-product-readiness-017 | D2 | delivery.preview-before-accept | 用户允许先启动203独立8445“待验收体验预览”，正式验收继续；不标阶段完成，新库新口令、旧8443/Agent不动 | 用户在等待时间过长后明确选择先看待验收预览，覆盖DEC015的验收后才启动时点限制，不降低正式验收门禁 | user | 本轮“先启动待验收预览（推荐）”结构化回答 | task/delivery/test | 预览隔离/原环境保护无法保证，或用户要求等待验收 | DEC-product-readiness-015 的启动时点限制 |
+| DEC-product-readiness-018 | D2 | readiness.transition-proof-scope | Agent停止态外部材料是有待迁移时的短命升级过渡证明；schema-current普通/恢复目标启动不重复要求旧材料，但仍执行全部数据库内部checksum/账本/周期/归属/孤儿门禁。数据库恢复必须在隔离入口启动并立即进入恢复协调，未核对不得接Agent或开放业务 | 修复“任何含Agent的库每次Open都要求材料、恢复入口不可达”的liveness缺陷，同时保留unknown不放行、PG不推断远端队列为空、旧proof不永久授权下一次迁移的安全边界 | agent | C真实pg_dump/restore阻断；只读诊断webdemo-restore-startup-readiness-20261024T1200Z；backend§5.3/6.3/6.4.4 | backend/test/docs/web-demo | 发现schema-current内部异常被放行，或业务要求非隔离自动恢复入口 | — |
 
 ## Resolved Questions
 

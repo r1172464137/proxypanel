@@ -207,13 +207,40 @@ func TestUpgradeOpenControlledMigration(t *testing.T) {
 			}
 			t.Logf("prefix=%d: no-pending ready; controlled Open committed through 0006 and passed final verification", prefix)
 			again, err := Open(ctx, opts)
-			if again != nil {
-				again.Close()
+			if err != nil {
+				t.Fatalf("schema-current later Open must not reuse or require the expired transition proof: %v", err)
 			}
-			if err == nil || !strings.Contains(err.Error(), "AGENT_STOP_REVIEW_INVALID") {
-				t.Fatalf("old proof must not authorize a later Open: %v", err)
-			}
-			t.Logf("later Open correctly refused: %v", err)
+			again.Close()
+			t.Log("later schema-current Open reran internal readiness without treating old transition evidence as a permanent licence")
 		})
+	}
+}
+
+func TestUpgradeOpenSchemaCurrentAgentWithoutTransitionEvidence(t *testing.T) {
+	ctx := context.Background()
+	st := upgradeTestStore(t, false)
+	if err := st.Migrate(ctx, regMigrationsDir(t)); err != nil {
+		t.Fatal(err)
+	}
+	upgradeSeedAgent(t, st)
+	st.upgradeEvidenceFile = filepath.Join(t.TempDir(), "stale-or-missing-transition-proof.json")
+	opts := upgradeOpenOptions(t, st, regMigrationsDir(t))
+	opened, err := Open(ctx, opts)
+	if err != nil {
+		t.Fatalf("schema-current startup with a registered Agent must remain available: %v", err)
+	}
+	opened.Close()
+
+	upgradeExec(t, st, `INSERT INTO tasks(id,kind,batch_id) VALUES ('restart-orphan','authorization.sync','missing-batch')`)
+	blocked, err := Open(ctx, opts)
+	if blocked != nil {
+		blocked.Close()
+	}
+	if err == nil || !strings.Contains(err.Error(), "TASK_ORPHAN") {
+		t.Fatalf("schema-current startup must still reject internal semantic corruption: %v", err)
+	}
+	var de *domain.Error
+	if !errors.As(err, &de) || de.Code != domain.CodeReadinessBlocked {
+		t.Fatalf("internal corruption lost typed readiness refusal: %v", err)
 	}
 }

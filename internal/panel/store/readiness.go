@@ -365,14 +365,6 @@ func (s *Store) checkUpgradeReadinessQ(ctx context.Context, q querier, preflight
 // snapshot with the exact expected digest and require unchanged evidence.
 func (s *Store) checkUpgradeReadinessWithBaselineQ(ctx context.Context, q querier, preflight bool, baseline string) (*UpgradeReadiness, error) {
 	r := newUpgradeReadiness(s.now(), preflight)
-	evidence, err := LoadUpgradeEvidence(s.upgradeEvidenceFile)
-	if err != nil {
-		r.add("EVIDENCE_INVALID", "blocked", 1, "Correct the local evidence manifest and referenced files; rerun preflight.")
-	}
-	r.evidence = evidence
-	if evidence != nil {
-		r.EvidenceSHA256 = evidence.ManifestSHA256
-	}
 	data, fingerprint, err := readUpgradeSnapshot(ctx, q)
 	if err != nil {
 		return nil, err
@@ -380,6 +372,23 @@ func (s *Store) checkUpgradeReadinessWithBaselineQ(ctx context.Context, q querie
 	r.DatabaseSHA256 = fingerprint
 	if err = s.checkUpgradeMigrations(data, r); err != nil {
 		return nil, err
+	}
+	// External stopped-Agent evidence is an upgrade-transition proof, not a
+	// permanent licence required for every later restart. Consume configured
+	// evidence while migrations are pending (including an empty new database,
+	// where an explicitly broken manifest still remains an operator error), or
+	// while the same controlled migration run verifies its short-lived baseline.
+	requireExternalEvidence := len(r.Pending) != 0 || baseline != ""
+	var evidence *UpgradeEvidence
+	if requireExternalEvidence {
+		evidence, err = LoadUpgradeEvidence(s.upgradeEvidenceFile)
+		if err != nil {
+			r.add("EVIDENCE_INVALID", "blocked", 1, "Correct the local evidence manifest and referenced files; rerun preflight.")
+		}
+		r.evidence = evidence
+		if evidence != nil {
+			r.EvidenceSHA256 = evidence.ManifestSHA256
+		}
 	}
 	if len(data) == 0 {
 		return r, nil
@@ -410,6 +419,8 @@ func (s *Store) checkUpgradeReadinessWithBaselineQ(ctx context.Context, q querie
 	if err != nil {
 		return nil, err
 	}
+	// A schema-current Open skips only the external transition material. Every
+	// database-internal checksum and semantic check below still runs.
 	historical, err := decodeUpgradeRows[struct {
 		MemberID string    `json:"member_id"`
 		Start    time.Time `json:"period_start"`
@@ -530,87 +541,89 @@ func (s *Store) checkUpgradeReadinessWithBaselineQ(ctx context.Context, q querie
 	if baseline != "" {
 		stopProof.DatabaseSHA256 = baseline
 	}
-	for _, a := range agents {
-		var input *AgentEvidenceInput
-		if evidence != nil {
-			for i := range evidence.AgentExports {
-				if evidence.AgentExports[i].AgentID == a.ID {
-					if input != nil {
-						r.add("AGENT_EVIDENCE_DUPLICATE", "blocked", 1, "Supply one consistent export per agent.")
+	if requireExternalEvidence {
+		for _, a := range agents {
+			var input *AgentEvidenceInput
+			if evidence != nil {
+				for i := range evidence.AgentExports {
+					if evidence.AgentExports[i].AgentID == a.ID {
+						if input != nil {
+							r.add("AGENT_EVIDENCE_DUPLICATE", "blocked", 1, "Supply one consistent export per agent.")
+						}
+						input = &evidence.AgentExports[i]
 					}
-					input = &evidence.AgentExports[i]
 				}
 			}
-		}
-		if input == nil {
-			r.add("AGENT_EVIDENCE_MISSING", "unknown", 1, "Drain with the old uploader or provide a consistent stopped-state export and external stop evidence.")
-			continue
-		}
-		x := input.Export
-		if a.Version == "" || input.ObservedAgentVersion != a.Version || x.ControlGeneration != fmt.Sprint(a.Generation) || x.AppliedRevision != a.Applied {
-			r.add("AGENT_STATE_MISMATCH", "blocked", 1, "Reconcile observed agent version, generation and revision against PostgreSQL.")
-		}
-		// Artifact v1/schema1 can contain D's durable apply_intent and
-		// applied_snapshot keys. Capability is not implied by schema version.
-		if x.StateSchemaVersion != "1" {
-			r.add("AGENT_SCHEMA_UNSUPPORTED", "unknown", 1, "Use a reviewed exporter for the actual agent state schema; do not relabel state.")
-		}
-		if input.StopReview == nil {
-			if !x.ApplyIntentTrackingSupported {
-				r.add("AGENT_INTENT_UNPROVEN", "unknown", 1, "Legacy journal is unavailable; provide administrator-reviewed per-instance execution reconciliation instead. Do not manufacture intent records.")
-			}
-			r.add("AGENT_STOP_UNVERIFIED", "unknown", 1, "Provide a structured administrator-reviewed stop record with restart fence, process identity/termination observations, ordered capture and complete instance/window reconciliation. Hashes alone do not prove stop.")
-		} else if err := verifyAdministratorStop(a, input, data, &stopProof); err != nil {
-			r.add("AGENT_STOP_REVIEW_INVALID", "blocked", 1, "Administrator stop review failed: "+err.Error()+". Correct external materials; do not migrate.")
-		} else {
-			r.StopVerification = "管理员核对 / administrator-reviewed external observations; not independently observed by panel"
-		}
-		if x.PendingReportCount != 0 || x.PendingApplyIntentCount != 0 {
-			r.add("AGENT_EXECUTION_PENDING", "blocked", 1, "Complete and acknowledge execution/reporting with the old service before stopping it.")
-		}
-		seen := map[string]bool{}
-		for _, b := range x.PendingBatches {
-			r.PendingBatches++
-			if seen[b.BatchID] {
-				r.add("LOCAL_BATCH_DUPLICATE", "blocked", 1, "Obtain a consistent export without repeated local batch IDs.")
-			}
-			seen[b.BatchID] = true
-			var hash string
-			err := q.QueryRowContext(ctx, `SELECT payload_sha256 FROM usage_batches WHERE agent_id=$1 AND batch_id=$2`, a.ID, b.BatchID).Scan(&hash)
-			if err == nil {
-				if hash != usagecalc.PayloadSHA256(b) {
-					r.add("BATCH_HASH_MISMATCH", "blocked", 1, "Investigate same-ID/different-payload corruption without editing queued bytes.")
-				} else {
-					r.DuplicateBatches++
-				}
+			if input == nil {
+				r.add("AGENT_EVIDENCE_MISSING", "unknown", 1, "Drain with the old uploader or provide a consistent stopped-state export and external stop evidence.")
 				continue
 			}
-			if err != sql.ErrNoRows {
-				return nil, err
+			x := input.Export
+			if a.Version == "" || input.ObservedAgentVersion != a.Version || x.ControlGeneration != fmt.Sprint(a.Generation) || x.AppliedRevision != a.Applied {
+				r.add("AGENT_STATE_MISMATCH", "blocked", 1, "Reconcile observed agent version, generation and revision against PostgreSQL.")
 			}
-			if len(b.Samples) == 0 {
-				r.add("BATCH_EMPTY", "blocked", 1, "Investigate invalid queued batch without dropping it.")
+			// Artifact v1/schema1 can contain D's durable apply_intent and
+			// applied_snapshot keys. Capability is not implied by schema version.
+			if x.StateSchemaVersion != "1" {
+				r.add("AGENT_SCHEMA_UNSUPPORTED", "unknown", 1, "Use a reviewed exporter for the actual agent state schema; do not relabel state.")
 			}
-			for _, sample := range b.Samples {
-				owner := false
-				for _, o := range r.owners {
-					if o.NodeID == sample.NodeID && o.AgentID == a.ID && !sample.StartedAt.Before(o.ValidFrom) && (o.ValidTo == nil || !sample.EndedAt.After(*o.ValidTo)) {
-						owner = true
-					}
+			if input.StopReview == nil {
+				if !x.ApplyIntentTrackingSupported {
+					r.add("AGENT_INTENT_UNPROVEN", "unknown", 1, "Legacy journal is unavailable; provide administrator-reviewed per-instance execution reconciliation instead. Do not manufacture intent records.")
 				}
-				period := false
-				for _, p := range r.periods {
-					if p.MemberID == sample.MemberID && !sample.StartedAt.Before(p.Start) && !sample.EndedAt.After(p.End) {
-						period = true
-					}
+				r.add("AGENT_STOP_UNVERIFIED", "unknown", 1, "Provide a structured administrator-reviewed stop record with restart fence, process identity/termination observations, ordered capture and complete instance/window reconciliation. Hashes alone do not prove stop.")
+			} else if err := verifyAdministratorStop(a, input, data, &stopProof); err != nil {
+				r.add("AGENT_STOP_REVIEW_INVALID", "blocked", 1, "Administrator stop review failed: "+err.Error()+". Correct external materials; do not migrate.")
+			} else {
+				r.StopVerification = "管理员核对 / administrator-reviewed external observations; not independently observed by panel"
+			}
+			if x.PendingReportCount != 0 || x.PendingApplyIntentCount != 0 {
+				r.add("AGENT_EXECUTION_PENDING", "blocked", 1, "Complete and acknowledge execution/reporting with the old service before stopping it.")
+			}
+			seen := map[string]bool{}
+			for _, b := range x.PendingBatches {
+				r.PendingBatches++
+				if seen[b.BatchID] {
+					r.add("LOCAL_BATCH_DUPLICATE", "blocked", 1, "Obtain a consistent export without repeated local batch IDs.")
 				}
-				var credential bool
-				err = q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM credentials WHERE member_id=$1 AND node_id=$2 AND created_at <= $3 AND (revoked_at IS NULL OR revoked_at >= $4))`, sample.MemberID, sample.NodeID, sample.StartedAt, sample.EndedAt).Scan(&credential)
-				if err != nil {
+				seen[b.BatchID] = true
+				var hash string
+				err := q.QueryRowContext(ctx, `SELECT payload_sha256 FROM usage_batches WHERE agent_id=$1 AND batch_id=$2`, a.ID, b.BatchID).Scan(&hash)
+				if err == nil {
+					if hash != usagecalc.PayloadSHA256(b) {
+						r.add("BATCH_HASH_MISMATCH", "blocked", 1, "Investigate same-ID/different-payload corruption without editing queued bytes.")
+					} else {
+						r.DuplicateBatches++
+					}
+					continue
+				}
+				if err != sql.ErrNoRows {
 					return nil, err
 				}
-				if !owner || !period || !credential || !sample.StartedAt.Before(sample.EndedAt) || sample.UploadBytes < 0 || sample.DownloadBytes < 0 {
-					r.add("PENDING_SAMPLE_UNPROVEN", "blocked", 1, "Supply complete execution/period/credential provenance for every original sample, or drain using the old uploader.")
+				if len(b.Samples) == 0 {
+					r.add("BATCH_EMPTY", "blocked", 1, "Investigate invalid queued batch without dropping it.")
+				}
+				for _, sample := range b.Samples {
+					owner := false
+					for _, o := range r.owners {
+						if o.NodeID == sample.NodeID && o.AgentID == a.ID && !sample.StartedAt.Before(o.ValidFrom) && (o.ValidTo == nil || !sample.EndedAt.After(*o.ValidTo)) {
+							owner = true
+						}
+					}
+					period := false
+					for _, p := range r.periods {
+						if p.MemberID == sample.MemberID && !sample.StartedAt.Before(p.Start) && !sample.EndedAt.After(p.End) {
+							period = true
+						}
+					}
+					var credential bool
+					err = q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM credentials WHERE member_id=$1 AND node_id=$2 AND created_at <= $3 AND (revoked_at IS NULL OR revoked_at >= $4))`, sample.MemberID, sample.NodeID, sample.StartedAt, sample.EndedAt).Scan(&credential)
+					if err != nil {
+						return nil, err
+					}
+					if !owner || !period || !credential || !sample.StartedAt.Before(sample.EndedAt) || sample.UploadBytes < 0 || sample.DownloadBytes < 0 {
+						r.add("PENDING_SAMPLE_UNPROVEN", "blocked", 1, "Supply complete execution/period/credential provenance for every original sample, or drain using the old uploader.")
+					}
 				}
 			}
 		}
