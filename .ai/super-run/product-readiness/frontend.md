@@ -77,3 +77,5 @@ project scripts实际为web/typecheck、build、test(Vitest)，Vue测试沿用@v
 
 用户最新明确允许6并发，后续worker用已配置wk/workbuddy/deepseek-v4.1-flash，主只负责协调/合并后大体复核及关键门禁；DEC014替代012。先前Sol实现A/B/C/D/A-workbench均已结束，不重做。当前已合候选全285 Vitest：283PASS/2FAIL/0skip；两个失败均SubscriptionsView旧按钮定位trigger undefined，必须保持retired true/false持久反馈断言，仅校准真实语义选择器。类型检查通过，build因set-e未执行。
 后续DS闭环：选择器定向修补；复用现有owned fixture的真实前端UI探测（路由/状态/390px/键盘/触控）；共享session晚响应身份竞态核对/修复。最多6不是必须凑满；不得碰后端、旧业务环境或改弱断言，不安装新框架。主复核DS完整diff、执行证据与清理，不能把其自报结果直接当阶段通过。
+
+当前5个DS V4 Flash有界实际任务（不填第6名额）：旧删除选择器 `01a16ca9-5cfc-75a9-8640-ad4b882624ab`；真实UI probe/owned fixture `01a16ca9-5cf4-75a9-8640-ad47d0ef4b25`；session身份epoch竞态 `01a16ca9-5cf9-75a9-8640-ad482629742b`；README事实/有限查漏 `01a16cab-4764-75a9-8640-ad4d3ccad268`；StatusBadge/readiness中文语义 `01a16cad-b239-75a9-8640-ad4e8c96ed43`。均新建模型wk/workbuddy/deepseek-v4.1-flash，不resume旧Sol改模型。实现代码主已集中至18df098（285中283PASS，2旧选择器待修），主只做diff/真实API形状与危险scope大体复核、整合与关键验证。全体不得改backend/原环境，UI任务独占本轮fixture，其他不启动服务。
