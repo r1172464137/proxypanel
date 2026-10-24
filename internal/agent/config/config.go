@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -65,6 +66,67 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// EnvPanelURL is the environment variable holding the panel base URL when no
+// config file is used.
+const EnvPanelURL = "PANEL_URL"
+
+// EnvRegistrationCode holds the one-time registration code.
+const EnvRegistrationCode = "REGISTRATION_CODE"
+
+// FromEnv builds a configuration from environment variables only. It exists for
+// container deployments where writing a JSON file into the image is awkward:
+// the same validated Config is produced, so validation and safety rules do not
+// differ between file and environment configuration.
+func FromEnv() (*Config, error) {
+	c := &Config{
+		PanelURL:         firstEnv(EnvPanelURL, "PROXYPANEL_"+EnvPanelURL),
+		RegistrationCode: firstEnv(EnvRegistrationCode, "PROXYPANEL_"+EnvRegistrationCode),
+		Token:            firstEnv("AGENT_TOKEN", "PROXYPANEL_AGENT_TOKEN"),
+		AgentID:          firstEnv("AGENT_ID", "PROXYPANEL_AGENT_ID"),
+		XrayPath:         firstEnv("XRAY_PATH", "PROXYPANEL_XRAY_PATH"),
+		StateDir:         firstEnv("STATE_DIR", "PROXYPANEL_STATE_DIR"),
+	}
+	if c.XrayPath == "" {
+		c.XrayPath = "/opt/xray/xray"
+	}
+	if c.StateDir == "" {
+		c.StateDir = "/var/lib/proxypanel-agent"
+	}
+	if v := firstEnv("POLL_INTERVAL_SECONDS", "PROXYPANEL_POLL_INTERVAL_SECONDS"); v != "" {
+		c.PollIntervalSeconds, _ = strconv.Atoi(v)
+	}
+	if v := firstEnv("STATS_INTERVAL_SECONDS", "PROXYPANEL_STATS_INTERVAL_SECONDS"); v != "" {
+		c.StatsIntervalSeconds, _ = strconv.Atoi(v)
+	}
+	if v := firstEnv("HEARTBEAT_INTERVAL_SECONDS", "PROXYPANEL_HEARTBEAT_INTERVAL_SECONDS"); v != "" {
+		c.HeartbeatIntervalSeconds, _ = strconv.Atoi(v)
+	}
+	switch strings.ToLower(firstEnv("ALLOW_LOOPBACK_HTTP", "PROXYPANEL_ALLOW_LOOPBACK_HTTP")) {
+	case "1", "true", "yes":
+		c.AllowLoopbackHTTP = true
+	}
+	if err := c.Normalize(); err != nil {
+		return nil, fmt.Errorf("environment configuration: %w", err)
+	}
+	return c, nil
+}
+
+// firstEnv returns the first non-empty trimmed value of the given names.
+func firstEnv(names ...string) string {
+	for _, name := range names {
+		if v := strings.TrimSpace(os.Getenv(name)); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// FromEnvAvailable reports whether the environment supplies enough identity to
+// start without a config file. Presence only: validation still runs in FromEnv.
+func FromEnvAvailable() bool {
+	return firstEnv(EnvPanelURL, "PROXYPANEL_"+EnvPanelURL) != ""
 }
 
 // Normalize applies defaults, resolves the state directory to an absolute path

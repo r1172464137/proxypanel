@@ -190,17 +190,47 @@ Panel 只提供 API；宿主 nginx 直接提供 `web/dist`，并将 `/api/`、`/
 
 ## Agent 与节点
 
-服务器页面默认生成一行安装命令：
+节点上不需要手工安装 Xray，也不需要写配置文件。Agent 镜像内置官方核心，用环境变量接入：
 
 ```bash
-curl --proto '=https' --tlsv1.2 -fsSL 'https://panel.example.com/install-agent.sh' \
-  -o /tmp/proxypanel-agent-install.sh \
-  && sudo bash /tmp/proxypanel-agent-install.sh -key '一次性注册码'
+docker run -d --restart unless-stopped \
+  --name proxypanel-agent \
+  -e PANEL_URL='https://panel.example.com' \
+  -e REGISTRATION_CODE='面板生成的一次性注册码' \
+  -v proxypanel-agent-state:/var/lib/proxypanel-agent \
+  -p 20101:20101 \
+  ghcr.io/r1172464137/proxypanel-agent:latest
 ```
 
-Panel 镜像携带同一提交构建的 amd64/arm64 Agent。安装脚本自动检测架构、从当前 Panel 下载二进制并核对 SHA256，再下载和校验官方 Xray、写配置、安装 systemd 并启动服务。注册码绑定当前服务器、15 分钟有效且只能使用一次；永久 Agent token 只在注册后写入节点状态目录。
+首次注册成功后，Agent token 持久化在状态卷里，`REGISTRATION_CODE` 可从启动参数删除。
 
-如果一键安装不可用，页面会明确显示原因并保留手工注册码。常见原因是裸进程部署没有配置同版 Agent 文件，或 `PANEL_PUBLIC_URL` 不是 HTTPS；不会回退到未校验的下载。
+镜像内容：
+
+- `/app/agent`：本仓库构建的 Agent；
+- `/opt/xray/xray`：构建时从官方 Xray Release 下载并按官方 `.dgst` 校验的核心。
+
+环境变量（未设置时用括号默认值）：
+
+| 变量 | 说明 |
+|---|---|
+| `PANEL_URL` | 面板 HTTPS 地址，必需 |
+| `REGISTRATION_CODE` | 一次性注册码，首次注册必需 |
+| `XRAY_PATH` | 核心路径（`/opt/xray/xray`） |
+| `STATE_DIR` | 状态目录（`/var/lib/proxypanel-agent`） |
+| `POLL_INTERVAL_SECONDS` / `STATS_INTERVAL_SECONDS` / `HEARTBEAT_INTERVAL_SECONDS` | 轮询／采样／心跳（5/5/15） |
+| `ALLOW_LOOPBACK_HTTP=true` | 仅本机调试允许 http 面板地址 |
+| `SSL_CERT_FILE` | 私有 CA 证书路径（挂在容器内） |
+
+仍可用 `-config /etc/proxypanel/agent.json` 挂载 JSON 文件；两种配置走同一套校验，环境变量不会放宽任何规则。
+
+**不要删除状态目录**：它保存身份、已应用代次、核心恢复记录、计量基线和未确认队列。恢复数据库产生新 generation 后，必须停 Agent、核对授权和账本，再显式运行：
+
+```bash
+docker run --rm \
+  -v proxypanel-agent-state:/var/lib/proxypanel-agent \
+  ghcr.io/r1172464137/proxypanel-agent:latest \
+  -accept-generation <exact-generation>
+```
 
 手工配置示例：
 
@@ -208,7 +238,7 @@ Panel 镜像携带同一提交构建的 amd64/arm64 Agent。安装脚本自动�
 {
   "panel_url": "https://panel.example.com",
   "registration_code": "一次性注册码",
-  "xray_path": "/opt/proxypanel/xray/26.3.27/xray",
+  "xray_path": "/opt/xray/xray",
   "state_dir": "/var/lib/proxypanel-agent",
   "poll_interval_seconds": 5,
   "stats_interval_seconds": 5,

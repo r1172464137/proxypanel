@@ -89,15 +89,15 @@ services:
     profiles: [node]
     restart: unless-stopped
     environment:
-      # Agent 只接受 https 的 panel_url（纯 http 仅限回环调试）。
-      # 用私有 CA 时把 CA 挂进来并通过 SSL_CERT_FILE 指定。
-      SSL_CERT_FILE: "/usr/local/share/ca-certificates/panel-ca.crt"
+      # 镜像已内置官方 Xray（/opt/xray/xray，构建时按官方 .dgst 校验），
+      # 不要把核心目录挂进来覆盖它。
+      PANEL_URL: "${PANEL_URL:?set PANEL_URL to the panel HTTPS URL}"
+      REGISTRATION_CODE: "${REGISTRATION_CODE:?set the one-time registration code}"
+      # 用私有 CA 时把 CA 挂进来并通过 SSL_CERT_FILE 指定；公共 CA 不要设。
+      # SSL_CERT_FILE: "/usr/local/share/ca-certificates/panel-ca.crt"
     volumes:
-      - /etc/proxypanel/agent.json:/etc/proxypanel/agent.json:ro
+      # 只持久化状态目录（身份、计量基线、未上传队列）。
       - agentstate:/var/lib/proxypanel-agent
-      # 官方 Xray 由使用者自行下载并核对 SHA256，镜像不打包核心。
-      - /opt/proxypanel/xray:/opt/xray:ro
-      - /etc/proxypanel/panel-ca.crt:/usr/local/share/ca-certificates/panel-ca.crt:ro
     # 节点要对外提供代理端口，按实际节点端口逐个映射。
     ports:
       - "20101:20101"

@@ -84,6 +84,26 @@ curl --proto '=https' --tlsv1.2 -fsSL 'https://panel.example.com/install-agent.s
 
 裸进程部署可通过 `PANEL_AGENT_INSTALLER_PATH`、`PANEL_AGENT_BINARY_AMD64`、`PANEL_AGENT_BINARY_ARM64` 指定同版文件；路径缺失、文件不是普通文件或 `PANEL_PUBLIC_URL` 不是 HTTPS 时，一键安装会禁用而不是回退到未校验下载。
 
+## Agent 镜像
+
+`ghcr.io/r1172464137/proxypanel-agent` 是节点端镜像，**内置官方 Xray**（构建时从官方 Release 下载并用官方 `.dgst` 的 SHA2-256 校验），无需在节点机安装或挂载核心。
+
+```bash
+docker run -d --restart unless-stopped \
+  --name proxypanel-agent \
+  -e PANEL_URL='https://panel.example.com' \
+  -e REGISTRATION_CODE='一次性注册码' \
+  -v proxypanel-agent-state:/var/lib/proxypanel-agent \
+  -p 20101:20101 \
+  ghcr.io/r1172464137/proxypanel-agent:latest
+```
+
+配置优先级：`-config` 指定的 JSON 文件，或未指定时使用环境变量（`PANEL_URL`、`REGISTRATION_CODE`、`XRAY_PATH`、`STATE_DIR`、三个 interval、`ALLOW_LOOPBACK_HTTP`）。两种方式走同一套 `Config.Validate`，环境变量不会放宽校验。
+
+镜像路径：`/app/agent`、`/opt/xray/xray`（含 `geoip.dat`/`geosite.dat`）。核心版本为 `26.3.27`，必须在 Agent 白名单内。状态目录 `/var/lib/proxypanel-agent` 必须持久化：内含身份、计量基线、未上传队列。
+
+首次注册成功后可从启动参数删除 `REGISTRATION_CODE`；token 已保存在状态卷。私有 CA 用 `-v ca.crt:...:ro -e SSL_CERT_FILE=...` 挂载，不要关闭 TLS 校验。
+
 ## 宿主机 nginx 与前端归属
 
 参考 [`deploy/nginx.conf.example`](../../deploy/nginx.conf.example)，替换域名与证书路径，

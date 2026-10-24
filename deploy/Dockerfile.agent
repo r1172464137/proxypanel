@@ -1,32 +1,67 @@
 # 节点端 Agent 运行镜像。
 #
-# 构建上下文由 CI 组装，需包含：
-#   bin/<arch>/agent  —— CGO_ENABLED=0 交叉编译的 linux 二进制
+# 镜像自带两部分：
+#   1. /app/agent          —— proxypanel Agent（本仓库构建）
+#   2. /opt/xray/xray      —— 官方 Xray 核心（构建时从官方 Release 下载并按 .dgst 校验）
 #
-# 本镜像**不打包 Xray**。官方核心必须从官方发行下载并核对 SHA256 后由使用者提供，
-# 通过只读挂载加进容器（agent.json 里的 xray_path 指向挂载点）。这样核心版本升级
-# 与镜像解耦，也避免把未经核对的二进制混进镜像。
+# 官方核心随镜像固定，避免节点机手工下载、校验和挂载；版本必须落在 Agent 的
+# 闭合白名单内（26.3.27 / 26.3.23），否则 Agent 会拒绝启动。
 #
-# 必备挂载：
-#   /etc/proxypanel/agent.json   配置（只读，属主需能被 65532 读取）
-#   /var/lib/proxypanel-agent    Agent 状态目录（可写，属主 65532）
-#   /opt/xray                    官方 Xray 二进制目录（只读）
+# 配置有两种方式，二者等价：
+#   A. 环境变量（推荐容器部署）：
+#        PANEL_URL=https://panel.example.com
+#        REGISTRATION_CODE=一次性注册码
+#      首次注册成功后 token 持久化在状态目录 /var/lib/proxypanel-agent。
+#   B. 挂载 JSON 配置文件并传 -config /etc/proxypanel/agent.json
 #
 # 状态目录绝对不能在运行时清空：里面有 Agent 身份、计量基线和未上传的用量队列。
 FROM alpine:3.23@sha256:85fe1e81d6758c208f3e1eed4338a1997e19d4be002d4dd32d3100c9a8c010a0
 
-# Agent 通过 HTTPS 访问面板；挂载私有 CA 时用 SSL_CERT_FILE 指定。
-RUN apk add --no-cache ca-certificates && update-ca-certificates
+ARG TARGETARCH
+ARG XRAY_VERSION=26.3.27
+
+RUN apk add --no-cache ca-certificates curl unzip \
+ && update-ca-certificates
+
+# Official Xray from GitHub Releases, verified against the release's own
+# SHA2-256 .dgst before it is unpacked. No downloaded binary is trusted by
+# name or URL alone.
+RUN set -eu; \
+    case "${TARGETARCH}" in \
+      amd64) asset="Xray-linux-64.zip" ;; \
+      arm64) asset="Xray-linux-arm64-v8a.zip" ;; \
+      *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    base="https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}"; \
+    work="$(mktemp -d)"; \
+    curl -fsSL --retry 3 --connect-timeout 20 -o "${work}/${asset}" "${base}/${asset}"; \
+    curl -fsSL --retry 3 --connect-timeout 20 -o "${work}/${asset}.dgst" "${base}/${asset}.dgst"; \
+    expected="$(sed -n 's/.*SHA2-256=[[:space:]]*\([0-9a-fA-F]\{64\}\).*/\1/p' "${work}/${asset}.dgst" | head -n1 | tr 'A-F' 'a-f')"; \
+    test -n "${expected}" || { echo 'no SHA2-256 in official .dgst' >&2; exit 1; }; \
+    actual="$(sha256sum "${work}/${asset}" | awk '{print $1}')"; \
+    test "${expected}" = "${actual}" || { echo "xray sha256 mismatch" >&2; exit 1; }; \
+    unzip -q -o "${work}/${asset}" -d "${work}/extract"; \
+    install -d -m 0755 /opt/xray; \
+    install -m 0755 "${work}/extract/xray" /opt/xray/xray; \
+    install -m 0644 "${work}/extract/geoip.dat" /opt/xray/geoip.dat; \
+    install -m 0644 "${work}/extract/geosite.dat" /opt/xray/geosite.dat; \
+    /opt/xray/xray version | head -n1 | grep -q "${XRAY_VERSION}"; \
+    rm -rf "${work}" \
+ && apk del curl unzip
 
 WORKDIR /app
 
-ARG TARGETARCH
 COPY --chown=65532:65532 bin/${TARGETARCH}/agent /app/agent
-RUN chmod 0755 /app/agent
+RUN chmod 0755 /app/agent && mkdir -p /var/lib/proxypanel-agent && chown 65532:65532 /var/lib/proxypanel-agent
+
+# Container defaults: the environment-configuration path with the bundled core.
+ENV XRAY_PATH=/opt/xray/xray \
+    STATE_DIR=/var/lib/proxypanel-agent
+
+VOLUME ["/var/lib/proxypanel-agent"]
 
 USER 65532:65532
 
 # 非特权端口不需要额外 capability。若节点需要监听 1024 以下端口，
 # 由运行方显式加 --cap-add NET_BIND_SERVICE，镜像不默认提权。
 ENTRYPOINT ["/app/agent"]
-CMD ["-config", "/etc/proxypanel/agent.json"]

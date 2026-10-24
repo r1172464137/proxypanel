@@ -102,6 +102,10 @@ jobs:
             done
           done
           cp -r migrations image-context/migrations
+          # Panel 镜像同时携带同版节点安装器（一键安装 Agent），因此构建上下文
+          # 必须包含 deploy/ 目录；只复制需要的脚本，避免把 compose/证书带进镜像。
+          mkdir -p image-context/deploy
+          cp deploy/deploy-agent.sh image-context/deploy/deploy-agent.sh
           # 面板镜像在构建阶段构建前端；运行镜像不再包含 nginx。
           mkdir -p image-context/web
           # Copy the whole web tree: vite/tsc resolve files from the project root,
@@ -117,6 +121,9 @@ jobs:
           printf '%s\n' web/node_modules web/dist web/tests > image-context/.dockerignore
           test -f image-context/web/package-lock.json
           test -f image-context/web/index.html
+          test -f image-context/deploy/deploy-agent.sh
+          test -x image-context/bin/amd64/agent
+          test -x image-context/bin/arm64/agent
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -135,6 +142,9 @@ jobs:
             -t proxypanel-agent:ci image-context
           docker run --rm proxypanel-agent:ci -version > /tmp/agent-local-version.txt
           grep -q proxypanel-agent /tmp/agent-local-version.txt
+          docker run --rm --entrypoint /opt/xray/xray proxypanel-agent:ci version | head -1 | grep -q '26\.3\.'
+          docker run --rm -e PANEL_URL=https://panel.example.invalid -e REGISTRATION_CODE=ci-check proxypanel-agent:ci -check > /tmp/agent-env-check.txt
+          grep -q 'configuration ok' /tmp/agent-env-check.txt
           bash scripts/verify-panel-image.sh proxypanel-panel:ci
 
       - name: Log in to GHCR
@@ -196,6 +206,12 @@ jobs:
           echo "--- agent -version ---"
           docker run --rm "$AGENT" -version | tee /tmp/agent-version.txt
           grep -q 'proxypanel-agent' /tmp/agent-version.txt
+          echo "--- bundled xray ---"
+          docker run --rm --entrypoint /opt/xray/xray "$AGENT" version | head -1 | tee /tmp/xray-version.txt
+          grep -q '26\.3\.' /tmp/xray-version.txt
+          echo "--- env-only config check ---"
+          docker run --rm -e PANEL_URL=https://panel.example.invalid -e REGISTRATION_CODE=ci-check "$AGENT" -check | tee /tmp/agent-check.txt
+          grep -q 'configuration ok' /tmp/agent-check.txt
           echo "--- 缺少主密钥必须拒绝启动（无需证书挂载） ---"
           if docker run --rm "$PANEL" > /tmp/panel-out.txt 2>&1; then
             echo 'panel unexpectedly started without master key' >&2

@@ -57,23 +57,39 @@ func run() (result error) {
 		return nil
 	}
 	if *configPath == "" {
+		// Container deployments configure the agent purely through environment
+		// variables. Requiring a mounted JSON file there adds no safety: the same
+		// Config.Validate rules run either way.
+		if config.FromEnvAvailable() {
+			cfg, err := config.FromEnv()
+			if err != nil {
+				return err
+			}
+			return runWithConfig(cfg, *acceptGeneration, *checkOnly)
+		}
 		flag.Usage()
-		return fmt.Errorf("-config is required")
+		return fmt.Errorf("-config is required (or set PANEL_URL and REGISTRATION_CODE)")
 	}
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		return err
 	}
+	return runWithConfig(cfg, *acceptGeneration, *checkOnly)
+}
+
+// runWithConfig is the single startup path shared by file and environment
+// configuration, so neither can bypass the runtime checks below.
+func runWithConfig(cfg *config.Config, acceptGeneration string, checkOnly bool) (result error) {
 	if err := cfg.CheckRuntime(); err != nil {
 		return err
 	}
-	if *acceptGeneration != "" {
+	if acceptGeneration != "" {
 		// Local, deliberate reconcile action. The agent never adopts a new
 		// control generation on its own: a restored backup could otherwise
 		// re-authorize members that were revoked in the meantime.
-		return acceptControlGeneration(cfg, *acceptGeneration)
+		return acceptControlGeneration(cfg, acceptGeneration)
 	}
-	if *checkOnly {
+	if checkOnly {
 		fmt.Printf("configuration ok\n")
 		fmt.Printf("  panel_url:  %s\n", cfg.PanelURL)
 		fmt.Printf("  xray_path:  %s\n", cfg.XrayPath)
