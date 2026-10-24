@@ -626,6 +626,15 @@
     "timeout_seconds": 300
   },
   {
+    "id": "integration/protocol-agent",
+    "packages": ["./internal/agent/supervisor"],
+    "run": "^(TestProtocolAgentTLSLifecycle|TestIntegrationSamplingReadCommitOrder|TestIntegrationCancelledPeriodicSamplingGate)$",
+    "expected_tests": ["TestProtocolAgentTLSLifecycle", "TestIntegrationSamplingReadCommitOrder", "TestIntegrationCancelledPeriodicSamplingGate"],
+    "stories": ["US-PR-011"],
+    "requires": ["xray"],
+    "timeout_seconds": 120
+  },
+  {
     "id": "agent-supervisor/real-lifecycle",
     "packages": [
       "./internal/agent/supervisor"

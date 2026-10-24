@@ -1014,9 +1014,9 @@ func (s *Supervisor) enqueueReport(ctx context.Context, report contracts.ApplyRe
 // between "this core is about to die" and "start the replacement", so it shares
 // the sampling gate with the periodic cycle. The wait for that gate is bounded by
 // the hook context: a revocation must never wait for a slow periodic sampling
-// round. Losing the race is safe because Measure keeps a per generation
-// high-water mark, and the periodic round either already collected this core or
-// will collect the (already replaced) one on its next run.
+// round. A timed-out final sample is an explicit accounting loss recorded by
+// noteFinalSamplingError, not a claim of safety from a high-water mark: Measure
+// retains production reset/rebase semantics for decreased same-generation values.
 func (s *Supervisor) sampleHook() xray.SampleHook {
 	return func(ctx context.Context, nodeID, coreGeneration, apiServer string, emailToMember map[string]string) {
 		gateCtx, gateCancel := context.WithTimeout(ctx, finalSampleGateBudget)
@@ -1055,7 +1055,9 @@ func (s *Supervisor) sampleOnce(ctx context.Context) error {
 	if s.queueOverCapacity() {
 		return fmt.Errorf("local upload queue exceeds its capacity; sampling is paused until it drains")
 	}
-	s.sampleMu.lock()
+	if err := s.sampleMu.lockContext(ctx); err != nil {
+		return err
+	}
 	res, err := s.sampler.RunOnce(ctx)
 	s.sampleMu.unlock()
 	if err != nil {

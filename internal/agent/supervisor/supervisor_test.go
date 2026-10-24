@@ -44,6 +44,8 @@ type stubRunner struct {
 	stats         map[string][]xray.StatCounter
 	// statsErr, when set, makes every StatsQuery fail (sampling-retry tests).
 	statsErr error
+	// Optional blocking query seam for read+commit ordering integration tests.
+	statsQueryHook func(context.Context, string) ([]xray.StatCounter, error)
 	// statsAny is returned for any server when stats has no entry for it.
 	statsAny []xray.StatCounter
 	version  string
@@ -170,6 +172,12 @@ func (r *stubRunner) lastStartedFor(id string) string {
 }
 
 func (r *stubRunner) StatsQuery(ctx context.Context, server string) ([]xray.StatCounter, error) {
+	r.mu.Lock()
+	hook := r.statsQueryHook
+	r.mu.Unlock()
+	if hook != nil {
+		return hook(ctx, server)
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.statsErr != nil {
