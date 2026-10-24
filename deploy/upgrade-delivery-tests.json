@@ -1,0 +1,21 @@
+{
+  "scope": "R0 F4; baseline 6d1345c54b5fc5b3ea0033275338da8ff8362820",
+  "requirements": ["new private PostgreSQL, random loopback port", "PANEL_TEST_DATABASE_URL", "UPGRADE_TEST_PANEL_BINARY built from candidate cmd/panel", "psql and python3 in PATH; bash; systemctl stub only"],
+  "build": "go build -o <private-artifact>/panel ./cmd/panel",
+  "commands": [
+    "bash -n deploy/manage-linux.sh deploy/upgrade-panel.sh",
+    "go test ./internal/panel/store -run '^(TestUpgradeDeliveryHelper|TestAdministratorStopReadyImport|TestAdministratorStopRejects|TestAdministratorStopImportRollback|TestUpgradeOpenControlledMigration|TestUpgradeOpenFinalProofRecheck|TestUpgradeOpenPostMigrationSemantics)$' -count=1 -v",
+    "go test ./cmd/panel -run '^TestCheckPreflightWithoutMasterKeyOrMigrations$' -count=1 -v"
+  ],
+  "expected_top_level_tests": [
+    "TestUpgradeDeliveryHelper",
+    "TestAdministratorStopReadyImport",
+    "TestAdministratorStopRejects",
+    "TestAdministratorStopImportRollback",
+    "TestUpgradeOpenControlledMigration",
+    "TestUpgradeOpenFinalProofRecheck",
+    "TestUpgradeOpenPostMigrationSemantics",
+    "TestCheckPreflightWithoutMasterKeyOrMigrations"
+  ],
+  "prohibited": ["legacy .devdb", "existing 15432 fixture", "real /opt or systemd mutation", "remote Docker", "proof verifier/fence bypass"]
+}

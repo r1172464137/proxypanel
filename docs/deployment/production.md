@@ -239,16 +239,9 @@ bash deploy/manage-linux.sh uninstall agent --purge-agent-data
 - 发现 `/opt/proxypanel` 存在但没有标记文件 → 直接拒绝（不接管别人的目录）；
 - release 名已存在 → 拒绝（版本目录不可变）；
 - `current` 是指向 `releases/` 之外的链接 → 拒绝；
-- **服务正在运行时只把新版本放到 `releases/`，不改 `current`**，然后以退出码 0 提示你先停服务。
-
-也就是说激活新版本要手动做这一步：
-
-```bash
-systemctl stop proxypanel-panel
-ln -sfn /opt/proxypanel/releases/proxypanel-0.1.2 /opt/proxypanel/current
-systemctl start proxypanel-panel
-systemctl status proxypanel-panel --no-pager
-```
+- **无论服务是否运行都只 staging 到 `releases/`，不改 `current`，不替换已有 unit**；不会自动重启。
+- Panel 必须按下文维护顺序通过 `preflight` / `activate` 门禁，不再手工 stop → 切链 → start。
+- 首次无 Agent 的空库同样运行预检，但不需要凭空制造停止材料。Agent 的首次链接需在明确的配套版本维护计划下由管理员设置；脚本不代替 Agent 升级流程。
 
 首次启动（两个都是显式动作）：
 
@@ -297,33 +290,54 @@ chronyc tracking                  # 或 ntpq -p；看 offset 是否在毫秒级
 
 前提：升级前**先备份并验证能读**（数据库 dump + master key），记录当前 `current` 指向的版本名，读完待应用的迁移 SQL。
 
+维护顺序（管理员显式执行，helper 不自动停流、清队列或生成证明）：
+
+1. 验证备份，保存旧版本、`schema_migrations` 的 version/checksum/applied_at、授权和账本核对记录，建立防自动重启 fence。
+2. 停止新增代理流量并完成最终计量；保留旧 Panel 的接收能力与旧 Uploader，确认所有报告/批次 ACK 后再停止 Agent/核心。最终采样失败必须处理，不能把空计数器当成功。
+3. 从一致停止、检查点完成的本地状态备份运行 `agent -inspect-state <backup-dir>`。保留真实 PID 身份/退出观察、完整实例清单、fence 有效期和管理员 stop-review；复用既有 `proxypanel.upgrade-evidence/v1` 清单及结构化停止材料格式，不能用一句“已停止”替代。PG 只能证明已接收批次，**不能证明未上传本地队列为零**。不能删队列/重写样本/猜时区绕阻断。
+4. 停止旧 Panel，确保授权、账本以及其它写者停写。配置候选材料，然后运行真实候选只读 CLI。材料变化或恢复业务后必须重新取证。
+
+清单及其相对引用的普通文件放在受控目录（例如 `/etc/proxypanel/upgrade/`），不要放 Web 根目录。目录 root:proxypanel 0750、材料 root:proxypanel 0640，管理员写、服务账户只读；父目录须可遍历。私有原始状态备份保持 0700/0600，不交给 HTTP。CLI 本身不改材料；systemd 的 `ProtectSystem=strict` 限制写入。网页 readiness 只读服务端配置，不接收任意服务器文件路径或 HTTP 上传。
+
 ```bash
-# A. 服务在跑：脚本只把新版本放进 releases/，不动 current（前一节已有步骤）
+# 在 root 管理 shell 中加载可信的 shell-compatible 配置；不要把秘密放在命令行
+set -a; . /etc/proxypanel/panel.env; set +a
+# 在 panel.env 中也持久配置相同路径，供服务启动 Open 使用：
+export PANEL_UPGRADE_EVIDENCE_FILE=/etc/proxypanel/upgrade/manifest.json
 bash deploy/manage-linux.sh install panel /path/to/new-release proxypanel-0.1.2
-systemctl stop proxypanel-panel
-ln -sfn /opt/proxypanel/releases/proxypanel-0.1.2 /opt/proxypanel/current
+# 完成上面停流、ACK、停止取证、Panel 停写后：
+bash deploy/manage-linux.sh preflight panel proxypanel-0.1.2
+# activate 再调用一次候选 CLI，仅 ready 才原子切链；不启动服务
+if ! bash deploy/manage-linux.sh activate panel proxypanel-0.1.2; then
+  echo '预检失败：保持 stopped，不切链、不启动' >&2
+  exit 1
+fi
+# 只有上一命令成功才显式启动，不要用分号串联无条件 start
+# 管理员先确认 panel.env 已保存相同 evidence 配置
 systemctl start proxypanel-panel
-
-# B. 先停服务再装：脚本会自己切 current
-systemctl stop proxypanel-panel
-bash deploy/manage-linux.sh install panel /path/to/new-release proxypanel-0.1.3
-systemctl start proxypanel-panel
-
-journalctl -u proxypanel-panel -n 100 --no-pager     # 迁移日志 + transport 行
-curl -s http://127.0.0.1:8080/readyz; echo           # systemd 宿主探针；Docker 宿主改用 8081
+journalctl -u proxypanel-panel -n 100 --no-pager
+/opt/proxypanel/current/panel check --json
+curl -fsS http://127.0.0.1:8080/readyz; echo
 ```
 
-面板启动即跑迁移（advisory lock + checksum）。agent 与 panel 同机共用 `current` 时，两个服务要一起切、版本要配套。
+可独立执行 `bash deploy/upgrade-panel.sh preflight <candidate-dir> [manifest.json]`。
+真实调用是 `PANEL_MIGRATIONS_DIR=<candidate-dir>/migrations <candidate-dir>/panel check --preflight --json --evidence <manifest>`；**不存在 `--migrations` flag**。
+blocked 退出 2、unknown 退出 3，任意非零或非 ready 都不切链、不迁移、不启动。
+首次空库无旧 Agent 可不设 evidence。激活与启动之间必须继续保持停写/fence；Open 在 advisory lock 和迁移事务内重新验证 DB/材料，预检不是永久通行证。
 
-技术回滚（二进制层面）：
+面板 Open 执行迁移（checksum + advisory lock），逐文件事务；失败文件回滚，**同次升级已提交的迁移前缀保留，不是整个升级全回滚**。失败保持业务停写，保存现场、实际迁移前缀和日志，修复后重查。共用 current 的 Agent 必须停止且版本配套，不能顺带启动未经核对的 Agent。
+
+技术回退只做停写诊断：
 
 ```bash
 systemctl stop proxypanel-panel
-ln -sfn /opt/proxypanel/releases/proxypanel-0.1.1 /opt/proxypanel/current
-systemctl start proxypanel-panel
+# root 管理 shell 已加载 DATABASE_URL；psql 是必要诊断依赖
+bash deploy/manage-linux.sh rollback-check panel proxypanel-0.1.1
 ```
 
-但要清楚：**迁移不回退**。新版本的迁移已经把 schema 推进了，旧二进制可能起不来。这不是 bug 是取舍——所以升级窗口前必须有可验证的备份，并且知道恢复备份意味着什么。
+该入口只读打印实际 schema_migrations 前缀并核对旧 release SQL checksum；缺文件或不匹配拒绝，匹配也**不证明旧二进制业务兼容**，还须人工检查列/语义与实际已提交前缀。不会改 current、回滚 SQL 或启动任何服务。旧版没有已实现的 readonly 启动能力时，必须保持 service stopped；没有 `PANEL_READ_ONLY` 开关，不承诺旧 binary 可读启动。不要直接切旧链后启动旧版可写服务。
+
+数据库恢复是另一高风险流程，不是默认技术回退；实际恢复/代际不明时才 enterRecoveryMode、轮换 generation 并要求 Agent 显式 accept。常规升级保持原代际，不用恢复模式代替停止证明。
 
 Agent 的回滚有额外约束：恢复后的控制代次（generation）是一个新的随机值，Agent 不会自动接受，需要在每个节点上停掉 Agent、核对完授权与账本后用 `-accept-generation <新值>` 显式接受。把旧 Agent 换回来、或让它接受一个旧代次，同样需要显式接受且必须先核对；靠清空状态目录「让它重新开始」会造出账目缺口。
 

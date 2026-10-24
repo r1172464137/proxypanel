@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Linux/systemd helper. Not runtime-verified on Linux in this Windows session.
+# Linux/systemd staging and explicit gated activation helper.
 set -euo pipefail
-usage() { echo "Usage: $0 install <panel|agent> <release-dir> <release-name> | uninstall <panel|agent> [--purge-agent-data]" >&2; exit 2; }
+source "$(dirname "$(realpath "$0")")/upgrade-panel.sh"
+usage() { echo "Usage: $0 install <panel|agent> <release-dir> <release-name> | preflight panel <release-name> [evidence.json] | activate panel <release-name> [evidence.json] | rollback-check panel <old-release-name> | uninstall <panel|agent> [--purge-agent-data]" >&2; exit 2; }
 [[ $# -ge 2 ]] || usage
 action=$1; component=$2
 [[ $component == panel || $component == agent ]] || usage
@@ -11,6 +12,16 @@ marker=$base/.managed-by-proxypanel
 service=proxypanel-$component
 if [[ -e $base && ! -f $marker ]]; then echo 'Refusing unmanaged /opt/proxypanel directory.' >&2; exit 1; fi
 case $action in
+ preflight|activate|rollback-check)
+  [[ $component == panel && $# -ge 3 && $# -le 4 ]] || usage
+  [[ $3 =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ && -f $marker ]] || usage
+  candidate=$base/releases/$3
+  case $action in
+   preflight) panel_preflight "$candidate" "${4:-${PANEL_UPGRADE_EVIDENCE_FILE:-}}" ;;
+   activate) panel_activate "$base" "$3" "${4:-${PANEL_UPGRADE_EVIDENCE_FILE:-}}" ;;
+   rollback-check) panel_rollback_check "$candidate" ;;
+  esac
+  ;;
  install)
   [[ $# == 4 ]] || usage
   src=$(realpath "$3"); name=$4
@@ -35,13 +46,12 @@ case $action in
    install -d -m 0700 -o "$account" -g "$account" /var/lib/proxypanel-agent
    [[ -f /etc/proxypanel/agent.json ]] || { echo 'Create root:proxypanel-agent mode-0640 /etc/proxypanel/agent.json before starting.'; }
   fi
-  # Installation deliberately does not restart/start a live service. Stop it
-  # and confirm the backup/migration plan before activating this release.
-  if systemctl is-active --quiet "$service.service"; then echo 'Service is active; release staged only. Stop it before switching current.'; exit 0; fi
-  ln -sfn "$base/releases/$name" "$base/current"
-  install -m 0644 "$src/deploy/$service.service" "/etc/systemd/system/$service.service"
-  systemctl daemon-reload
-  echo "Installed $name; review config, then explicitly: systemctl enable --now $service"
+  # Staging never changes current or an existing unit, even if service is stopped.
+  if [[ ! -e /etc/systemd/system/$service.service ]]; then
+   install -m 0644 "$src/deploy/$service.service" "/etc/systemd/system/$service.service"
+   systemctl daemon-reload
+  fi
+  echo "Staged $name only; current and existing service unchanged. Panel: use preflight then activate; Agent: follow the coordinated maintenance plan."
   ;;
  uninstall)
   [[ $# == 2 || ( $# == 3 && $3 == --purge-agent-data && $component == agent ) ]] || usage

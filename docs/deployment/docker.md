@@ -212,21 +212,39 @@ SPA 刷新和真实 Agent 流量已验收。
 
 ## 升级
 
-在管理原部署的 compose / `.env` 所在目录执行：
+先按 [生产维护顺序与材料权限](production.md#升级与回滚) 备份并验证：管理员停新增代理流量、最终计量，保留旧 Uploader/Panel 接收直到 ACK 排空，再停 Agent/核心并取一致停止状态证据，最后停止旧 Panel 和其它授权/账本写者。不能从 PG 推断未上传队列为零，不删队列、不猜时区。
 
-```bash
-# 先备份数据库与 master key，并验证备份能读；然后把 PANEL_TAG 改为目标版本
-# （本地镜像改为重新构建，不执行 pull）
-docker compose pull panel
-docker compose up -d panel
-docker compose logs --tail=100 panel
-curl -fsS http://127.0.0.1:8081/readyz; echo
+在管理原部署的 compose / `.env` 目录中 staging 候选镜像（本地构建则不 pull），**不要先 `up` 候选**。给 panel 增加只读材料目录挂载，所有引用文件均在该目录中：
+
+```yaml
+# 合并到现有 panel 服务；路径由管理员配置，不是 HTTP 请求输入
+services:
+  panel:
+    environment:
+      PANEL_UPGRADE_EVIDENCE_FILE: /run/upgrade/manifest.json
+    volumes:
+      - /etc/proxypanel/upgrade:/run/upgrade:ro
 ```
 
-迁移在启动时自动运行，带 checksum + advisory lock；已应用 SQL 不可修改，只能新增迁移。
-单实例重建期间控制面短暂不可用，Agent 按最后可信快照运行。
-**镜像回退不等于数据库回退**：旧二进制可能不认识新 schema。若必须恢复数据库，
-按 [恢复协调流程](../operations/backup-recovery.md) 核对授权，防止已撤销成员复活。
+宿主目录和文件仅管理员可写，容器 UID/GID 要有目录遍历与文件读取权限（目录 0750、文件 0640，正确映射服务组）；不要 chmod 777，不把原始状态备份或秘密放到 Web 根目录。挂载完整材料目录而非只挂清单，否则相对引用不可读。网页不接受上传/任意路径。fresh 空库无旧 Agent 无需该挂载或造材料。
+
+```bash
+docker compose pull panel
+# 已完成 ACK 排空、Agent 停止取证，再停止旧 Panel 写入
+docker compose stop panel
+# compose 此时选择候选镜像；run 不启动服务依赖，不走业务启动 Open
+# 候选镜像 migrations 位于 /app/migrations；没有 --migrations flag
+# --evidence 路径必须和后续 Open 的配置相同
+docker compose run --rm --no-deps --entrypoint /app/panel \
+  -e PANEL_MIGRATIONS_DIR=/app/migrations panel \
+  check --preflight --json --evidence /run/upgrade/manifest.json
+```
+
+检查真实 JSON `status` 必须为 `ready` 且 exit=0；blocked=2、unknown=3、任意非零均保持旧 Panel 停止，**不执行 up**。只有 ready 才由管理员显式执行 `docker compose up -d --no-deps panel`，随后看启动日志、运行候选 `check --json` 并核对 readyz 内容。不能用分号无条件串接 start/up。保持停写/fence，Open 还会在锁内重验 DB/材料；预检不是永久许可。
+
+迁移逐文件事务，失败文件回滚但本次此前成功前缀保留，并非整体回滚。保存实际 schema_migrations(version/checksum/applied_at) 与现场后修复重试。已应用 SQL 不可修改。
+
+**镜像技术回退只允许停写核对**：保持 panel 容器 stopped，检查实际已提交前缀与旧镜像二进制/SQL 的兼容性，不示例切旧 tag 后 `up`。本项目没有旧版 readonly 启动能力，不能承诺旧 binary 只读启动，也没有 PANEL_READ_ONLY 开关。数据库恢复不是默认回退；实际恢复/代际不明必须按 [恢复协调流程](../operations/backup-recovery.md) enterRecoveryMode、轮换 generation、核对授权/账本并让每个 Agent 显式 accept，防止撤权复活。
 
 ## 验证边界
 
