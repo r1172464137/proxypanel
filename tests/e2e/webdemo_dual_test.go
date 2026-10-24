@@ -587,13 +587,20 @@ func TestWebDemoDualAgent(t *testing.T) {
 	if staleTaskID == "" || staleRevision == 0 {
 		t.Fatal("no timed out task to retry")
 	}
+	var attemptsBefore int
+	var maxAttempts int
+	if err := st.DB.QueryRowContext(ctx, `SELECT attempts, max_attempts FROM tasks WHERE id=$1`, staleTaskID).
+		Scan(&attemptsBefore, &maxAttempts); err != nil {
+		t.Fatal(err)
+	}
 	f.stopAgent(1)
 	retried := f.admin.request("POST", "/api/v1/admin/tasks/"+staleTaskID+"/retry", map[string]any{})
 	if got, _ := retried["state"].(string); got != "pending" {
 		t.Fatalf("retried task state=%q, want pending", got)
 	}
-	if attempts, _ := retried["attempts"].(float64); attempts < 2 {
-		t.Fatalf("retried task attempts=%v, want >=2", retried["attempts"])
+	retriedAttempts, _ := retried["attempts"].(float64)
+	if int(retriedAttempts) != attemptsBefore+1 {
+		t.Fatalf("retried task attempts=%v, want exactly one more than %d", retried["attempts"], attemptsBefore)
 	}
 	newRevision, _ := retried["revision"].(float64)
 	if id := retried["id"].(string); id != staleTaskID {
@@ -630,7 +637,7 @@ func TestWebDemoDualAgent(t *testing.T) {
 	if err := st.DB.QueryRowContext(ctx, `SELECT state FROM batch_items WHERE task_id=$1`, staleTaskID).Scan(&itemState); err != nil {
 		t.Fatal(err)
 	}
-	if taskState != "pending" || itemState != "pending" || taskRev != int64(newRevision) || attempts != 2 {
+	if taskState != "pending" || itemState != "pending" || taskRev != int64(newRevision) || attempts != attemptsBefore+1 {
 		t.Fatalf("the old ACK changed the retried task: state=%s item=%s revision=%d (new %v) attempts=%d",
 			taskState, itemState, taskRev, retried["revision"], attempts)
 	}
