@@ -39,12 +39,17 @@ func (s *Server) handleAdminCoreInstances(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleListServers(w http.ResponseWriter, r *http.Request) {
-	items, err := s.Store.ListServers(r.Context(), 200)
+	p, err := s.adminPage(r, "servers")
 	if err != nil {
 		s.writeError(w, r, err)
 		return
 	}
-	s.writeList(w, items, nil)
+	page, err := s.Store.ListAdminServersPage(r.Context(), p)
+	if err != nil {
+		s.writeError(w, r, err)
+		return
+	}
+	writeAdminPage(s, w, r, "servers", p, page)
 }
 
 func (s *Server) handleCreateServer(w http.ResponseWriter, r *http.Request) {
@@ -199,12 +204,17 @@ func (s *Server) handleRegistrationCode(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleListNodes(w http.ResponseWriter, r *http.Request) {
-	items, err := s.Store.ListNodes(r.Context(), r.URL.Query().Get("server_id"), 200)
+	p, err := s.adminPage(r, "nodes")
 	if err != nil {
 		s.writeError(w, r, err)
 		return
 	}
-	s.writeList(w, items, nil)
+	page, err := s.Store.ListAdminNodesPage(r.Context(), p)
+	if err != nil {
+		s.writeError(w, r, err)
+		return
+	}
+	writeAdminPage(s, w, r, "nodes", p, page)
 }
 
 func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {

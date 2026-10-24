@@ -18,12 +18,17 @@ import (
 )
 
 func (s *Server) handleListNodeGroups(w http.ResponseWriter, r *http.Request) {
-	items, err := s.Store.ListNodeGroups(r.Context(), 200)
+	p, err := s.adminPage(r, "node-groups")
 	if err != nil {
 		s.writeError(w, r, err)
 		return
 	}
-	s.writeList(w, items, nil)
+	page, err := s.Store.ListAdminNodeGroupsPage(r.Context(), p)
+	if err != nil {
+		s.writeError(w, r, err)
+		return
+	}
+	writeAdminPage(s, w, r, "node-groups", p, page)
 }
 
 func (s *Server) handleCreateNodeGroup(w http.ResponseWriter, r *http.Request) {
@@ -227,12 +232,17 @@ func applySubscriptionPatch(v *domain.Subscription, in *subscriptionInput) error
 }
 
 func (s *Server) handleListSubscriptions(w http.ResponseWriter, r *http.Request) {
-	items, err := s.Store.ListSubscriptions(r.Context(), 200)
+	p, err := s.adminPage(r, "subscriptions")
 	if err != nil {
 		s.writeError(w, r, err)
 		return
 	}
-	s.writeList(w, items, nil)
+	page, err := s.Store.ListAdminSubscriptionsPage(r.Context(), p)
+	if err != nil {
+		s.writeError(w, r, err)
+		return
+	}
+	writeAdminPage(s, w, r, "subscriptions", p, page)
 }
 
 func (s *Server) handleCreateSubscription(w http.ResponseWriter, r *http.Request) {
@@ -325,9 +335,12 @@ func (s *Server) handleDeleteSubscription(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
-	// include_archived=true 时才把归档成员一并返回（默认只给未归档的）。
-	includeArchived := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("include_archived")), "true")
-	items, err := s.Store.ListMembers(r.Context(), 200, r.URL.Query().Get("subscription_id"), includeArchived)
+	p, err := s.adminPage(r, "members")
+	if err != nil {
+		s.writeError(w, r, err)
+		return
+	}
+	page, err := s.Store.ListAdminMembersPage(r.Context(), p)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -335,15 +348,15 @@ func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
 	// The list keeps the flat member shape (no nesting change): every row also
 	// carries the derived values computed by the single authorization algorithm
 	// so the UI never re-derives quota or access itself.
-	for i := range items {
-		res, err := s.Store.EvaluateAccessForMember(r.Context(), &items[i])
+	for i := range page.Items {
+		res, err := s.Store.EvaluateAccessForMember(r.Context(), &page.Items[i])
 		if err != nil {
-			decorateMember(&items[i], nil)
+			decorateMember(&page.Items[i], nil)
 			continue
 		}
-		decorateMember(&items[i], res)
+		decorateMember(&page.Items[i], res)
 	}
-	s.writeList(w, items, nil)
+	writeAdminPage(s, w, r, "members", p, page)
 }
 
 // decorateMember copies decision values onto a member row. Slice fields are
@@ -636,12 +649,17 @@ func (s *Server) handleQuotaAdjustment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListTemplates(w http.ResponseWriter, r *http.Request) {
-	items, err := s.Store.ListTemplates(r.Context(), 200)
+	p, err := s.adminPage(r, "templates")
 	if err != nil {
 		s.writeError(w, r, err)
 		return
 	}
-	s.writeList(w, items, nil)
+	page, err := s.Store.ListAdminTemplatesPage(r.Context(), p)
+	if err != nil {
+		s.writeError(w, r, err)
+		return
+	}
+	writeAdminPage(s, w, r, "templates", p, page)
 }
 
 func (s *Server) handleCreateTemplate(w http.ResponseWriter, r *http.Request) {
