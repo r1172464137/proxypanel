@@ -1,393 +1,175 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { Loader2 } from 'lucide-vue-next'
 import { meApi } from '@/api/endpoints'
-import type { MeNode, MeStatus, MeSubscription, SubscriptionFormat, TokenRotationResult } from '@/api/types'
-import { SUBSCRIPTION_FORMATS, SUBSCRIPTION_FORMAT_LABELS } from '@/api/types'
+import type { SubscriptionFormat } from '@/api/types'
 import { useResource } from '@/lib/async'
-import { errorText } from '@/lib/errors'
 import { formatBytes, formatDateTime, formatQuota } from '@/lib/format'
-import { pushToast } from '@/lib/toast'
-import { accessReasonDetails } from '@/lib/accessReasons'
+import { MEMBER_CLIENTS, formatAvailability, memberSubscriptionUrl, memberSummary } from '@/lib/memberService'
 import PageHeader from '@/components/PageHeader.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
-import EmptyState from '@/components/EmptyState.vue'
-import StatusBadge from '@/components/StatusBadge.vue'
-import AppModal from '@/components/AppModal.vue'
 import CopyField from '@/components/CopyField.vue'
 import QrPanel from '@/components/QrPanel.vue'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
-const subscription = useResource<MeSubscription>(() => meApi.subscription())
-const status = useResource<MeStatus>(() => meApi.status())
-const nodes = useResource<MeNode[]>(async () => (await meApi.nodes()).items)
-
-const format = ref<SubscriptionFormat>('xray')
-const checkState = ref<'idle' | 'checking' | 'ok' | 'failed'>('idle')
+const status = useResource(() => meApi.status())
+const subscription = useResource(() => meApi.subscription())
+const nodes = useResource(() => meApi.nodes())
+const summary = computed(() => memberSummary(status.data.value))
+const format = ref<SubscriptionFormat>('v2rayn')
+const client = computed(() => MEMBER_CLIENTS.find(item => item.format === format.value)!)
+const availability = computed(() => formatAvailability(subscription.data.value, format.value))
+const url = computed(() => memberSubscriptionUrl(subscription.data.value, format.value, window.location.origin))
+const checking = ref(false)
+const checkedUrl = ref('')
+const rejectedUrl = ref('')
 const checkMessage = ref('')
+const canCheck = computed(() => status.data.value?.access?.access === true && availability.value.available !== false && !!url.value)
+const canImport = computed(() => canCheck.value && rejectedUrl.value !== url.value && (availability.value.available === true || checkedUrl.value === url.value))
+const timezone = computed(() => summary.value.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
+let checkGeneration = 0
+watch([url, () => status.data.value, () => subscription.data.value], () => {
+  checkGeneration++
+  checkedUrl.value = ''
+  rejectedUrl.value = ''
+  checkMessage.value = ''
+  checking.value = false
+})
 
+async function refresh() {
+  await Promise.all([status.reload(), subscription.reload(), nodes.reload()])
+}
 onMounted(async () => {
-  await Promise.all([subscription.reload(), status.reload(), nodes.reload()])
-  const declared = subscription.data.value?.formats
-  if (declared?.length && !declared.includes(format.value)) format.value = declared[0]!
+  await refresh()
+  const first = MEMBER_CLIENTS.find(item => formatAvailability(subscription.data.value, item.format).available === true)
+    ?? MEMBER_CLIENTS.find(item => subscription.data.value?.formats.includes(item.format))
+  if (first) format.value = first.format
 })
 
-const declaredFormats = computed<SubscriptionFormat[]>(() => {
-  const formats = subscription.data.value?.formats
-  return Array.isArray(formats) ? formats : []
-})
-
-const subscriptionUrl = computed(() => {
-  const data = subscription.data.value
-  if (!data?.url) return ''
-  const base = data.url.includes('{token}') ? data.url.replace('{token}', encodeURIComponent(data.token)) : data.url
-  try {
-    const url = new URL(base, window.location.origin)
-    url.searchParams.set('format', format.value)
-    return url.toString()
-  } catch {
-    return base
-  }
-})
-
-const quota = computed(() => {
-  const data = status.data.value
-  const member = data?.member
-  const access = data?.access
-  const effective = access?.effective_quota_bytes ?? member?.effective_quota_bytes ?? null
-  return {
-    used: access?.used_bytes ?? member?.used_bytes,
-    quota: effective,
-    unlimited: effective === null,
-    start: member?.period_start,
-    end: member?.period_end,
-    timezone: member?.period_timezone,
-  }
-})
-
-// 无代理权限时，订阅链接本身仍然存在，但拉取必然返回
-// 403 {"code":"FORBIDDEN","message":"no proxy access: no_binding"}。
-// 界面上继续展示"复制 / 二维码 / 打开"会让用户复制一个必然失败的链接，
-// 所以这种情况下只保留信息展示与原因说明。
-//
-// 判定只依赖 /me/status 明确返回 access.access === false：
-// 请求失败或字段缺失时保持原行为，避免把网络故障误报成"无权限"。
-const accessDenied = computed(() => {
-  const access = status.data.value?.access
-  return typeof access?.access === 'boolean' && access.access === false
-})
-
-// 原因码 → 人话。映射放在共享模块里，全站统一，不在各视图各写一份。
-const deniedReasons = computed(() => {
-  const access = status.data.value?.access
-  const codes = access?.access_reasons ?? []
-  const raw = codes.length ? codes : access?.proxy_access ? [access.proxy_access] : []
-  return accessReasonDetails(raw)
-})
-
-watch(format, () => {
-  checkState.value = 'idle'
-  checkMessage.value = ''
-})
-
-async function checkFormat(): Promise<void> {
-  checkState.value = 'checking'
+async function retrieve(download = false) {
+  if (!canCheck.value || checking.value) return
+  const generation = ++checkGeneration
+  const target = url.value
+  const selected = format.value
+  checking.value = true
   checkMessage.value = ''
   try {
-    const response = await fetch(subscriptionUrl.value, { credentials: 'same-origin', headers: { Accept: 'text/plain' } })
+    const response = await fetch(target, { credentials: 'omit', referrerPolicy: 'no-referrer', headers: { Accept: 'text/plain, application/json, application/yaml' } })
     if (!response.ok) {
-      let message = `该格式不可用（HTTP ${response.status}）`
-      const text = await response.text()
-      try {
-        const parsed = JSON.parse(text) as { error?: { message?: string; code?: string } }
-        if (parsed.error?.message) message = `${parsed.error.message}${parsed.error.code ? `（${parsed.error.code}）` : ''}`
-      } catch {
-        if (text && !text.trim().startsWith('<')) message = `${message}：${text.slice(0, 160)}`
-      }
-      checkState.value = 'failed'
-      checkMessage.value = message
-      return
+      const message = response.status === 422 ? '此格式无法表达当前节点配置，请更换客户端或联系管理员。'
+        : response.status === 403 ? '当前授权不允许获取配置，请刷新服务状态或联系管理员。'
+        : response.status === 409 ? '配置暂不可获取，请稍后重试或联系管理员核对维护状态。'
+        : '暂时无法获取配置，请稍后重试。'
+      throw new Error(message)
     }
     const body = await response.text()
-    checkState.value = 'ok'
-    checkMessage.value = `该格式可获取，共 ${formatBytes(new Blob([body]).size)}（内容包含你的凭据，本页不展示）。`
-  } catch {
-    checkState.value = 'failed'
-    checkMessage.value = '无法获取订阅输出：网络错误或面板不可达。'
-  }
-}
-
-const tokenOpen = ref(false)
-const rotating = ref(false)
-const rotateError = ref('')
-const rotated = ref<TokenRotationResult | null>(null)
-
-async function rotate(): Promise<void> {
-  rotating.value = true
-  rotateError.value = ''
-  try {
-    rotated.value = await meApi.rotateSubscriptionToken()
-    pushToast('success', '订阅链接已轮换', '旧链接立即失效；已导入的客户端配置（代理凭据）不受影响。')
-    await subscription.reload()
-  } catch (caught) {
-    rotateError.value = errorText(caught)
+    if (!body.trim() || /^\s*</.test(body) || response.headers.get('content-type')?.includes('text/html')) throw new Error('未获取到有效配置，请联系管理员核对服务地址。')
+    if (generation !== checkGeneration) return
+    checkedUrl.value = target
+    rejectedUrl.value = ''
+    checkMessage.value = '配置已取回；授权状态请以上方摘要为准。尚未验证真实连接，请在客户端选择节点并连接后检查访问。'
+    if (download) {
+      const blobUrl = URL.createObjectURL(new Blob([body], { type: 'application/octet-stream' }))
+      const anchor = document.createElement('a')
+      anchor.href = blobUrl
+      anchor.download = `my-service.${selected === 'mihomo' ? 'yaml' : selected === 'v2rayn' ? 'txt' : 'json'}`
+      anchor.click()
+      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
+      checkMessage.value = '配置已取回并发起下载，请在客户端载入。尚未验证真实连接；配置文件包含个人连接信息，请勿转发。'
+    }
+  } catch (error) {
+    if (generation !== checkGeneration) return
+    checkedUrl.value = ''
+    rejectedUrl.value = target
+    checkMessage.value = error instanceof TypeError ? '网络连接失败，请稍后重试。' : error instanceof Error ? error.message : '无法获取配置，请重试。'
   } finally {
-    rotating.value = false
+    if (generation === checkGeneration) checking.value = false
   }
-}
-
-function openRotate(): void {
-  rotated.value = null
-  rotateError.value = ''
-  tokenOpen.value = true
 }
 </script>
 
 <template>
   <div class="space-y-6">
-    <PageHeader title="我的订阅" description="订阅链接是个人凭据：可复制、扫码或按客户端格式获取；链接与代理凭据相互独立。">
-      <Button variant="outline" :disabled="subscription.loading.value" @click="subscription.reload()">刷新</Button>
-      <Button variant="destructive" @click="openRotate">轮换订阅链接</Button>
+    <PageHeader title="我的服务" description="查看服务状态与剩余额度，然后将配置导入你使用的客户端。">
+      <Button data-testid="service-refresh-button" variant="outline" :disabled="status.loading.value || subscription.loading.value" @click="refresh">刷新服务资料</Button>
     </PageHeader>
 
-    <div class="space-y-6">
-      <LoadingBlock v-if="subscription.loading.value && !subscription.data.value" label="正在读取订阅" />
-      <ErrorState v-else-if="subscription.error.value" :error="subscription.error.value" @retry="subscription.reload()" />
-
-      <template v-else-if="subscription.data.value">
-        <Card>
-          <CardHeader class="border-b">
-            <CardTitle class="text-base font-semibold">订阅链接</CardTitle>
-          </CardHeader>
-
-          <!-- 无代理权限：链接仍然存在，但拉取会 403。不展示复制/二维码，
-               避免用户拿到一个必然失败的地址。 -->
-          <CardContent v-if="accessDenied" class="space-y-4 pt-6">
-            <Alert variant="destructive">
-              <AlertTitle>当前无代理权限，订阅链接暂不可用。</AlertTitle>
-              <AlertDescription>
-                现在打开该链接会被服务端拒绝（403 no proxy access），客户端也无法拉取配置。
-                请联系管理员恢复权限后再使用。
-              </AlertDescription>
-            </Alert>
-
-            <ul v-if="deniedReasons.length" class="space-y-2">
-              <li v-for="reason in deniedReasons" :key="reason.label" class="text-sm">
-                <strong class="font-medium">{{ reason.label }}</strong>。{{ reason.action }}
-              </li>
-            </ul>
-
-            <div class="flex flex-wrap items-center gap-2">
-              <Button as-child variant="outline">
-                <router-link to="/me/status">查看账户状态</router-link>
-              </Button>
-              <Button as-child variant="outline">
-                <router-link to="/me/usage">查看用量</router-link>
-              </Button>
-            </div>
-          </CardContent>
-
-          <CardContent v-else class="grid gap-6 pt-6 lg:grid-cols-2">
-            <div class="space-y-4">
-              <div class="grid gap-2">
-                <Label for="format">客户端格式</Label>
-                <Select v-model="format">
-                  <SelectTrigger id="format" class="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem
-                      v-for="option in SUBSCRIPTION_FORMATS"
-                      :key="option"
-                      :value="option"
-                      :disabled="!declaredFormats.includes(option)"
-                    >
-                      {{ SUBSCRIPTION_FORMAT_LABELS[option] }}{{ declaredFormats.includes(option) ? '' : '（服务端未声明）' }}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-                <p class="text-xs leading-relaxed text-muted-foreground">
-                  仅可选择服务端声明的格式。若某节点参数无法被所选客户端表示，订阅输出会返回 422 并指明不兼容节点与字段，不会静默删参。
-                </p>
-              </div>
-
-              <CopyField :value="subscriptionUrl" label="订阅链接" mask warning="此链接等同于密码；泄露后请立即轮换。" />
-
-              <div class="flex flex-wrap items-center gap-2">
-                <Button as-child variant="outline">
-                  <a :href="subscriptionUrl" target="_blank" rel="noopener noreferrer">打开 / 下载</a>
-                </Button>
-                <Button type="button" variant="outline" :disabled="checkState === 'checking'" @click="checkFormat">
-                  <Loader2 v-if="checkState === 'checking'" class="animate-spin" aria-hidden="true" />
-                  {{ checkState === 'checking' ? '校验中…' : '校验该格式' }}
-                </Button>
-              </div>
-
-              <p
-                v-if="checkState === 'ok'"
-                role="status"
-                class="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200"
-              >
-                {{ checkMessage }}
-              </p>
-              <Alert v-if="checkState === 'failed'" variant="destructive">
-                <AlertDescription>{{ checkMessage }}</AlertDescription>
-              </Alert>
-              <p
-                v-if="!declaredFormats.length"
-                class="rounded-md border border-amber-300/70 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-200"
-              >
-                服务端未声明任何格式，格式选择可能不可用；请联系管理员确认订阅输出能力。
-              </p>
-            </div>
-
-            <QrPanel :value="subscriptionUrl" />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader class="flex-row items-center justify-between space-y-0">
-            <CardTitle class="text-base font-semibold">我的额度</CardTitle>
-            <Button as-child variant="outline" size="sm">
-              <router-link to="/me/usage">查看用量</router-link>
-            </Button>
-          </CardHeader>
-          <CardContent class="space-y-4 pt-2">
-            <LoadingBlock v-if="status.loading.value && !status.data.value" :rows="2" label="正在读取额度" />
-            <ErrorState v-else-if="status.error.value" :error="status.error.value" @retry="status.reload()" />
-            <div v-else class="space-y-4">
-              <dl class="grid gap-4 sm:grid-cols-2">
-                <div class="space-y-1">
-                  <dt class="text-xs font-medium text-muted-foreground">账户 / 代理</dt>
-                  <dd class="flex flex-wrap items-center gap-2">
-                    <StatusBadge :status="status.data.value?.member?.active === false ? 'suspended' : 'active'" />
-                    <StatusBadge :status="status.data.value?.access?.proxy_access ?? 'unknown'" />
-                  </dd>
-                </div>
-                <div class="space-y-1">
-                  <dt class="text-xs font-medium text-muted-foreground">已用 / 额度</dt>
-                  <dd class="tabular text-sm">
-                    {{ formatBytes(quota.used) }} /
-                    {{ quota.unlimited ? '不限量（仍受节点与规则限制）' : formatQuota(quota.quota) }}
-                  </dd>
-                </div>
-                <div class="space-y-1">
-                  <dt class="text-xs font-medium text-muted-foreground">当前周期</dt>
-                  <dd class="text-sm">
-                    <template v-if="quota.start || quota.end">
-                      {{ formatDateTime(quota.start, quota.timezone) }} → {{ formatDateTime(quota.end, quota.timezone) }}
-                    </template>
-                    <span v-else class="text-muted-foreground">未提供</span>
-                  </dd>
-                </div>
-                <div class="space-y-1">
-                  <dt class="text-xs font-medium text-muted-foreground">到期时间</dt>
-                  <dd class="text-sm">
-                    {{ formatDateTime(status.data.value?.access?.expires_at ?? status.data.value?.member?.expires_at) }}
-                  </dd>
-                </div>
-              </dl>
-
-              <Alert
-                v-if="accessReasonDetails(status.data.value?.access?.access_reasons).length"
-                class="border-amber-300/70 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-200"
-              >
-                <AlertTitle>现在还不能使用代理</AlertTitle>
-                <AlertDescription>
-                  <ul class="list-disc space-y-1 pl-4">
-                    <li
-                      v-for="reason in accessReasonDetails(status.data.value?.access?.access_reasons)"
-                      :key="reason.label"
-                    >
-                      {{ reason.label }}。{{ reason.action }}
-                    </li>
-                  </ul>
-                </AlertDescription>
-              </Alert>
-            </div>
-          </CardContent>
-        </Card>
-      </template>
-
-      <EmptyState
-        v-else
-        title="当前没有可用订阅"
-        description="你的账户尚未绑定订阅（或订阅被暂停）。可以正常登录查看状态；如需代理权限，请联系管理员绑定订阅。"
-      >
-        <Button as-child variant="outline">
-          <router-link to="/me/status">查看账户状态</router-link>
-        </Button>
-      </EmptyState>
-
-      <Card>
-        <CardHeader class="flex-row items-center justify-between space-y-0">
-          <CardTitle class="text-base font-semibold">授权节点</CardTitle>
-          <Button variant="outline" size="sm" :disabled="nodes.loading.value" @click="nodes.reload()">刷新</Button>
-        </CardHeader>
-        <CardContent class="pt-2">
-          <LoadingBlock v-if="nodes.loading.value && !nodes.data.value" :rows="2" label="正在读取节点" />
-          <ErrorState v-else-if="nodes.error.value" :error="nodes.error.value" @retry="nodes.reload()" />
-          <p v-else-if="!nodes.data.value?.length" class="text-sm text-muted-foreground">
-            没有可用节点。常见原因：尚未绑定订阅、订阅暂停、节点维护，或账户过期/超额。
-          </p>
-          <Table v-else>
-            <TableHeader>
-              <TableRow>
-                <TableHead>节点</TableHead>
-                <TableHead>协议</TableHead>
-                <TableHead>地址</TableHead>
-                <TableHead>传输 / 安全</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow v-for="(node, index) in nodes.data.value" :key="node.id ?? node.node_id ?? index">
-                <TableCell>{{ node.name ?? node.node_id ?? '—' }}</TableCell>
-                <TableCell class="mono">{{ node.protocol ?? '—' }}</TableCell>
-                <TableCell class="mono">
-                  {{ node.host ?? '—' }}<template v-if="node.port">:{{ node.port }}</template>
-                </TableCell>
-                <TableCell>
-                  <span class="block text-sm">{{ node.network ?? '—' }}</span>
-                  <span class="block text-xs text-muted-foreground">{{ node.security ?? '—' }}</span>
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
+    <section aria-label="服务状态与额度" data-testid="service-summary-card">
+      <LoadingBlock v-if="status.loading.value && !status.data.value" label="正在读取服务状态" />
+      <ErrorState v-else-if="status.error.value" :error="status.error.value" @retry="status.reload()" />
+      <Card v-else>
+        <CardHeader><CardTitle>{{ summary.title }}</CardTitle></CardHeader>
+        <CardContent class="space-y-4">
+          <p v-if="summary.incomplete" role="status" class="text-sm text-amber-700 dark:text-amber-300">部分服务资料需核对，以下保留已知数据。未知字段显示为「—」，不代表零或不限量。</p>
+          <p v-if="status.data.value?.access?.access === true" class="text-sm text-muted-foreground">当前授权允许使用；真实连接需在客户端确认。</p>
+          <ul v-if="summary.reasons.length" class="space-y-2 text-sm"><li v-for="reason in summary.reasons" :key="reason.label"><strong>{{ reason.label }}</strong>。{{ reason.action }}</li></ul>
+          <dl class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div><dt class="text-sm text-muted-foreground">已用</dt><dd class="text-xl font-semibold">{{ formatBytes(summary.used) }}</dd></div>
+            <div><dt class="text-sm text-muted-foreground">总额度</dt><dd class="text-xl font-semibold">{{ summary.total === undefined ? '—' : formatQuota(summary.total) }}</dd></div>
+            <div><dt class="text-sm text-muted-foreground">剩余</dt><dd class="text-xl font-semibold">{{ summary.unlimited ? '不限量' : formatBytes(summary.remaining) }}</dd></div>
+            <div><dt class="text-sm text-muted-foreground">有效期至</dt><dd>{{ summary.expires === null ? '未设置到期时间' : formatDateTime(summary.expires, timezone) }}</dd></div>
+            <div><dt class="text-sm text-muted-foreground">下次重置</dt><dd>{{ formatDateTime(summary.end, timezone) }}</dd></div>
+            <div><dt class="text-sm text-muted-foreground">当前周期开始</dt><dd>{{ formatDateTime(summary.start, timezone) }}</dd></div>
+          </dl>
+          <p class="text-xs text-muted-foreground">数据更新时间：暂未提供。时间按 {{ timezone }} 显示；未知数据不是零，不限量仍受有效期与授权范围限制。</p>
+          <div class="flex flex-wrap gap-3 text-sm underline"><router-link data-testid="nav-service-status" to="/me/status">查看服务状态与原因</router-link><router-link data-testid="nav-service-usage" to="/me/usage">查看用量明细</router-link></div>
         </CardContent>
       </Card>
-    </div>
+    </section>
 
-    <AppModal :open="tokenOpen" title="轮换订阅链接" size="md" @close="tokenOpen = false">
-      <div class="space-y-3">
-        <p class="text-sm">轮换后旧订阅链接立即失效；代理凭据不变，现有连接不中断。</p>
-        <Alert v-if="rotateError" variant="destructive">
-          <AlertDescription class="break-all">{{ rotateError }}</AlertDescription>
-        </Alert>
-        <template v-if="rotated">
-          <CopyField :value="rotated.url" label="新订阅链接" mask warning="此链接等同于密码，请更新到你的客户端。" />
-          <CopyField :value="rotated.token" label="新令牌" mask />
-          <QrPanel v-if="!accessDenied" :value="rotated.url" />
-          <p
-            v-else
-            class="rounded-md border border-amber-300/70 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-200"
-          >
-            该账户当前无代理权限，新链接同样会返回 403；请先联系管理员恢复权限。
-          </p>
+    <Card data-testid="client-import-card">
+      <CardHeader><CardTitle>导入客户端</CardTitle></CardHeader>
+      <CardContent class="space-y-4">
+        <LoadingBlock v-if="subscription.loading.value" label="正在读取导入资料" />
+        <div v-else-if="subscription.error.value?.code === 'RECOVERY_MODE'" data-testid="import-maintenance-message" role="status" class="space-y-3 text-sm">
+          <p>恢复核对进行中，暂时无法获取订阅链接。上方已读取的状态与额度仍可查看，请稍后重试。</p>
+          <Button data-testid="import-retry-button" variant="outline" @click="subscription.reload()">重试获取导入资料</Button>
+        </div>
+        <ErrorState v-else-if="subscription.error.value" :error="subscription.error.value" @retry="subscription.reload()" />
+        <p v-else-if="status.data.value?.access?.access !== true" role="status">{{ status.data.value?.access?.access === false ? '当前服务不可用，暂不能导入。' : '服务状态尚未确认，请先刷新服务资料。' }}请联系为你开通服务的管理员，账号与用量页面仍可访问。</p>
+        <template v-else>
+          <div class="space-y-2">
+            <label for="member-client" class="text-sm font-medium">你使用的客户端</label>
+            <select id="member-client" v-model="format" data-testid="client-select" class="block w-full rounded-md border border-border bg-background p-2 text-sm">
+              <option v-for="item in MEMBER_CLIENTS" :key="item.format" :value="item.format">{{ item.name }}</option>
+            </select>
+            <p role="status" class="text-sm text-muted-foreground">{{ availability.message }}</p>
+            <p class="text-xs text-muted-foreground">以下为手动导入指引，不代表客户端版本已通过兼容认证。不提供未经验证的一键唤起。</p>
+          </div>
+          <template v-if="canImport">
+            <CopyField :value="url" label="个人订阅链接" mask warning="仅供本人使用。复制不会重置链接，也不会更改连接凭据。" />
+            <details data-testid="import-qrcode-panel"><summary class="cursor-pointer text-sm">显示二维码（仅供本人使用）</summary><QrPanel :value="url" /></details>
+          </template>
+          <div class="flex flex-wrap gap-2">
+            <Button data-testid="import-check-button" variant="outline" :disabled="!canCheck || checking" @click="retrieve()">{{ checking ? '正在获取配置…' : '检查配置能否获取' }}</Button>
+            <Button v-if="canImport" data-testid="import-download-button" variant="outline" :disabled="checking" @click="retrieve(true)">下载配置文件</Button>
+          </div>
+          <p v-if="checkMessage" data-testid="import-result-message" role="status" class="text-sm">{{ checkMessage }}</p>
+          <ol class="list-decimal space-y-2 pl-5 text-sm">
+            <li>安装并打开所选客户端；确认其支持当前配置格式。</li>
+            <li>{{ client.instruction }}</li>
+            <li>更新订阅，在客户端选择下方同名节点，然后开启连接。</li>
+            <li>在客户端查看连接日志并检查实际访问。取回配置、复制或扫码均不代表连接已验证。</li>
+          </ol>
         </template>
-      </div>
-      <template #footer>
-        <Button variant="outline" :disabled="rotating" @click="tokenOpen = false">关闭</Button>
-        <Button variant="destructive" :disabled="rotating" @click="rotate">
-          <Loader2 v-if="rotating" class="animate-spin" aria-hidden="true" />
-          {{ rotating ? '轮换中…' : '确认轮换' }}
-        </Button>
-      </template>
-    </AppModal>
+      </CardContent>
+    </Card>
+
+    <Card data-testid="service-nodes-card">
+      <CardHeader><CardTitle>我的节点</CardTitle></CardHeader>
+      <CardContent>
+        <LoadingBlock v-if="nodes.loading.value" label="正在读取节点" />
+        <ErrorState v-else-if="nodes.error.value" :error="nodes.error.value" @retry="nodes.reload()" />
+        <ul v-else-if="nodes.data.value?.items.length" class="space-y-2 text-sm"><li v-for="(node, index) in nodes.data.value.items" :key="node.id ?? index" class="break-words">{{ node.name ?? '未命名节点' }} · {{ node.protocol ?? '协议未提供' }}</li></ul>
+        <p v-else class="text-sm text-muted-foreground">暂无可用节点。请先查看服务状态，或联系为你开通服务的管理员。</p>
+        <p v-if="nodes.data.value?.next_cursor" class="mt-2 text-sm">这里只显示部分节点，导入配置后请在客户端查看完整列表。</p>
+      </CardContent>
+    </Card>
+    <p class="text-xs text-muted-foreground">重置订阅链接会使旧链接无法继续下载配置，不等于立即切断现有连接；重置连接凭据会改变所选节点的连接信息，需要重新导入并等待节点更新。请在高级连接信息中核对影响后操作。</p>
+    <div class="flex flex-wrap gap-4 text-sm underline">
+      <router-link data-testid="nav-member-security" to="/me/security">账号安全</router-link>
+      <router-link data-testid="nav-member-credentials" to="/me/credentials">高级连接信息与重置</router-link>
+    </div>
   </div>
 </template>

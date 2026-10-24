@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { meApi } from '@/api/endpoints'
 import type { MeStatus, MeUsageResult } from '@/api/types'
 import { useResource } from '@/lib/async'
 import { formatBytes, formatDateTime, formatQuota } from '@/lib/format'
+import { loadMeUsage } from '@/lib/meUsage'
+import { memberSummary } from '@/lib/memberService'
 import PageHeader from '@/components/PageHeader.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
@@ -13,7 +15,24 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
-const usage = useResource<MeUsageResult>(() => meApi.usage())
+const cursors = ref<(string | null)[]>([null])
+const page = ref(0)
+const usage = useResource<MeUsageResult>((signal) => loadMeUsage(cursors.value[page.value], signal))
+async function changePage(next: boolean) {
+  if (usage.loading.value) return
+  if (next) {
+    const cursor = usage.data.value?.next_cursor
+    if (!cursor) return
+    cursors.value[page.value + 1] = cursor
+    page.value++
+  } else if (page.value > 0) page.value--
+  await usage.reload()
+}
+async function refresh() {
+  page.value = 0
+  cursors.value = [null]
+  await Promise.all([usage.reload(), status.reload()])
+}
 const status = useResource<MeStatus>(() => meApi.status())
 
 onMounted(() => {
@@ -25,79 +44,72 @@ const items = computed(() => usage.data.value?.items ?? [])
 const adjustments = computed(() => usage.data.value?.adjustments ?? [])
 
 const totals = computed(() => {
+  if (!usage.data.value || usage.loading.value || usage.error.value || !items.value.length) return null
   const acc = { up: 0, down: 0 }
   for (const item of items.value) {
-    acc.up += item.up_bytes ?? 0
-    acc.down += item.down_bytes ?? 0
+    if (typeof item.up_bytes !== 'number' || typeof item.down_bytes !== 'number') return null
+    acc.up += item.up_bytes
+    acc.down += item.down_bytes
   }
   return acc
 })
 
-const member = computed(() => status.data.value?.member)
-const access = computed(() => status.data.value?.access)
-const quota = computed(() => ({
-  used: access.value?.used_bytes ?? member.value?.used_bytes,
-  total: access.value?.effective_quota_bytes ?? member.value?.effective_quota_bytes,
-  unlimited: (access.value?.effective_quota_bytes ?? member.value?.effective_quota_bytes) === null,
-  start: member.value?.period_start,
-  end: member.value?.period_end,
-  timezone: member.value?.period_timezone,
-}))
-const remaining = computed(() => {
-  if (quota.value.unlimited || quota.value.total === undefined || quota.value.total === null) return null
-  return Math.max(0, quota.value.total - (quota.value.used ?? 0))
-})
+const quota = computed(() => memberSummary(status.data.value))
+const timezone = computed(() => quota.value.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
 </script>
 
 <template>
   <div class="space-y-6">
-    <PageHeader title="我的用量" description="查看本期用了多少流量。数字来自实际计费记录；补报的历史数据会标注「估算」。">
-      <Button variant="outline" :disabled="usage.loading.value" @click="usage.reload()">刷新</Button>
+    <PageHeader title="我的用量" description="查看当前周期额度、用量明细与额度调整。历史记录保留各自的归属周期。">
+      <Button data-testid="usage-refresh-button" variant="outline" :disabled="usage.loading.value || status.loading.value" @click="refresh">刷新</Button>
     </PageHeader>
 
     <div class="space-y-6">
       <LoadingBlock v-if="status.loading.value && !status.data.value" :rows="2" label="正在读取额度" />
       <ErrorState v-else-if="status.error.value" :error="status.error.value" @retry="status.reload()" />
-      <Card v-else>
+      <Card v-else data-testid="usage-summary-card">
         <CardHeader class="border-b">
-          <CardTitle class="text-base font-semibold">本周期</CardTitle>
+          <CardTitle class="text-base font-semibold">{{ quota.title }} · 本周期</CardTitle>
+          <p v-if="quota.incomplete" role="status" class="text-sm">部分服务资料需核对，已知数据继续显示；未知字段不表示零。</p>
+          <p class="text-xs text-muted-foreground">数据更新时间：暂未提供。时间按 {{ timezone }} 显示。</p>
         </CardHeader>
         <CardContent class="grid gap-4 pt-6 sm:grid-cols-2 lg:grid-cols-4">
           <div class="rounded-lg border border-border bg-muted/30 px-4 py-3">
             <p class="text-xs font-medium text-muted-foreground">已用</p>
             <p class="tabular mt-1 text-xl font-semibold">{{ formatBytes(quota.used) }}</p>
             <p class="mt-1 text-xs text-muted-foreground">
-              明细合计 上 {{ formatBytes(totals.up) }} · 下 {{ formatBytes(totals.down) }}
+              本页明细 上 {{ formatBytes(totals?.up) }} · 下 {{ formatBytes(totals?.down) }}（不等于本周期总量）
             </p>
           </div>
           <div class="rounded-lg border border-border bg-muted/30 px-4 py-3">
             <p class="text-xs font-medium text-muted-foreground">额度</p>
-            <p class="tabular mt-1 text-xl font-semibold">{{ quota.unlimited ? '不限量' : formatQuota(quota.total) }}</p>
+            <p class="tabular mt-1 text-xl font-semibold">{{ quota.total === undefined ? '—' : formatQuota(quota.total) }}</p>
             <p class="mt-1 text-xs text-muted-foreground">
               {{ quota.unlimited ? '仍受节点与规则限制' : '超出将暂停代理访问' }}
             </p>
           </div>
           <div class="rounded-lg border border-border bg-muted/30 px-4 py-3">
             <p class="text-xs font-medium text-muted-foreground">剩余</p>
-            <p class="tabular mt-1 text-xl font-semibold">{{ remaining === null ? '—' : formatBytes(remaining) }}</p>
+            <p class="tabular mt-1 text-xl font-semibold">{{ quota.unlimited ? '不限量' : formatBytes(quota.remaining) }}</p>
             <p class="mt-1 text-xs text-muted-foreground">按字节账本计算</p>
           </div>
           <div class="rounded-lg border border-border bg-muted/30 px-4 py-3">
             <p class="text-xs font-medium text-muted-foreground">重置时间</p>
-            <p class="mt-1 text-base font-semibold">{{ formatDateTime(quota.end, quota.timezone) }}</p>
-            <p class="mt-1 text-xs text-muted-foreground">周期开始 {{ formatDateTime(quota.start, quota.timezone) }}</p>
+            <p class="mt-1 text-base font-semibold">{{ formatDateTime(quota.end, timezone) }}</p>
+            <p class="mt-1 text-xs text-muted-foreground">周期开始 {{ formatDateTime(quota.start, timezone) }}</p>
           </div>
         </CardContent>
       </Card>
 
-      <LoadingBlock v-if="usage.loading.value && !usage.data.value" label="正在读取用量" />
+      <LoadingBlock v-if="usage.loading.value" label="正在读取用量" />
       <ErrorState v-else-if="usage.error.value" :error="usage.error.value" @retry="usage.reload()" />
-      <Card v-else>
+      <Card v-else data-testid="usage-detail-card">
         <CardContent class="pt-6">
           <EmptyState
             v-if="!items.length"
-            title="本周期尚无流量记录"
-            description="Agent 每 5 秒采样；刚开始使用或刚绑定订阅时可能还没有数据。"
+            data-testid="usage-empty-message"
+            title="本页暂无用量记录"
+            description="暂无记录不等于用量为零。当前周期已用量请以上方摘要为准；历史按发生周期归属。"
           />
           <Table v-else>
             <TableHeader>
@@ -113,8 +125,8 @@ const remaining = computed(() => {
               <TableRow v-for="(item, index) in items" :key="index">
                 <TableCell class="mono">{{ item.node_id ?? '—' }}</TableCell>
                 <TableCell class="text-xs">
-                  {{ formatDateTime(item.period_start ?? item.period?.start, item.period?.timezone) }} →
-                  {{ formatDateTime(item.period_end ?? item.period?.end, item.period?.timezone) }}
+                  {{ formatDateTime(item.period_start ?? item.period?.start, item.period?.timezone || timezone) }} →
+                  {{ formatDateTime(item.period_end ?? item.period?.end, item.period?.timezone || timezone) }}
                 </TableCell>
                 <TableCell class="tabular">{{ formatBytes(item.up_bytes) }}</TableCell>
                 <TableCell class="tabular">{{ formatBytes(item.down_bytes) }}</TableCell>
@@ -141,7 +153,13 @@ const remaining = computed(() => {
         </CardContent>
       </Card>
 
-      <Card v-if="adjustments.length">
+      <nav aria-label="用量明细分页" class="flex flex-wrap items-center gap-3">
+        <Button data-testid="usage-previous-button" variant="outline" :disabled="page === 0 || usage.loading.value" @click="changePage(false)">上一页</Button>
+        <span class="text-sm">第 {{ page + 1 }} 页</span>
+        <Button data-testid="usage-next-button" variant="outline" :disabled="!usage.data.value?.next_cursor || usage.loading.value || !!usage.error.value" @click="changePage(true)">下一页</Button>
+      </nav>
+      <p v-if="page > 0" class="text-sm text-muted-foreground">额度调整记录仅在第一页展示。</p>
+      <Card v-if="adjustments.length && !usage.loading.value && !usage.error.value" data-testid="usage-adjustments-card">
         <CardHeader class="border-b">
           <CardTitle class="text-base font-semibold">额度调整记录</CardTitle>
         </CardHeader>
@@ -156,7 +174,7 @@ const remaining = computed(() => {
             </TableHeader>
             <TableBody>
               <TableRow v-for="(adjustment, index) in adjustments" :key="adjustment.id ?? index">
-                <TableCell>{{ formatDateTime(adjustment.created_at) }}</TableCell>
+                <TableCell>{{ formatDateTime(adjustment.created_at, timezone) }}</TableCell>
                 <TableCell class="tabular">{{ formatBytes(adjustment.bytes) }}</TableCell>
                 <TableCell class="text-sm">{{ adjustment.reason ?? '—' }}</TableCell>
               </TableRow>

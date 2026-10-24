@@ -191,6 +191,8 @@ export interface MemberRecord {
   expires_at: string | null
   quota_override_bytes: number | null
   quota_override_enabled: boolean
+  data_complete?: boolean
+  data_issues?: string[]
   /** 派生值（服务端逐请求计算） */
   used_bytes?: number
   effective_quota_bytes?: number | null
@@ -542,6 +544,10 @@ export interface MeSubscription {
   url: string
   token: string
   formats: SubscriptionFormat[]
+  format_status?: { format: SubscriptionFormat; available: boolean; reason: string }[]
+  expires_at?: string | null
+  period_end?: string | null
+  rotation_impact?: string
 }
 
 export interface AccessStep {
@@ -569,6 +575,8 @@ export interface AccessDecision {
 }
 
 export interface MeStatus {
+  data_complete?: boolean
+  data_issues?: string[]
   /** 服务端返回的成员记录（含派生值）。 */
   member?: MemberRecord
   /** 授权判定结果（与 Agent 快照同算法）。 */

@@ -1,157 +1,113 @@
-import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
-import { nextTick } from 'vue'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { createRouter, createMemoryHistory } from 'vue-router'
+import type { MeStatus, MeSubscription } from '@/api/types'
+import { ApiError } from '@/api/http'
 import MeSubscriptionView from './MeSubscriptionView.vue'
 
-// P1-2：后端在无代理权限时对 /sub/{token} 正确返回
-// 403 {"code":"FORBIDDEN","message":"no proxy access: no_binding"}，
-// 但页面照样展示订阅链接、复制按钮和二维码，用户复制到一个必然失败的地址。
-//
-// 这里锁定：access.access === false 时隐藏可复制的链接与二维码、给出可读的
-// 原因说明；有权限时行为完全不变；/me/status 拿不到时不臆测为"无权限"。
-//
-// 断言全部走语义查询（可访问名 / 可见文案 / href），不断言自造 CSS 类名。
-
 const state = vi.hoisted(() => ({
-  subscription: { url: 'https://panel.test/sub/{token}', token: 'tok_secret', formats: ['xray', 'singbox'] },
-  status: { access: { access: true, proxy_access: 'active', access_reasons: [] as string[] } } as Record<string, unknown>,
+  status: {} as MeStatus,
+  subscription: {} as MeSubscription,
+  subscriptionError: null as Error | null,
+  rotate: vi.fn(),
 }))
-
-vi.mock('@/api/endpoints', () => ({
-  meApi: {
-    subscription: vi.fn(async () => state.subscription),
-    status: vi.fn(async () => state.status),
-    nodes: vi.fn(async () => []),
-    rotateToken: vi.fn(),
-    rotateSubscriptionToken: vi.fn(async () => ({ token: 'tok_new', url: 'https://panel.test/sub/tok_new' })),
-  },
-}))
-
-vi.mock('@/stores/session', () => ({
-  sessionState: { user: { username: 'alice', role: 'member' } },
-  pushToast: vi.fn(),
-}))
-
+vi.mock('@/api/endpoints', () => ({ meApi: {
+  status: vi.fn(async () => state.status),
+  subscription: vi.fn(async () => { if (state.subscriptionError) throw state.subscriptionError; return state.subscription }),
+  nodes: vi.fn(async () => ({ items: [{ id: 'node-1', name: '我的入口', protocol: 'vless' }], next_cursor: null })),
+  rotateSubscriptionToken: state.rotate,
+} }))
 vi.mock('@/lib/toast', () => ({ pushToast: vi.fn() }))
-
-vi.mock('vue-router', () => ({
-  useRoute: () => ({ fullPath: '/me/subscription', meta: {} }),
-  useRouter: () => ({ push: vi.fn(), back: vi.fn() }),
-}))
-
 const stubs = {
   RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
-  // 二维码组件需要 canvas：用带可访问名的占位符来断言"扫码入口是否存在"
-  QrPanel: { props: ['value'], template: '<figure aria-label="订阅二维码" />' },
-  LoadingBlock: { template: '<div role="status" aria-label="加载中" />' },
-  ErrorState: { template: '<div role="alert" aria-label="加载失败" />' },
-  EmptyState: { template: '<p aria-label="空状态" />' },
+  QrPanel: { props: ['value'], template: '<figure aria-label="个人二维码" />' },
 }
-
-async function mountView() {
-  const wrapper = mount(MeSubscriptionView, { global: { stubs } })
+const wrappers: ReturnType<typeof mount>[] = []
+async function view() {
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })
+  await router.push('/me/subscription')
+  await router.isReady()
+  const wrapper = mount(MeSubscriptionView, { global: { plugins: [router], stubs } })
+  wrappers.push(wrapper)
   await flushPromises()
   return wrapper
 }
-
-function hasQrCode(wrapper: ReturnType<typeof mount>): boolean {
-  return wrapper.find('[aria-label="订阅二维码"]').exists()
-}
-
-/** 可复制的订阅链接入口（CopyField 的复制按钮带 aria-label="复制"）。 */
-function hasCopyButton(wrapper: ReturnType<typeof mount>): boolean {
-  return wrapper.findAll('button').some((button) => button.attributes('aria-label') === '复制')
-}
-
-function linkTexts(wrapper: ReturnType<typeof mount>): string {
-  return wrapper.findAll('a').map((link) => link.text()).join(' ')
-}
-
-function links(wrapper: ReturnType<typeof mount>): string[] {
-  return wrapper.findAll('a').map((link) => link.attributes('href') ?? '')
-}
-
-function buttonByText(wrapper: ReturnType<typeof mount>, text: string) {
-  return wrapper.findAll('button').find((button) => button.text().includes(text))
-}
-
-afterEach(() => {
-  document.body.innerHTML = ''
+beforeEach(() => {
+  state.status = { access: { access: true, used_bytes: 1024, effective_quota_bytes: 4096 } }
+  state.subscription = { url: 'https://panel.test/sub/{token}', token: 'test-only-token', formats: ['v2rayn'], format_status: [{ format: 'v2rayn', available: true, reason: 'ok' }] }
+  state.subscriptionError = null
+  state.rotate.mockClear()
 })
+afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.unstubAllGlobals() })
 
-describe('MeSubscriptionView 无代理权限', () => {
-  beforeEach(() => {
-    state.status = { access: { access: false, proxy_access: 'no_binding', access_reasons: ['no_binding'] } }
+describe('成员首页', () => {
+  it('先展示状态、已用与剩余，重置入口下沉，复制不触发重置', async () => {
+    const wrapper = await view()
+    expect(wrapper.text()).toContain('我的服务')
+    expect(wrapper.text()).toContain('3.00 KiB')
+    expect(wrapper.text()).toContain('数据更新时间：暂未提供')
+    expect(wrapper.get('[data-testid="service-summary-card"]').element.compareDocumentPosition(wrapper.get('[data-testid="client-import-card"]').element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const copy = wrapper.findAll('button').find(button => button.attributes('aria-label') === '复制')!
+    await copy.trigger('click')
+    await flushPromises()
+    expect(state.rotate).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="nav-member-credentials"]').attributes('href')).toBe('/me/credentials')
   })
-
-  it('提示无代理权限，并把原因码翻成可读中文', async () => {
-    const wrapper = await mountView()
-    const text = wrapper.text()
-    expect(text).toContain('当前无代理权限')
-    expect(text).toContain('还没有绑定订阅')
-    wrapper.unmount()
+  it.each(['no_binding', 'over_quota', 'binding_expired', 'proxy_paused'])('不可用原因 %s 不提供导入链接', async code => {
+    state.status = { access: { access: false, access_reasons: [code] } }
+    const wrapper = await view()
+    expect(wrapper.findComponent({ name: 'CopyField' }).exists()).toBe(false)
+    expect(wrapper.text()).toContain('请联系')
+    expect(wrapper.text()).not.toContain(code)
+    expect(wrapper.find('[data-testid="nav-service-usage"]').exists()).toBe(true)
   })
-
-  it('不再渲染可复制的订阅链接与二维码', async () => {
-    const wrapper = await mountView()
-    // 二维码与复制入口都必须消失，避免用户拿到必然 403 的地址。
-    expect(hasQrCode(wrapper)).toBe(false)
-    expect(hasCopyButton(wrapper)).toBe(false)
-    expect(wrapper.findAll('input')).toHaveLength(0)
-    // 也不应出现"打开 / 下载"这个可点击入口
-    expect(linkTexts(wrapper)).not.toContain('打开 / 下载')
-    wrapper.unmount()
-  })
-
-  it('仍指向账户状态与用量页，便于用户自查', async () => {
-    const wrapper = await mountView()
-    expect(links(wrapper)).toContain('/me/status')
-    expect(links(wrapper)).toContain('/me/usage')
-    wrapper.unmount()
-  })
-})
-
-describe('MeSubscriptionView 有代理权限', () => {
-  beforeEach(() => {
-    state.status = { access: { access: true, proxy_access: 'active', access_reasons: [] } }
-  })
-
-  it('正常渲染订阅链接、二维码与格式选择', async () => {
-    const wrapper = await mountView()
-    expect(hasQrCode(wrapper)).toBe(true)
-    expect(hasCopyButton(wrapper)).toBe(true)
-    expect(wrapper.text()).not.toContain('当前无代理权限')
-    // 格式选择器由 Label 关联，标签文案对用户可见
-    expect(wrapper.text()).toContain('客户端格式')
-    expect(buttonByText(wrapper, '校验该格式')).toBeDefined()
-    expect(linkTexts(wrapper)).toContain('打开 / 下载')
-    wrapper.unmount()
-  })
-
-  it('点「轮换订阅链接」打开确认弹窗，弹窗里有确认操作', async () => {
-    const wrapper = await mountView()
-    const rotate = wrapper.findAll('button').find((button) => button.text() === '轮换订阅链接')
-    expect(rotate).toBeDefined()
-    await rotate!.trigger('click')
-    await nextTick()
-
-    const dialog = document.querySelector('[role="dialog"]')
-    expect(dialog).not.toBeNull()
-    expect(dialog!.textContent).toContain('轮换订阅链接')
-    expect(dialog!.textContent).toContain('轮换后旧订阅链接立即失效')
-    expect(dialog!.textContent).toContain('确认轮换')
-    wrapper.unmount()
-  })
-})
-
-describe('MeSubscriptionView 状态未知', () => {
-  it('/me/status 拿不到访问判定时不臆测为无权限', async () => {
+  it('状态未知不显示零用量、不限量或服务可用', async () => {
     state.status = {}
-    const wrapper = await mountView()
-    // 保留原有链接展示，不能把"请求失败"误报成"没有权限"。
-    expect(wrapper.text()).not.toContain('当前无代理权限')
-    expect(hasQrCode(wrapper)).toBe(true)
-    expect(hasCopyButton(wrapper)).toBe(true)
-    wrapper.unmount()
+    const wrapper = await view()
+    expect(wrapper.text()).toContain('服务状态尚未确认')
+    expect(wrapper.text()).not.toContain('0 B')
+    expect(wrapper.find('input').exists()).toBe(false)
+  })
+  it('明确的不限量保留 null，不退回成员额度', async () => {
+    state.status = { access: { access: true, effective_quota_bytes: null }, member: { effective_quota_bytes: 100 } as MeStatus['member'] }
+    const wrapper = await view()
+    expect(wrapper.get('[data-testid="service-summary-card"]').text()).toContain('不限量')
+  })
+  it('维护只降级导入区，已知额度保留', async () => {
+    state.subscriptionError = new ApiError(409, { code: 'RECOVERY_MODE', message: 'recovery' })
+    const wrapper = await view()
+    expect(wrapper.get('[data-testid="import-maintenance-message"]').text()).toContain('恢复核对')
+    expect(wrapper.get('[data-testid="service-summary-card"]').text()).toContain('3.00 KiB')
+    expect(wrapper.text()).toContain('我的入口')
+  })
+  it('不兼容格式无复制、二维码或下载', async () => {
+    state.subscription.format_status![0] = { format: 'v2rayn', available: false, reason: 'protocol_unsupported:flow' }
+    const wrapper = await view()
+    expect(wrapper.text()).toContain('无法表达')
+    expect(wrapper.find('input').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="import-download-button"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="import-check-button"]').attributes('disabled')).toBeDefined()
+  })
+  it('旧后端无格式状态时先检查，成功仅说明配置取回', async () => {
+    delete state.subscription.format_status
+    const fetcher = vi.fn(async () => new Response('vless://test-node', { status: 200 }))
+    vi.stubGlobal('fetch', fetcher)
+    const wrapper = await view()
+    expect(wrapper.find('input').exists()).toBe(false)
+    await wrapper.get('[data-testid="import-check-button"]').trigger('click')
+    await flushPromises()
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('input').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="import-result-message"]').text()).toContain('尚未验证真实连接')
+  })
+  it('检查失败不泄露响应原文或提供链接', async () => {
+    delete state.subscription.format_status
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('sensitive-debug-output', { status: 422 })))
+    const wrapper = await view()
+    await wrapper.get('[data-testid="import-check-button"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('input').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('sensitive-debug-output')
+    expect(wrapper.text()).toContain('无法表达')
   })
 })
