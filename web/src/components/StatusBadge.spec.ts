@@ -19,6 +19,34 @@ describe('StatusBadge', () => {
     expect(failed.text()).not.toBe(applied.text())
   })
 
+  it('已批准状态词区分待同步、部分完成、回滚、未确认与未接入，均不宣称目标已生效', () => {
+    const statuses = ['pending_sync', 'partial', 'rollback', 'unconfirmed', 'not_connected', 'applied_stale', 'pass', 'fail']
+    const texts = statuses.map(status => mount(StatusBadge, { props: { status } }).text())
+
+    expect(new Set(texts).size).toBe(statuses.length)
+    for (const text of texts) {
+      expect(text).not.toContain('已生效')
+      expect(text).not.toContain('已验证')
+    }
+    const text = (status: string) => texts[statuses.indexOf(status)]!
+    expect(text('pending_sync')).toContain('待同步')
+    expect(text('partial')).toContain('部分完成')
+    expect(text('rollback')).toContain('回滚')
+    expect(text('unconfirmed')).toContain('未确认')
+    expect(text('not_connected')).toContain('未接入')
+    expect(text('applied_stale')).toContain('未应用')
+    expect(text('pass')).toBe('通过')
+    expect(text('fail')).toBe('失败')
+  })
+
+  it('未来或未知状态不假正常，使用中性色调与原始码', () => {
+    const future = mount(StatusBadge, { props: { status: 'connection_verified' } })
+
+    expect(future.text()).toContain('connection_verified')
+    expect(future.text()).not.toContain('正常')
+    expect(badgeOf(future).props('variant')).toBe('secondary')
+  })
+
   it('布尔值映射为是/否，并分别使用 ok / danger 色调', () => {
     const yes = mount(StatusBadge, { props: { status: true } })
     const no = mount(StatusBadge, { props: { status: false } })

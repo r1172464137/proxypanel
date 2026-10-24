@@ -9,6 +9,7 @@ import { useResource } from '@/lib/async'
 import { useRecoveryMode, mutateRecoveryMode } from '@/lib/recoveryMode'
 import { errorText } from '@/lib/errors'
 import { formatDateTime } from '@/lib/format'
+import { readinessCheckText } from '@/lib/readiness'
 import PageHeader from '@/components/PageHeader.vue'
 import DataTable from '@/components/DataTable.vue'
 import ErrorState from '@/components/ErrorState.vue'
@@ -111,7 +112,9 @@ function revision(applied: unknown, desired: unknown) {
         <template v-else-if="readiness.data.value">
           <p role="status" data-testid="upgrade-readiness-status">{{ readiness.data.value.status === 'ready' ? '可升级（仍需备份并验证交付）' : readiness.data.value.status === 'blocked' ? '升级已阻断，先处理下列阻断项再升级' : '升级条件未知，不应继续升级' }}</p>
           <p>候选版本：{{ readiness.data.value.candidate_version || '未知' }} · 检查时间：{{ formatDateTime(readiness.data.value.checked_at) }}</p>
-          <ul data-testid="upgrade-readiness-check-list" class="space-y-3"><li v-for="(check, index) in readiness.data.value.checks" :key="`${check.id}:${index}`" class="rounded border p-3"><StatusBadge :status="check.state" /> {{ check.summary }} · {{ check.severity === 'blocker' ? '阻断项' : '警告' }} · 影响 {{ check.affected_count }} 项<details><summary class="min-h-11 cursor-pointer">技术诊断</summary><pre class="overflow-auto whitespace-pre-wrap break-all text-xs">{{ check.evidence }}</pre></details></li></ul>
+          <ul data-testid="upgrade-readiness-check-list" class="space-y-3"><li v-for="(check, index) in readiness.data.value.checks" :key="`${check.id}:${index}`" class="rounded border p-3"><StatusBadge :status="check.state" /> {{ readinessCheckText(check.id) }} · {{ check.severity === 'blocker' ? '阻断项' : '警告' }} · 影响 {{ check.affected_count }} 项<details><summary class="min-h-11 cursor-pointer">技术诊断</summary><pre class="overflow-auto whitespace-pre-wrap break-all text-xs">检查项：{{ check.id }}
+服务端摘要：{{ check.summary }}
+证据：{{ check.evidence }}</pre></details></li></ul>
           <p>迁移校验和：{{ readiness.data.value.schema.checksum_ok === true ? '已核验成功' : readiness.data.value.schema.checksum_ok === false ? '已知不一致' : '无法核验（不是成功，也不是已知不匹配）' }}</p>
           <p class="break-all">已应用迁移：{{ readiness.data.value.schema.applied_migrations.join('、') || '无' }}；待应用迁移：{{ readiness.data.value.schema.pending_migrations.join('、') || '无' }}</p>
           <ul data-testid="upgrade-blocker-list"><li v-for="code in readiness.data.value.blockers" :key="code" class="break-all">{{ blockerLabels[code] || '未知检查项，请查看诊断详情' }}（{{ code }}）</li></ul>
