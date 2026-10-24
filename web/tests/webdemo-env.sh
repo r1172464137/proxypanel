@@ -65,16 +65,10 @@ fi
 PRIVATE=$(mktemp -d /tmp/wdemo.XXXXXXXX)
 
 # ── process identity snapshot (PID + starttime + exe + cwd + argv) ──────────
-# Only *long-lived* Xray cores and PostgreSQL servers are captured, and each
-# line carries enough identity (pid, starttime, exe, argv) to prove the same
-# process survived. Two classes are deliberately excluded from the strict set:
-#   * one-shot CLI invocations (`xray api ...`, `xray version`) — they exit by
-#     design and are recorded informationally;
-#   * processes whose argv/cwd lives under a `/tmp/<owner>` private dir — those
-#     belong to another owner's ephemeral run and their owner may stop them
-#     legitimately (ownerRegistry: shared runtime lock holders only).
-# Host/preview/DB processes (`/home/compile/...`) stay in the strict set, so a
-# real pre-existing service killed by our run still fails the run.
+# Capture existing Agent/Panel/core/PG/Redis identities before our processes
+# exist. A /tmp path is not proof of another fixture owner: all such daemons
+# remain protected. The shared runtime lease serialises the observation window.
+# Only exact one-shot Xray CLI commands are excluded from daemon identities.
 snapshot_procs() {
   python3 - "$1" <<'PY'
 import os, sys
@@ -92,13 +86,12 @@ for pid in os.listdir('/proc'):
     except Exception:
         continue
     name = os.path.basename(exe)
-    if name not in ('xray', 'postgres'):
+    if name not in ('xray', 'postgres', 'redis-server', 'agent', 'proxypanel-agent', 'panel', 'proxypanel-panel'):
         continue
-    # One-shot CLI invocations (`xray api statsquery`, `xray version`) exit by
-    # design; they are not services, so they are recorded in neither set.
-    if 'statsquery' in raw or 'version' in raw:
+    argv = open(f'/proc/{pid}/cmdline', 'rb').read().split(b'\0')
+    if name == 'xray' and len(argv) > 1 and argv[1] in (b'version', b'api', b'x25519', b'uuid'):
         continue
-    scope = '/tmp/' if ('/tmp/' in raw or cwd.startswith('/tmp/')) else 'protected'
+    scope = 'protected'
     lines.append(f'{scope}|{pid}|{start}|{exe}|{cwd}|{raw}')
 open(sys.argv[1], 'w').write('\n'.join(sorted(lines)) + ('\n' if lines else ''))
 PY
@@ -238,9 +231,9 @@ fi
 
 # ── protected pre-existing processes + own leftovers ──────────────────────
 # The protected set (host/preview/15432 processes) must survive with the exact
-# same pid+starttime+exe+argv. Ephemeral `/tmp` processes of other owners are
-# reported, not treated as ours to protect (their owner may stop them legally),
-# and our own children are only those bound to this run's private dir.
+# same pid+starttime+exe+argv, including /tmp-based services. No path prefix
+# alone can confer another owner's lease. Our children are identified only by
+# this run's exact private directory.
 # Owned PostgreSQL is stopped *before* the after-snapshot, so the snapshot
 # proves both directions: protected host processes unchanged, nothing of ours left.
 stop_owned_pg || status=1

@@ -89,6 +89,9 @@ func TestWebDemoUIFixture(t *testing.T) {
 	xray := os.Getenv("WEBDEMO_XRAY_BIN")
 	webRoot := os.Getenv("WEBDEMO_WEB_ROOT")
 	out := os.Getenv("WEBDEMO_RUN_DIR")
+	if dsn == "" && xray == "" && webRoot == "" && out == "" {
+		t.Skip("owned browser fixture is opt-in: use web/tests/webdemo-env.sh")
+	}
 	if dsn == "" || xray == "" || webRoot == "" || out == "" {
 		t.Fatal("not_run: WEBDEMO_TEST_DATABASE_URL, WEBDEMO_XRAY_BIN, WEBDEMO_WEB_ROOT and WEBDEMO_RUN_DIR are required")
 	}
@@ -312,7 +315,8 @@ func demoUIWatchDB(f *demoUIFixture) {
 		if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(req.SQL)), "select") {
 			result["error"] = "only read-only SELECT is allowed"
 		} else {
-			rows, err := f.db.Query(context.Background(), req.SQL)
+			queryCtx, queryCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			rows, err := f.db.Query(queryCtx, req.SQL)
 			if err != nil {
 				result["error"] = "query failed"
 			} else {
@@ -329,9 +333,13 @@ func demoUIWatchDB(f *demoUIFixture) {
 					}
 					out = append(out, row)
 				}
+				if err := rows.Err(); err != nil {
+					result["error"] = "query iteration failed"
+				}
 				rows.Close()
 				result["rows"] = out
 			}
+			queryCancel()
 		}
 		demoUIWriteJSON(f.t, filepath.Join(dir, req.ID+".result.json"), result)
 	}
@@ -359,11 +367,12 @@ func (f *demoUIFixture) startAgent(parent context.Context, registrationCode stri
 	f.agent, f.stop = sup, stop
 	go func() {
 		err := sup.Run(ctx)
+		closeErr := sup.Close()
+		// Read diagnostics only after supervisor shutdown has joined its writers.
 		// Sanitized diagnostics only: never dump tokens or private keys.
 		demoUIWriteJSON(f.t, filepath.Join(f.out, "agent", "run.json"), map[string]any{
 			"ended": err == nil, "detail": demoUIRedact(logs.String()), "at": time.Now().UTC().Format(time.RFC3339),
 		})
-		closeErr := sup.Close()
 		select {
 		case f.agentRun <- errors.Join(err, closeErr):
 		default:

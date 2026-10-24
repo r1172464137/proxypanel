@@ -8,11 +8,11 @@
   ],
   "phases": {
     "backend": {
-      "status": "completed",
+      "status": "in_progress",
       "plan": ".ai/super-run/product-readiness/backend.md",
       "tasks": {
         "dev": {
-          "status": "completed",
+          "status": "pending",
           "agent_spec": "/home/compile/code/t-tools/agents/backend-dev.md",
           "references": [
             ".ai/design/product-readiness.md",
@@ -59,11 +59,12 @@
             ".ai/evidence/r1-final-269e4e2/frontend-data-fault/result.json",
             ".ai/evidence/deployment/dual-hosting/r1-final-269e4e2/verified-summary.json",
             ".ai/quality/product-readiness-backend-r2-source-closure.md",
-            ".ai/evidence/checksum-source-r2/verification.json"
+            ".ai/evidence/checksum-source-r2/verification.json",
+            ".ai/diagnose/webdemo-restore-startup-readiness-20261024T1200Z.md"
           ]
         },
         "test": {
-          "status": "completed",
+          "status": "pending",
           "agent_spec": "/home/compile/code/t-tools/agents/backend-test.md",
           "references": [
             ".ai/design/product-readiness.md",
@@ -86,7 +87,7 @@
           ]
         },
         "accept": {
-          "status": "completed",
+          "status": "pending",
           "agent_spec": "/home/compile/code/t-tools/agents/backend-accept.md",
           "references": [
             ".ai/design/product-readiness.md",
@@ -104,10 +105,10 @@
           ]
         }
       },
-      "validation_revision": 2
+      "validation_revision": 3
     },
     "frontend": {
-      "status": "in_progress",
+      "status": "completed",
       "plan": ".ai/super-run/product-readiness/frontend.md",
       "validation_revision": 1,
       "tasks": {
@@ -162,7 +163,7 @@
           ]
         },
         "accept": {
-          "status": "in_progress",
+          "status": "completed",
           "agent_spec": "/home/compile/code/t-tools/agents/frontend-accept.md",
           "references": [
             ".ai/design/product-readiness.md",
@@ -176,7 +177,9 @@
           ],
           "evidence": [
             ".ai/quality/frontend-accept-product-readiness-frontend-r0-20261024-074320-75294ba0.md",
-            ".ai/quality/frontend-accept-product-readiness-frontend-r0-output-correction-20261024-075829-4c1e9d7b.md"
+            ".ai/quality/frontend-accept-product-readiness-frontend-r0-output-correction-20261024-075829-4c1e9d7b.md",
+            ".ai/quality/frontend-accept-product-readiness-frontend-r1-20261024-100650-bf96c728.md",
+            ".ai/quality/frontend-accept-product-readiness-frontend-r1-20261024-100650-bf96c728-audit.json"
           ]
         }
       }

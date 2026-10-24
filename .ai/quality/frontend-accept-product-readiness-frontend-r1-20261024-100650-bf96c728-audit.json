@@ -1,0 +1,112 @@
+{
+  "agent": "frontend-accept",
+  "feature": "product-readiness",
+  "phase": "frontend",
+  "validation_revision": 1,
+  "acceptance_result": "ACCEPTED_WITH_IMPROVEMENTS",
+  "report_path": "/home/compile/Work/proxypanel/.ai/quality/frontend-accept-product-readiness-frontend-r1-20261024-100650-bf96c728.md",
+  "candidate": "7b1830d50ef48836c9b908a51885dfea702a9d9c",
+  "production_change_source": "e41fce03192f0fb764b2c6bb7a6259d4e872d9ba (consumed by main as f38aff4cf9c16da1936f631bbfa3b83922d2ec4a)",
+  "read_only": true,
+  "tools_used": ["read/sed/grep", "git show/diff/rev-parse/ls-files/check-ignore", "sha256sum", "python3 json parsing", "find/ls"],
+  "isolation": "accept worktree HEAD=7b1830d, git status clean, no web/node_modules, no dependency install, no service or port access",
+  "scope_check": {
+    "diff_706f0ba_to_HEAD_web": ["web/src/router/index.ts (+5/-1)", "web/src/router/index.spec.ts (+24)"],
+    "diff_00ed_to_HEAD_non_ai": ["scripts/webdemo-host-nginx-verify.sh (other group)", "tests/e2e/webdemo_host_nginx_test.go (other group)"],
+    "web_diff_00ed_to_HEAD": "empty",
+    "source_json_inputs_recomputed": {"files": 313, "missing": 0, "mismatch": 0},
+    "lock_and_package_unchanged_vs_R0": true,
+    "blob_equality_with_e41fce0": {
+      "web/src/router/index.ts": "fdb5f9861824c9491e12a2874ff9490b2c6c2a2555c87dc36159d8d65ca809f0",
+      "web/src/router/index.spec.ts": "ff9f15f2e97ca7cfc36523b49e7e00a1495bf1c325f57d8db18eb8cd95aef2c8"
+    }
+  },
+  "independently_parsed": {
+    "vitest": {"numTotalTests": 302, "numPassedTests": 302, "numFailedTests": 0, "numPendingTests": 0, "numTodoTests": 0, "numTotalTestSuites": 107, "testResultFiles": 48, "repo_spec_files": 48, "startTimeUtc": "2026-10-24T09:47:37Z"},
+    "router_spec": {"file": "web/src/router/index.spec.ts", "assertions": 9, "passed": 9, "new_root_role_cases": 2},
+    "typecheck_exit": 0,
+    "build_exit": 0,
+    "build_modules": 2726,
+    "dist_files_verified": {"total": 81, "match_main_web_dist": 81},
+    "audit": "reused R0 (total=0); lock/package fingerprints identical"
+  },
+  "behavior_verification": {
+    "root_redirect": "web/src/router/index.ts:8 -> sessionState.user ? homeRoute() : '/login' (no next)",
+    "guard_closes_landing_gap": "index.ts:199-212 beforeEach ensures session then rewrites /login to homeRoute(user) when user exists",
+    "login_submit": "LoginView.vue:36 safeLoginNext(route.query.next, homeRoute())",
+    "explicit_deep_link_next_preserved": "index.ts:214-216 + existing spec 'retains the actual private destination' passed",
+    "role_guard_unchanged": "index.ts:217-223; member denied admin assertions passed",
+    "not_claimed": "no real-browser root verification this round"
+  },
+  "rejected_reuse": {
+    "evidence": ".ai/evidence/web-demo/A/20261024T084629Z/{results.json,us-matrix.json,build.log}",
+    "self_reported": "14 PASS / 7 FAIL; US-PR-001 PASS with anonymousNext=null, landed=/admin/overview",
+    "why_not_reused": [
+      "error stack references deleted worktree pi-web-agent-506cb7de-...",
+      "results.json line numbers (54/94/251/255/391) do not match committed e41fce0 blob 5b706445.../current 7f352476...",
+      "build.log mtime 17:20 later than results.json 16:47",
+      "same-source dist fingerprints differ from R1 build (LoginView-BuG0mU1_ vs LoginView-meKexqaQ; index-CGArvJdj.css 70.08 vs index-D12cOk1q.css 70.07)"
+    ],
+    "verdict": "source/asset binding unprovable -> not counted as evidence; no substitute browser run performed (no violation of isolation)"
+  },
+  "gates": [
+    {"name": "G1 scope/input consistency (2 router files only; source.json 313/313 recomputed; worktree=HEAD clean)", "result": "passed", "evidence": [".ai/evidence/frontend-phase/root-route-r1/20261024T094736Z-4b66c0c1/source.json", "web/src/router/index.ts", "web/src/router/index.spec.ts"]},
+    {"name": "G2 typecheck", "result": "passed", "evidence": [".ai/evidence/frontend-phase/root-route-r1/20261024T094736Z-4b66c0c1/typecheck.log", ".ai/evidence/frontend-phase/root-route-r1/20261024T094736Z-4b66c0c1/typecheck.rawexit"]},
+    {"name": "G3 full frontend unit tests (302/302, 0 fail/skip/todo, 48 files = repo spec count)", "result": "passed", "evidence": [".ai/evidence/frontend-phase/root-route-r1/20261024T094736Z-4b66c0c1/vitest.json", ".ai/evidence/frontend-phase/root-route-r1/20261024T094736Z-4b66c0c1/vitest.log", ".ai/evidence/frontend-phase/root-route-r1/20261024T094736Z-4b66c0c1/vitest.rawexit"]},
+    {"name": "G4 production build + artifact binding (81/81 dist hashes match)", "result": "passed", "evidence": [".ai/evidence/frontend-phase/root-route-r1/20261024T094736Z-4b66c0c1/build.log", ".ai/evidence/frontend-phase/root-route-r1/20261024T094736Z-4b66c0c1/summary.json"]},
+    {"name": "G5 dependency audit (inputs unchanged, R0 evidence reused)", "result": "passed", "evidence": [".ai/evidence/frontend-phase/frozen-706f0ba/20261024T071857Z-1046d1af/audit.json", ".ai/evidence/frontend-phase/root-route-r1/20261024T094736Z-4b66c0c1/source.json"]},
+    {"name": "G6 anonymous root -> /login without next; admin/member role default; explicit deep-link next preserved", "result": "passed", "evidence": ["web/src/router/index.ts", "web/src/router/index.spec.ts", ".ai/evidence/frontend-phase/root-route-r1/20261024T094736Z-4b66c0c1/vitest.json"]},
+    {"name": "G7 permission/security boundary not weakened (admin guard, member denied, safeLoginNext off-site rejection)", "result": "passed", "evidence": ["web/src/router/index.ts", "web/src/lib/clientImport.ts", "web/src/lib/clientImport.spec.ts", ".ai/evidence/frontend-phase/root-route-r1/20261024T094736Z-4b66c0c1/vitest.json"]},
+    {"name": "G8 session/API/other frontend inputs unchanged (no new API contract check needed)", "result": "passed", "evidence": [".ai/evidence/frontend-phase/root-route-r1/20261024T094736Z-4b66c0c1/source.json", "web/src/stores/session.ts", "web/src/App.vue"]},
+    {"name": "G9 no new framework/dependency/generated drift; derivative scope contained", "result": "passed", "evidence": ["web/package.json", "web/package-lock.json", "web/.gitignore"]}
+  ],
+  "findings": [
+    {"severity": "P2", "location": "web/src/views/me/MeSubscriptionView.vue:49, web/src/views/me/MeUsageView.vue:87", "evidence": ["web/src/views/me/MeSubscriptionView.vue", "web/src/views/me/MeUsageView.vue"], "impact": "Design §4.10 asks for a data-updated time; current text is an honest placeholder, no incorrect value shown.", "suggested_fix": "Wire a real sampling/ledger timestamp when the member contract exposes it; keep the honest placeholder until then."},
+    {"severity": "P2", "location": "web/src/views/admin/BatchDetailView.vue:95-98", "evidence": ["web/src/views/admin/BatchDetailView.vue"], "impact": "Raw state codes rendered verbatim in summary badges while the rest of the page uses Chinese StatusBadge; readability/consistency only.", "suggested_fix": "Reuse StatusBadge or the existing label map; do not change count semantics."},
+    {"severity": "P2", "location": "web/src/components/ImpactPreviewDialog.vue:57", "evidence": ["web/src/components/ImpactPreviewDialog.vue"], "impact": "Editable reason is part of the scope digest, forcing one extra read-only preview after editing reason; no unsafe submit.", "suggested_fix": "If reason is not part of the server-side conclusion/digest, exclude it after confirming with the backend contract."},
+    {"severity": "P2", "location": "web/src/router/index.spec.ts:49-71", "evidence": ["web/src/router/index.spec.ts", ".ai/evidence/frontend-phase/root-route-r1/20261024T094736Z-4b66c0c1/vitest.json"], "impact": "New cases mock homeRoute and reach the post-login default via router.push('/login') guard detour instead of LoginView submit -> router.replace(safeLoginNext(...)); the real homeRoute branch and logged-in '/' redirect are not directly asserted. Assertions remain valid.", "suggested_fix": "Later add one case that does not mock homeRoute and drives the actual login submit (or asserts the real homeRoute implementation); does not change this acceptance."},
+    {"severity": "P2", "location": ".ai/evidence/web-demo/A/20261024T084629Z/", "evidence": [".ai/evidence/web-demo/A/20261024T084629Z/results.json", ".ai/evidence/web-demo/A/20261024T084629Z/build.log", ".ai/evidence/web-demo/A/20261024T084629Z/us-matrix.json"], "impact": "A's US-PR-001 PASS cannot be bound to reviewed bytes (deleted worktree in stack, line numbers mismatch committed blob, build.log mtime after results, same-source dist fingerprints differ), so citing it as root-route evidence would be a false green.", "suggested_fix": "Annotate that run as non-reusable or attach source/asset SHA plus run ordering; root behavior must come from the new A2 run."}
+  ],
+  "pending_verification": [
+    {"scenario": "real browser: anonymous / -> login -> admin lands 工作台, member lands 我的服务, explicit deep link keeps next (A old run not bindable; not claimed)", "owner": "web-demo", "location": ".ai/super-run/product-readiness/web-demo.md (A2 01a16d44-806d-75a9-8640-ad74f45f3d91); frontend.md §4.1/§8.3 US-PR-001"},
+    {"scenario": "already-authenticated first frame at / (session not yet bootstrapped) and reload keeps role landing", "owner": "web-demo", "location": "frontend.md §4.1; web/src/router/index.ts:199-212"},
+    {"scenario": "18 full user stories end-to-end (whole-file final) incl. UI -> real Agent -> official client -> ledger", "owner": "web-demo", "location": ".ai/design/product-readiness.md §6; .ai/design/product-readiness/frontend.md §8.3/§8.4"},
+    {"scenario": "dual Agent, offline/UDP, legacy Agent/SQLite, core cross-version, real backup/restore, upgrade rollback", "owner": "web-demo", "location": ".ai/design/product-readiness/backend.md §6.10/§9.9/§10"},
+    {"scenario": "both hosting modes (panel-served and host nginx static) login/refresh, HTTPS/TLS/DNS/CA", "owner": "web-demo / deployment", "location": "frontend.md §4.1/§8.4; DEC007"},
+    {"scenario": "screen-reader audit, screenshot visual regression, all supported platforms/clients and Vision", "owner": "web-demo", "location": ".ai/evidence/frontend-phase/frozen-706f0ba/20261024T071857Z-1046d1af/probe/2026-10-24T07-20-06-410Z/report.json (.notRun)"},
+    {"scenario": "203 independent 8445 preview and user-visible check", "owner": "main session (after ACCEPTED, DEC015/DEC016)", "location": ".ai/super-run/product-readiness/frontend.md"}
+  ],
+  "reuse_basis": {
+    "frontend_300_and_17_probe": "reused only for unchanged inputs/behaviors; 302 = 300 + 2 and git diff shows no other frontend source change; not claimed as new root-route run",
+    "dependency_audit": "R0 audit.json vulnerabilities total=0; package.json/package-lock.json fingerprints identical",
+    "not_rerun": ["542 backend suite", "physical core/Agent/PG service runs", "npm install / npm audit", "17-scenario browser probe", "any real-browser root verification"],
+    "reason": "verification-evidence-contract reuse conditions satisfied for unchanged inputs; root-route browser behavior has no bindable evidence and is handed to web-demo instead of being assumed"
+  },
+  "change_scope": {
+    "backend": false,
+    "frontend": false,
+    "extension": false,
+    "miniapp": false,
+    "flutter": false,
+    "shopify": false,
+    "web_demo": false,
+    "extension_demo": false,
+    "flutter_demo": false
+  },
+  "derivatives": {
+    "written": [
+      ".ai/quality/frontend-accept-product-readiness-frontend-r1-20261024-100650-bf96c728.md",
+      ".ai/quality/frontend-accept-product-readiness-frontend-r1-20261024-100650-bf96c728-audit.json"
+    ],
+    "source_or_state_modified": false,
+    "state_json_touched": false,
+    "services_started": false,
+    "ports_accessed": false,
+    "cleanup_required": false
+  },
+  "release_decision": {
+    "frontend_phase_revision_1": "可以放行（ACCEPTED_WITH_IMPROVEMENTS）",
+    "feature_complete": false,
+    "downstream": "web-demo carries real-browser root-route verification and the remaining story chain; this acceptance does not deploy, does not implement fixes, does not alter state"
+  }
+}
