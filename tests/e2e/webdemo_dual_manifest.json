@@ -1,0 +1,56 @@
+{
+  "id": "webdemo-dual-agent-offline-udp-v1",
+  "owner": "web-demo task B (dual Agent / offline / UDP / partial / crash-rollback)",
+  "runner": "uv run tests/e2e/run_webdemo_dual.py",
+  "selection": "^TestWebDemoDualAgent$",
+  "protocols": ["VLESS/TCP", "VLESS/UDP (SOCKS5 UDP ASSOCIATE through official client core)"],
+  "isolation": {
+    "postgres": "new own private initdb cluster, database prefix wdd_owned_, random schema created by the test",
+    "ports": "127.0.0.1 dynamic only (node inbounds, socks inbounds, owned TCP/UDP echo)",
+    "agents": "two real supervisor instances with separate owned state dirs (0700)",
+    "cores": "two real official Xray server cores + one official client core per exported credential",
+    "never_touched": ["203:8445 preview", "8443 legacy stack", "agent-lab", "shared 15432 PG", "TestDockerAcceptance fixtures"],
+    "runtime_lock": "/home/compile/Work/.locks/proxypanel-webdemo-local-runtime.lock (before identity snapshot, released after own cleanup)"
+  },
+  "stories": {
+    "US-PR-011": [
+      "one Agent stopped: reachable Agent revokes existing TCP stream and new connections within 60s",
+      "dispatched expiry enforced <60s after expires_at without a new revision",
+      "recovered offline Agent reaches the tightened revision and refuses the withdrawn credential",
+      "restoration issues a new token; old credential still refused on both nodes"
+    ],
+    "US-PR-012": [
+      "two real targets -> two batch items with distinct agent/task id, attempt and revision",
+      "panel SweepTimeouts turns the offline item into an explicit timeout with reason while the reachable item stays succeeded",
+      "a real core verdict (fallbacks not-an-array) is rejected on one node without disturbing the other node",
+      "replayed old ACK is recorded as a stale receipt only; retried task keeps revision/attempts and converges later",
+      "a receipt for a never issued revision is rejected (REVISION_STALE)"
+    ],
+    "US-PR-014": [
+      "real core SIGKILL via pidfd: after recovery the legal revision is converged and the withdrawn credential stays refused",
+      "technical rollback to last-known-good never revives a withdrawn credential"
+    ],
+    "US-PR-017": [
+      "member session reading /api/v1/admin/batches/{id} -> 403",
+      "Agent state dir mode 0700",
+      "evidence writing refuses to persist password/token/credential material"
+    ]
+  },
+  "evidence": {
+    "receipt.json": "status, lock, isolation identity snapshots (cores/postgres/listeners before+after), source/binary/fixture sha256",
+    "test.log": "full -test.v output with per-object batch/task facts",
+    "dual-state.json": "panel-persisted state + process facts consumable by the UI chain owner"
+  },
+  "exclusions": [
+    "HTTPS public deployment",
+    "remote Docker/agent-lab stacks",
+    "54-client matrix",
+    "synthetic usage writes or SQL-fabricated target results"
+  ],
+  "docker_equivalent_assertions": {
+    "TestDockerBatchPartialFailure": "batch with one Agent down -> reachable node revokes, per-object succeeded/pending->timeout, real retry of the same task ID, recovered node still refuses retired credential",
+    "TestDockerConfigSafety": "document rejected by the real core on one node, second node of the same Agent keeps serving, technical rollback does not restore a revoked credential",
+    "TestDockerAcceptance(new+old denial)": "new and existing connections denied inside the shared 60s budget, subscription export 403",
+    "not_mapped": ["TestDockerBatchPartialFailure docker mounts/ssh controls", "TestDockerACKLossAcceptance usage-ledger duplicate ACK (covered by run_data_plane.py)"]
+  }
+}
