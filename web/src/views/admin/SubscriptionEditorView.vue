@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { adminApi } from '@/api/endpoints'
+import { allPages } from '@/lib/allPages'
 import type { BatchOperation, NodeGroupRecord, SubscriptionRecord, TemplateRecord } from '@/api/types'
 import { buildSubscriptionWrite, draftFromSubscription, emptySubscriptionDraft, type SubscriptionDraft } from '@/lib/subscriptionDraft'
 import { errorText, isPreviewRequired } from '@/lib/errors'
@@ -48,8 +49,8 @@ async function load(): Promise<void> {
   loadError.value = null
   try {
     const [groupPage, templatePage] = await Promise.all([
-      adminApi.nodeGroups.list({ limit: 200 }),
-      adminApi.templates.list({ limit: 200 }),
+      allPages(cursor => adminApi.nodeGroups.list({ limit: 200, cursor })).then(items => ({ items })),
+      allPages(cursor => adminApi.templates.list({ limit: 200, cursor })).then(items => ({ items })),
     ])
     groups.value = groupPage.items
     templates.value = templatePage.items
@@ -117,7 +118,7 @@ async function save(): Promise<void> {
 <template>
   <div class="space-y-6">
     <PageHeader
-      :title="isEdit ? '编辑订阅' : '新建订阅'"
+      :title="isEdit ? '编辑服务方案' : '新建服务方案'"
       description="配额、周期与访问开关分别生效：配额立即影响当前周期；anchor_day / timezone 仅对下一周期生效，当前周期与已用量保留。"
     >
       <Button as-child variant="outline">
@@ -125,7 +126,7 @@ async function save(): Promise<void> {
       </Button>
       <Button :disabled="saving" @click="save">
         <Loader2 v-if="saving" class="animate-spin" aria-hidden="true" />
-        {{ saving ? '保存中…' : '保存订阅' }}
+        {{ saving ? '保存中…' : '保存服务方案' }}
       </Button>
     </PageHeader>
 
@@ -283,7 +284,7 @@ async function save(): Promise<void> {
               <Label for="sub-access-enabled" class="font-normal leading-snug">允许现有成员访问</Label>
             </div>
             <p class="text-xs text-muted-foreground">
-              关掉后，绑定了这个订阅的人立刻失去代理权限，正在用的连接会断开。
+              关闭后将暂停此方案的访问权限。节点异步同步；同一节点上的连接可能短暂中断，请到任务页核对实际结果。
             </p>
           </div>
           <div class="space-y-1.5">

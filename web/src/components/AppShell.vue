@@ -34,34 +34,37 @@ const menuButton = ref<HTMLButtonElement | null>(null)
 
 // 账户自身的 5 个视图：成员侧栏与管理员侧栏共用，避免两处各写一份后漂移。
 const myAccountLinks: NavSection['links'] = [
-  { label: '我的订阅', to: '/me/subscription', icon: 'subscription' },
+  { label: '我的服务', to: '/me/subscription', icon: 'subscription' },
   { label: '我的用量', to: '/me/usage', icon: 'usage' },
-  { label: '凭据', to: '/me/credentials', icon: 'key' },
+  { label: '连接信息', to: '/me/credentials', icon: 'key' },
   { label: '账户状态', to: '/me/status', icon: 'status' },
   { label: '账号安全', to: '/me/security', icon: 'shield' },
 ]
 
 const adminNav: NavSection[] = [
-  { title: '概览', links: [{ label: '总览', to: '/admin/overview', icon: 'overview' }] },
+  { title: '工作台', links: [{ label: '服务交付', to: '/admin/overview', icon: 'overview' }] },
   {
     title: '资源',
     links: [
       { label: '服务器', to: '/admin/servers', icon: 'server' },
       { label: '节点', to: '/admin/nodes', icon: 'node' },
       { label: '节点组', to: '/admin/node-groups', icon: 'groups' },
-      { label: '订阅', to: '/admin/subscriptions', icon: 'subscription' },
+
     ],
   },
   {
-    title: '成员',
+    title: '成员与服务',
     links: [
+      { label: '服务方案', to: '/admin/subscriptions', icon: 'subscription' },
+      { label: '变更记录', to: '/admin/batches', icon: 'tasks' },
       { label: '成员', to: '/admin/members', icon: 'members' },
       { label: '邀请', to: '/admin/invitations', icon: 'invite' },
     ],
   },
   {
-    title: '运行',
+    title: '运行监控',
     links: [
+      { label: '运行与恢复核对', to: '/admin/runtime', icon: 'status' },
       { label: '用量', to: '/admin/usage', icon: 'usage' },
       { label: '事件与告警', to: '/admin/events', icon: 'events' },
       { label: '任务与同步', to: '/admin/tasks', icon: 'tasks' },

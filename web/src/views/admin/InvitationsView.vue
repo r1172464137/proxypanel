@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { Loader2 } from 'lucide-vue-next'
 import { adminApi } from '@/api/endpoints'
+import { allPages } from '@/lib/allPages'
 import type { InvitationCreated, InvitationRecord, SubscriptionRecord } from '@/api/types'
 import { usePagedList } from '@/lib/paged'
 import { errorText } from '@/lib/errors'
@@ -19,6 +20,7 @@ import { Label } from '@/components/ui/label'
 
 const list = usePagedList<InvitationRecord>((cursor) => adminApi.invitations.list({ limit: 50, cursor }))
 const subscriptions = ref<SubscriptionRecord[]>([])
+const referenceError = ref('')
 
 const createOpen = ref(false)
 const form = reactive({ subscription_id: '', expires_at_local: '' })
@@ -34,10 +36,10 @@ onMounted(async () => {
   void list.refresh()
   try {
     // 只列可绑定的订阅：已归档的订阅不能再作为新邀请的预绑定目标。
-    subscriptions.value = (await adminApi.subscriptions.list({ limit: 200 })).items
+    subscriptions.value = (await allPages(cursor => adminApi.subscriptions.list({ limit: 200, cursor })))
       .filter((item) => !item.archived)
-  } catch {
-    subscriptions.value = []
+  } catch (caught) {
+    referenceError.value = errorText(caught)
   }
 })
 
@@ -50,6 +52,7 @@ function openCreate(): void {
 }
 
 async function create(): Promise<void> {
+  if (referenceError.value) { createError.value = '请先恢复服务方案列表读取，再创建邀请'; return }
   creating.value = true
   createError.value = ''
   try {
@@ -116,7 +119,7 @@ const columns = [
       :list="list"
       :columns="columns"
       empty-title="还没有邀请记录"
-      empty-description="生成一次性邀请码并发给受邀者；兑换成功后成员可登录，但代理权限仍需绑定订阅。"
+      empty-description="生成一次性邀请码并发给受邀者；包含服务方案的邀请会在加入时开通服务；仅建账号的邀请加入后待管理员开通。"
       loading-label="正在读取邀请"
       :count-label="`本页 ${list.items.value.length} 条`"
     >
@@ -152,9 +155,10 @@ const columns = [
     <AppModal :open="createOpen" title="生成邀请码" size="sm" @close="createOpen = false">
       <div class="space-y-4">
         <div class="space-y-1.5">
-          <Label for="invite-sub">预绑定订阅（可选）</Label>
+          <p v-if="referenceError" role="alert">无法读取服务方案：{{ referenceError }}。请刷新后再创建邀请。</p>
+          <Label for="invite-sub">加入时分配的服务方案</Label>
           <select id="invite-sub" v-model="form.subscription_id" :class="selectClass">
-            <option value="">不预绑定</option>
+            <option value="">仅建账号，加入后待开通</option>
             <option v-for="sub in subscriptions" :key="sub.id" :value="sub.id">{{ sub.name }}</option>
           </select>
         </div>

@@ -33,7 +33,8 @@ async function confirmDelete(): Promise<void> {
   deleting.value = true
   deleteError.value = ''
   try {
-    await adminApi.subscriptions.remove(target.id, target.version)
+    const result = await adminApi.subscriptions.remove(target.id, target.version)
+    pushToast('success', result.retired ? '方案已退役，历史保留' : '方案已删除')
     deleteTarget.value = null
     await list.refresh()
   } catch (caught) {
@@ -170,7 +171,7 @@ const columns = [
 
 <template>
   <div class="space-y-6">
-    <PageHeader title="订阅" description="授权规则集合：节点组、每人配额、月周期与时区、默认有效期、访问开关。影响已有成员的修改需预览确认。">
+    <PageHeader title="服务方案" description="授权规则集合：节点组、每人配额、月周期与时区、默认有效期、访问开关。影响已有成员的修改需预览确认。">
       <Button as-child>
         <router-link to="/admin/subscriptions/new">新建订阅</router-link>
       </Button>
@@ -253,16 +254,16 @@ const columns = [
 
     <ConfirmDialog
       :open="deleteTarget !== null"
-      title="删除订阅"
-      confirm-label="删除"
+      title="退役服务方案"
+      confirm-label="退役方案"
       danger
       :pending="deleting"
       :error-text="deleteError"
       @cancel="deleteTarget = null"
       @confirm="confirmDelete"
     >
-      <p>将删除订阅 <strong>{{ deleteTarget?.name }}</strong>。</p>
-      <p class="text-sm">仍有绑定成员时服务端会拒绝；归档/删除保留历史账本，不物理抹除审计。</p>
+      <p>将退役服务方案 <strong>{{ deleteTarget?.name }}</strong>。</p>
+      <p class="text-sm">仍有绑定成员时不能退役，请先迁移或解除绑定。有绑定历史时归档保留；没有历史时永久删除。历史账本和审计保留。</p>
     </ConfirmDialog>
 
     <!-- 批量：确认对象清单 → 逐条执行 → 汇总结果 -->

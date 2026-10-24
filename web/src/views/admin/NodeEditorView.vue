@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { adminApi } from '@/api/endpoints'
+import { allPages } from '@/lib/allPages'
 import type { NodeRecord, ServerRecord } from '@/api/types'
 import { NODE_PROTOCOL_LABELS } from '@/api/types'
 import {
@@ -49,7 +50,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { Loader2 } from 'lucide-vue-next'
 
 const route = useRoute()
-const router = useRouter()
 
 const isEdit = computed(() => route.name === 'admin-node-edit' && typeof route.params.id === 'string')
 const draft = reactive<NodeDraft>(emptyNodeDraft())
@@ -64,6 +64,8 @@ const loadError = ref<unknown>(null)
 const loading = ref(false)
 const saving = ref(false)
 const saveError = ref('')
+const saved = ref(false)
+const keyImpactConfirmed = ref(false)
 const jsonErrors = reactive({ stream: '', protocol: '', client: '' })
 const keepServerKey = ref(true)
 const tab = ref<'structured' | 'advanced'>('structured')
@@ -317,7 +319,7 @@ async function load(): Promise<void> {
   loadError.value = null
   serversError.value = null
   try {
-    servers.value = (await adminApi.servers.list({ limit: 200 })).items
+    servers.value = await allPages(cursor => adminApi.servers.list({ limit: 200, cursor }))
     if (!isEdit.value && servers.value.length === 1 && !draft.server_id) draft.server_id = servers.value[0]!.id
   } catch (caught) {
     serversError.value = caught
@@ -352,6 +354,11 @@ async function save(): Promise<void> {
     return
   }
   syncDraft()
+  const keyChanged = node.value && (JSON.stringify(draft.stream_settings.realitySettings) !== JSON.stringify(node.value.stream_settings.realitySettings) || (!keepServerKey.value && !!draft.server_key))
+  if (keyChanged && !keyImpactConfirmed.value) {
+    saveError.value = '请先确认安全配置变更影响：旧客户端可能需要重新导入；共享此节点的连接可能短暂中断。'
+    return
+  }
   const result = buildNodeWrite(draft, { omitServerKey: isEdit.value && keepServerKey.value })
   if (!result.payload || extraErrorItems.value.length) {
     saveError.value = [...result.errors, ...extraErrorItems.value.map((item) => item.message)].join('；')
@@ -365,7 +372,8 @@ async function save(): Promise<void> {
       await adminApi.nodes.create(result.payload)
     }
     pushToast('success', '节点已保存', '节点技术配置变更默认重启该独立核心实例，连接会短暂中断；是否生效以任务回执为准。')
-    await router.push('/admin/nodes')
+    saved.value = true
+    if (isEdit.value) await load()
   } catch (caught) {
     saveError.value = errorText(caught)
     // 后端会指出具体是哪个字段（details.field_errors），映射到对应输入框下方；
@@ -411,12 +419,14 @@ const cipherValue = computed({
       <Button as-child variant="outline">
         <router-link to="/admin/nodes">返回列表</router-link>
       </Button>
-      <Button :disabled="saving" @click="save">
+      <Button :disabled="saving || (saved && !isEdit)" @click="save">
         <Loader2 v-if="saving" class="animate-spin" aria-hidden="true" />
         {{ saving ? '保存中…' : '保存节点' }}
       </Button>
     </PageHeader>
 
+    <p v-if="saved" role="status" class="rounded border p-4">已保存，正在同步；真实连接尚未验证。<router-link class="underline" to="/admin/tasks">查看任务与异常</router-link> · <router-link class="underline" to="/admin/node-groups">下一步：组织节点组</router-link></p>
+    <label v-if="isEdit" class="flex items-center gap-2 text-sm"><input v-model="keyImpactConfirmed" type="checkbox" />如更换密钥或安全配置，我已了解客户端须更新、共享节点连接可能中断的影响。</label>
     <LoadingBlock v-if="loading" label="正在读取节点" />
     <ErrorState v-else-if="loadError" :error="loadError" @retry="load" />
     <div v-else class="space-y-4">

@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { adminApi } from '@/api/endpoints'
 import type { BatchDetail, BatchResultItem } from '@/api/types'
-import { useResource } from '@/lib/async'
+import { useResource, usePolling } from '@/lib/async'
 import { formatDateTime, prettyJson, utcLabel } from '@/lib/format'
 import PageHeader from '@/components/PageHeader.vue'
 import ErrorState from '@/components/ErrorState.vue'
@@ -26,21 +26,23 @@ const route = useRoute()
 const batchId = computed(() => String(route.params.id))
 const batch = useResource<BatchDetail>(() => adminApi.batches.get(batchId.value))
 
-onMounted(() => void batch.reload())
+const poll = usePolling(async () => { if (!batch.loading.value) await batch.reload() }, 5000)
+onMounted(() => { void batch.reload(); poll.start() })
+onUnmounted(poll.stop)
 
 const results = computed<BatchResultItem[]>(() => (Array.isArray(batch.data.value?.results) ? batch.data.value!.results : []))
 
 const summary = computed(() => {
   const counts = new Map<string, number>()
   for (const item of results.value) {
-    const status = String(item.status ?? 'unknown')
+    const status = String(item.state ?? item.status ?? 'unknown')
     counts.set(status, (counts.get(status) ?? 0) + 1)
   }
   return [...counts.entries()]
 })
 
 const achieved = computed(() => {
-  const succeeded = results.value.filter((item) => item.status === 'succeeded').length
+  const succeeded = results.value.filter((item) => (item.state ?? item.status) === 'succeeded').length
   return `${succeeded}/${results.value.length}`
 })
 
@@ -122,7 +124,7 @@ function errorTextOf(item: BatchResultItem): string {
                 <TableCell class="font-mono">{{ item.member_id ?? '—' }}</TableCell>
                 <TableCell class="font-mono">{{ item.node_id ?? '—' }}</TableCell>
                 <TableCell class="font-mono">{{ item.agent_id ?? '—' }}</TableCell>
-                <TableCell><StatusBadge :status="item.status ?? 'unknown'" /></TableCell>
+                <TableCell><StatusBadge :status="item.state ?? item.status ?? 'unknown'" /></TableCell>
                 <TableCell><span class="break-all text-sm">{{ errorTextOf(item) }}</span></TableCell>
                 <TableCell class="hidden md:table-cell">
                   <span :title="utcLabel(item.applied_at as string)">{{ formatDateTime(item.applied_at as string) }}</span>

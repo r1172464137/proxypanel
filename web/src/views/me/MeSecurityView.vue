@@ -2,7 +2,8 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Loader2 } from 'lucide-vue-next'
-import { meApi } from '@/api/endpoints'
+import { authApi, meApi } from '@/api/endpoints'
+import { ApiError } from '@/api/http'
 import type { SessionRecord } from '@/api/types'
 import { useResource } from '@/lib/async'
 import { errorText } from '@/lib/errors'
@@ -29,6 +30,7 @@ const form = reactive({ current: '', next: '', confirm: '' })
 const saving = ref(false)
 const formError = ref('')
 const localError = ref('')
+const passwordResult = ref('')
 
 const revokeTarget = ref<SessionRecord | null>(null)
 const revoking = ref(false)
@@ -51,14 +53,25 @@ async function changePassword(): Promise<void> {
   }
   saving.value = true
   try {
-    await meApi.changePassword(form.current, form.next)
+    const result = await meApi.changePassword(form.current, form.next)
+    passwordResult.value = `密码已更新，已退出其他 ${result.sessions_revoked} 个会话。当前会话保持登录。`
     form.current = ''
     form.next = ''
     form.confirm = ''
-    pushToast('success', '密码已更新', '如服务端撤销了其它会话，列表会相应减少；当前会话可能仍需重新登录。')
+    pushToast('success', '密码已更新', passwordResult.value)
     await sessions.reload()
   } catch (caught) {
-    formError.value = errorText(caught)
+    if (caught instanceof ApiError && caught.status === 401) {
+      try {
+        await authApi.session()
+        formError.value = '当前密码不正确，请重新输入。现有会话未被退出。'
+      } catch (sessionError) {
+        if (sessionError instanceof ApiError && sessionError.status === 401) {
+          clearSession()
+          await router.push({ name: 'login' })
+        } else formError.value = '无法核对当前登录状态，请稍后重试。'
+      }
+    } else formError.value = errorText(caught)
   } finally {
     saving.value = false
   }
@@ -102,6 +115,7 @@ const sessionCount = computed(() => sessions.data.value?.length ?? 0)
         </CardHeader>
         <CardContent class="pt-6">
           <form class="flex max-w-lg flex-col gap-4" @submit.prevent="changePassword">
+            <p v-if="passwordResult" role="status">{{ passwordResult }}</p>
             <Alert
               v-if="localError"
               class="border-amber-300/70 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-200"
@@ -133,7 +147,7 @@ const sessionCount = computed(() => sessions.data.value?.length ?? 0)
                 required
                 minlength="10"
               />
-              <p class="text-xs text-muted-foreground">至少 10 位；服务端可能撤销其它会话</p>
+              <p class="text-xs text-muted-foreground">至少 10 位；更新成功后退出其他设备，当前会话保持登录</p>
             </div>
 
             <div class="grid gap-2">
@@ -202,7 +216,7 @@ const sessionCount = computed(() => sessions.data.value?.length ?? 0)
                   <span class="block break-all text-xs text-muted-foreground">{{ session.user_agent ?? '' }}</span>
                 </TableCell>
                 <TableCell>
-                  <Button variant="destructive" size="sm" @click="revokeTarget = session">撤销</Button>
+                  <Button variant="destructive" size="sm" :disabled="isCurrent(session)" @click="revokeTarget = session">{{ isCurrent(session) ? '当前会话' : '退出此设备' }}</Button>
                 </TableCell>
               </TableRow>
             </TableBody>

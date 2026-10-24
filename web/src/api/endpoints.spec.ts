@@ -29,14 +29,12 @@ afterEach(() => {
 describe('端点封装', () => {
   it('me/usage 归一化服务端 {usage, adjustments} 信封', async () => {
     stubFetch({
-      items: [
-        {
+      items: {
           usage: [
             { member_id: 'm1', node_id: 'n1', period_start: '2026-10-01T00:00:00Z', period_end: '2026-11-01T00:00:00Z', up_bytes: 10, down_bytes: 20, estimated: true },
           ],
           adjustments: [{ id: 'adj1', bytes: 100, reason: '补量' }],
-        },
-      ],
+      },
       next_cursor: null,
     })
     const result = await meApi.usage()

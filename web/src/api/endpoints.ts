@@ -3,6 +3,7 @@
  * 所有列表返回 PageResult（items + next_cursor）。
  */
 import { api } from './http'
+import { loadMeUsage } from '@/lib/meUsage'
 import type {
   AgentRecord,
   AuditRecord,
@@ -19,8 +20,6 @@ import type {
   LoginResponse,
   MeNode,
   MeStatus,
-  MeUsageResult,
-  QuotaAdjustmentRecord,
   MeSubscription,
   MemberRecord,
   MemberWrite,
@@ -68,6 +67,9 @@ function pageQuery(query?: PageQuery): Record<string, string | number> {
   const out: Record<string, string | number> = {}
   if (query?.limit) out.limit = query.limit
   if (query?.cursor) out.cursor = query.cursor
+  for (const [key, value] of Object.entries(query ?? {})) {
+    if (!['limit', 'cursor'].includes(key) && value !== undefined && value !== '') out[key] = String(value)
+  }
   return out
 }
 
@@ -91,17 +93,15 @@ export function memberRecordFromDetail(payload: unknown): MemberRecord {
   const access = asObject(envelope.access)
   const record: JsonObject = { ...member }
   if (access) {
-    record.used_bytes = typeof access.used_bytes === 'number' ? access.used_bytes : 0
-    record.effective_quota_bytes = typeof access.effective_quota_bytes === 'number' ? access.effective_quota_bytes : null
+    record.used_bytes = typeof access.used_bytes === 'number' ? access.used_bytes : undefined
+    record.effective_quota_bytes = access.effective_quota_bytes
     record.access_reasons = Array.isArray(access.access_reasons) ? access.access_reasons : []
     record.allowed_node_ids = Array.isArray(access.allowed_node_ids) ? access.allowed_node_ids : []
     // proxy_access 缺失时退回账户自身的代理开关（与列表页的兜底一致）。
     record.proxy_access =
       typeof access.proxy_access === 'string' && access.proxy_access
         ? access.proxy_access
-        : member.proxy_enabled === true
-          ? 'enabled'
-          : 'paused_by_admin'
+        : 'unknown'
     // 与 decorateMember 相同：over_quota 只由判定结果 over_quota 得出。
     record.over_quota = access.proxy_access === 'over_quota'
     if (typeof access.quota_source === 'string') record.quota_source = access.quota_source
@@ -155,7 +155,7 @@ export const adminApi = {
   },
 
   nodes: {
-    list: (query?: PageQuery) => api.page<NodeRecord>(`${ADMIN}/nodes`, { query: pageQuery(query) }),
+    list: (query?: PageQuery & { q?: string; server_id?: string }) => api.page<NodeRecord>(`${ADMIN}/nodes`, { query: pageQuery(query) }),
     get: (id: string) => api.get<NodeRecord>(`${ADMIN}/nodes/${encodeURIComponent(id)}`),
     create: (body: NodeWrite) => api.post<NodeRecord>(`${ADMIN}/nodes`, body),
     update: (id: string, body: NodeWrite & { version: number }) =>
@@ -187,7 +187,7 @@ export const adminApi = {
   },
 
   members: {
-    list: (query?: PageQuery) => api.page<MemberRecord>(`${ADMIN}/members`, { query: pageQuery(query) }),
+    list: (query?: PageQuery & { q?: string; subscription_id?: string; include_archived?: boolean }) => api.page<MemberRecord>(`${ADMIN}/members`, { query: pageQuery(query) }),
     // 详情端点返回 {member, access}，按服务端派生规则解包成扁平的 MemberRecord。
     get: async (id: string) => memberRecordFromDetail(await api.get<unknown>(`${ADMIN}/members/${encodeURIComponent(id)}`)),
     create: (body: MemberWrite) => api.post<MemberRecord>(`${ADMIN}/members`, body),
@@ -215,8 +215,9 @@ export const adminApi = {
       operation: BatchOperation
       member_ids: string[]
       values: Record<string, unknown>
+      reason?: string
     }) => api.post<BatchPreview>(`${ADMIN}/batches/preview`, body),
-    submit: (body: { preview_id: string; confirm: true }, idempotencyKey: string) =>
+    submit: (body: { preview_id: string; rules_version?: unknown; member_set_digest?: unknown; confirm: true }, idempotencyKey: string) =>
       api.post<BatchSubmitResult>(`${ADMIN}/batches`, body, { idempotencyKey }),
     get: (id: string) => api.get<BatchDetail>(`${ADMIN}/batches/${encodeURIComponent(id)}`),
   },
@@ -277,27 +278,16 @@ export const adminApi = {
 export const meApi = {
   status: () => api.get<MeStatus>(`${ME}/status`),
   nodes: () => api.page<MeNode>(`${ME}/nodes`),
-  usage: async (): Promise<MeUsageResult> => {
-    const payload = await api.get<UsagePage>(`${ME}/usage`)
-    const rawItems = Array.isArray(payload.items) ? payload.items : []
-    const first = rawItems[0] as Record<string, unknown> | undefined
-    const nested = first && Array.isArray(first.usage) ? (first.usage as UsageItem[]) : null
-    const adjustments = first && Array.isArray(first.adjustments) ? (first.adjustments as QuotaAdjustmentRecord[]) : []
-    return {
-      items: nested ?? rawItems,
-      adjustments,
-      next_cursor: typeof payload.next_cursor === 'string' ? payload.next_cursor : null,
-    }
-  },
+  usage: loadMeUsage,
   subscription: () => api.get<MeSubscription>(`${ME}/subscription`),
   rotateSubscriptionToken: () => api.post<TokenRotationResult>(`${ME}/subscription/token/rotations`, {}),
   rotateCredentials: (body: CredentialRotationInput) =>
     api.post<Record<string, unknown>>(`${ME}/credentials/rotations`, body),
   changePassword: (currentPassword: string, newPassword: string) =>
-    api.post<Record<string, unknown>>(`${ME}/password`, {
+    api.post<{ updated: boolean; sessions_revoked: number }>(`${ME}/password`, {
       current_password: currentPassword,
       new_password: newPassword,
-    }),
+    }, { suppressAuthRedirect: true }),
   sessions: () => api.page<SessionRecord>(`${ME}/sessions`),
   revokeSession: (id: string) => api.delete<void>(`${ME}/sessions/${encodeURIComponent(id)}`),
 }

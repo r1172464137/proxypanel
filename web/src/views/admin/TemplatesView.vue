@@ -130,7 +130,7 @@ async function confirmDelete(): Promise<void> {
   try {
     await removeTemplate(target.id)
     deleteTarget.value = null
-    pushToast('success', '模板已删除', '删除会写入审计记录；引用该模板的设置需自行修正。')
+    pushToast('success', '模板已删除', '模板已删除。历史审计保留。')
     await list.refresh()
   } catch (caught) {
     deleteError.value = errorText(caught)
@@ -251,7 +251,7 @@ const columns = [
       @confirm="confirmDelete"
     >
       <p>将删除模板 <strong>{{ deleteTarget?.name }}</strong>（<span class="font-mono">{{ deleteTarget?.id }}</span>）。</p>
-      <p class="text-sm">引用该模板的订阅/设置不会被自动改写，可能输出失败；需要时请先切换到其它模板。</p>
+      <p class="text-sm">在用服务方案仍引用此模板时不能删除；请先为这些方案切换模板，再重试。</p>
     </ConfirmDialog>
   </div>
 </template>

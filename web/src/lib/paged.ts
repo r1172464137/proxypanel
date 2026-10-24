@@ -1,8 +1,7 @@
-/** 游标分页列表（limit + next_cursor，不猜 offset）。 */
+/** Cursor pagination: latest query wins; failure never leaves a stale selection source. */
 import { ref, shallowRef, type Ref, type ShallowRef } from 'vue'
-import type { PageResult } from '@/api/http'
+import type { PageResult, ApiError } from '@/api/http'
 import { toApiError } from './errors'
-import type { ApiError } from '@/api/http'
 
 export interface PagedList<T> {
   items: ShallowRef<T[]>
@@ -14,54 +13,40 @@ export interface PagedList<T> {
   next: () => Promise<void>
   prev: () => Promise<void>
 }
-
-export function usePagedList<T>(loader: (cursor: string | null) => Promise<PageResult<T>>, limitHint?: number): PagedList<T> {
+export function usePagedList<T>(loader: (cursor: string | null) => Promise<PageResult<T>>, _limitHint?: number): PagedList<T> {
   const items = shallowRef<T[]>([])
   const error = shallowRef<ApiError | null>(null)
   const loading = ref(false)
   const nextCursor = ref<string | null>(null)
   const page = ref(1)
-  const history: (string | null)[] = [null]
-
-  async function load(cursor: string | null): Promise<void> {
+  let history: (string | null)[] = [null]
+  let request = 0
+  async function load(target: (string | null)[]): Promise<void> {
+    const current = ++request
     loading.value = true
     error.value = null
+    items.value = []
+    nextCursor.value = null
     try {
-      const result = await loader(cursor)
+      const result = await loader(target.at(-1) ?? null)
+      if (current !== request) return
       items.value = result.items
       nextCursor.value = result.next_cursor
-      if (limitHint && result.items.length > limitHint) items.value = result.items.slice(0, limitHint)
+      history = target
+      page.value = target.length
     } catch (caught) {
+      if (current !== request) return
       error.value = toApiError(caught)
-      items.value = []
-      nextCursor.value = null
     } finally {
-      loading.value = false
+      if (current === request) loading.value = false
     }
   }
-
-  async function refresh(): Promise<void> {
-    history.length = 0
-    history.push(null)
-    page.value = 1
-    await load(null)
-  }
-
+  async function refresh(): Promise<void> { await load([null]) }
   async function next(): Promise<void> {
-    if (!nextCursor.value) return
-    const cursor = nextCursor.value
-    history.push(cursor)
-    page.value += 1
-    await load(cursor)
+    if (!loading.value && nextCursor.value) await load([...history, nextCursor.value])
   }
-
   async function prev(): Promise<void> {
-    if (history.length <= 1) return
-    history.pop()
-    const cursor = history[history.length - 1] ?? null
-    page.value = Math.max(1, page.value - 1)
-    await load(cursor)
+    if (!loading.value && history.length > 1) await load(history.slice(0, -1))
   }
-
   return { items, error, loading, nextCursor, page, refresh, next, prev }
 }

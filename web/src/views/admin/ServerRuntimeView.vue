@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { adminApi } from '@/api/endpoints'
+import { allPages } from '@/lib/allPages'
 import type { AgentRecord, CoreInstanceRecord, RegistrationCode, ServerRecord } from '@/api/types'
 import { useResource } from '@/lib/async'
 import { errorText } from '@/lib/errors'
@@ -34,8 +35,8 @@ const now = ref(Date.now())
 let ticker: ReturnType<typeof setInterval> | null = null
 
 const server = useResource<ServerRecord>(() => adminApi.servers.get(serverId.value))
-const agents = useResource<AgentRecord[]>(async () => (await adminApi.agents.list({ limit: 200 })).items)
-const instances = useResource<CoreInstanceRecord[]>(async () => (await adminApi.coreInstances.list({ limit: 200 })).items)
+const agents = useResource<AgentRecord[]>(async () => allPages(cursor => adminApi.agents.list({ limit: 200, cursor })))
+const instances = useResource<CoreInstanceRecord[]>(async () => allPages(cursor => adminApi.coreInstances.list({ limit: 200, cursor })))
 
 onMounted(() => {
   void server.reload()
@@ -202,6 +203,12 @@ const instanceLayer = computed<LayerCard>(() => {
     }
   }
 
+  const rollback = list.filter((instance) => stateOf(instance) === 'rollback_applied')
+  if (rollback.length) return {
+    title: '② 进程运行', status: '回滚运行 · 目标失败',
+    summary: `${rollback.length} 个实例正在使用上一份可运行配置，目标变更未完成`,
+    details: rollback.map(instance => `${nodeNameOf(instance)}：${instance.last_error || instance.error || '请修复节点配置后核对新任务'}`), tone: 'warn',
+  }
   const running = list.filter((instance) => RUNNING_STATES.has(stateOf(instance)))
   const failed = list.filter((instance) => stateOf(instance) === 'failed')
 
@@ -244,7 +251,7 @@ const portLayer = computed<LayerCard>(() => {
   const list = scopedInstances.value
   if (!list.length) {
     return {
-      title: '③ 端口可达',
+      title: '③ 配置同步',
       status: '未确认',
       summary: '没有核心实例',
       details: ['没有实例，就没有可确认的下发记录'],
@@ -267,8 +274,8 @@ const portLayer = computed<LayerCard>(() => {
       .sort()
       .at(-1) as string
     return {
-      title: '③ 端口可达',
-      status: '已生效',
+      title: '③ 配置同步',
+      status: '已应用 · 连接未验证',
       summary: '已下发并生效',
       details: [`生效时间：${formatDateTime(latest)}`, note],
       tone: 'ok',
@@ -277,7 +284,7 @@ const portLayer = computed<LayerCard>(() => {
 
   if (!applied.length) {
     return {
-      title: '③ 端口可达',
+      title: '③ 配置同步',
       status: '未确认',
       summary: '未确认',
       details: ['还没有 applied 且记录生效时间的实例', note],
@@ -290,7 +297,7 @@ const portLayer = computed<LayerCard>(() => {
     .sort()
     .at(-1) as string
   return {
-    title: '③ 端口可达',
+    title: '③ 配置同步',
     status: '部分确认',
     summary: `${applied.length}/${list.length} 已下发并生效`,
     details: [`未确认：${nodeText}`, `最近生效时间：${formatDateTime(latest)}`, note],

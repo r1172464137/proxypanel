@@ -267,6 +267,7 @@ export interface EventRecord {
 }
 
 export interface Overview {
+  setup?: { steps: { key: string; state: string; reason?: string }[]; completed_count: number; blocking_reason?: string }
   counts: OverviewCounts
   usage_bytes: number
   agents_online: number

@@ -132,8 +132,8 @@ export function previewRequest(state: BatchState): { operation: BatchOperation; 
   return { operation: state.operation, member_ids: [...state.memberIds], values: { ...state.values } }
 }
 
-export function submitRequest(preview: BatchPreview): { preview_id: string; confirm: true } {
-  return { preview_id: preview.id, confirm: true }
+export function submitRequest(preview: BatchPreview): { preview_id: string; rules_version?: unknown; member_set_digest?: unknown; confirm: true } {
+  return { preview_id: preview.id, rules_version: preview.rules_version, member_set_digest: preview.member_set_digest, confirm: true }
 }
 
 export function newIdempotencyKey(): string {

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, shallowRef, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { Loader2 } from 'lucide-vue-next'
 import { adminApi } from '@/api/endpoints'
+import { allPages } from '@/lib/allPages'
 import type { BatchOperation, MemberRecord, NodeRecord, SubscriptionRecord, TokenRotationResult } from '@/api/types'
 import { usePagedList } from '@/lib/paged'
 import { errorText, fieldErrorsOf } from '@/lib/errors'
@@ -27,21 +29,28 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 
-const list = usePagedList<MemberRecord>((cursor) => adminApi.members.list({ limit: 50, cursor }))
+const filter = ref('')
+const query = ref('')
+const list = usePagedList<MemberRecord>((cursor) => adminApi.members.list({ limit: 50, cursor, q: query.value }))
+function search(): void {
+  query.value = filter.value.trim()
+  selected.clear()
+  void list.refresh()
+}
+watch(list.error, (error) => { if (error) selected.clear() })
 const subscriptions = ref<SubscriptionRecord[]>([])
 // 可被选作绑定目标的订阅（排除已归档）。
 const bindableSubscriptions = ref<SubscriptionRecord[]>([])
 const nodes = ref<NodeRecord[]>([])
 const referenceError = ref<unknown>(null)
-const filter = ref('')
 const selected = reactive(new Set<string>())
 
 onMounted(async () => {
   void list.refresh()
   try {
     const [subPage, nodePage] = await Promise.all([
-      adminApi.subscriptions.list({ limit: 200 }),
-      adminApi.nodes.list({ limit: 200 }),
+      allPages(cursor => adminApi.subscriptions.list({ limit: 200, cursor })).then(items => ({ items })),
+      allPages(cursor => adminApi.nodes.list({ limit: 200, cursor })).then(items => ({ items })),
     ])
     // subscriptions 保留全部（含归档），用于把成员上的 subscription_id 映射成名字；
     // 下拉里只列可绑定的（未归档），避免把已归档的订阅选成新绑定目标。
@@ -59,13 +68,7 @@ const subscriptionNames = computed(() => {
   return map
 })
 
-const visibleMembers = computed(() => {
-  const keyword = filter.value.trim().toLowerCase()
-  if (!keyword) return list.items.value
-  return list.items.value.filter(
-    (member) => member.username.toLowerCase().includes(keyword) || member.id.toLowerCase().includes(keyword),
-  )
-})
+const visibleMembers = computed(() => list.items.value)
 
 const selectedMembers = computed(() => list.items.value.filter((member) => selected.has(member.id)))
 const selectedOnOtherPages = computed(() => Math.max(0, selected.size - selectedMembers.value.length))
@@ -402,9 +405,10 @@ const columns = [
         v-model="filter"
         class="max-w-[280px]"
         placeholder="按用户名或 ID 过滤当前页"
-        aria-label="过滤成员"
+        aria-label="搜索成员"
       />
-      <span class="text-xs text-muted-foreground">过滤仅作用于当前页数据；跨页请用批量操作的显式成员集合。</span>
+      <Button variant="outline" :disabled="list.loading.value" @click="search">搜索全部成员</Button>
+      <span class="text-xs text-muted-foreground">仅对明确勾选的成员操作，不包含未选择的搜索结果。更换搜索条件会清空选择。</span>
       <div class="flex-1" />
       <div class="flex items-center gap-2">
         <Checkbox
@@ -416,19 +420,19 @@ const columns = [
         />
         <Label for="members-select-all" class="text-sm font-normal text-muted-foreground">全选本页</Label>
       </div>
-      <Button variant="outline" :disabled="!selected.size" @click="openBatch">
+      <Button variant="outline" :disabled="!selected.size || list.loading.value || !!list.error.value || filter.trim() !== query" @click="openBatch">
         批量操作（已选 {{ selected.size }}）
       </Button>
       <Button v-if="selected.size" variant="ghost" @click="selected.clear()">清空选择</Button>
     </div>
 
     <EmptyState
-      v-if="list.items.value.length && !visibleMembers.length"
-      title="当前页没有匹配的成员"
-      description="过滤只作用于当前页数据；清空过滤词即可恢复。跨页请使用批量操作的显式成员集合。"
+      v-if="query && !list.loading.value && !list.error.value && !visibleMembers.length"
+      title="没有匹配的成员"
+      description="请调整搜索条件后重新搜索；本次查询不包含未匹配成员。"
       icon="search"
     >
-      <Button variant="outline" @click="filter = ''">清空过滤</Button>
+      <Button variant="outline" @click="filter = ''; search()">清空搜索</Button>
     </EmptyState>
 
     <DataTable
@@ -507,7 +511,7 @@ const columns = [
         {{ selectedMembers.map((m) => m.username).join('、') }}{{ selectedOnOtherPages ? ` 等 ${selected.size} 名` : '' }}
       </span>
       <div class="flex-1" />
-      <Button size="sm" @click="openBatch">批量操作</Button>
+      <Button size="sm" :disabled="list.loading.value || !!list.error.value || filter.trim() !== query" @click="openBatch">批量操作</Button>
       <Button size="sm" variant="ghost" @click="selected.clear()">清空</Button>
     </div>
 

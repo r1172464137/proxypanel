@@ -3,6 +3,9 @@ import { ensureSession, homeRoute, sessionState } from '@/stores/session'
 
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: () => homeRoute() },
+  { path: '/me', redirect: '/me/subscription' },
+  { path: '/admin/setup', redirect: '/admin/overview' },
+  { path: '/admin/runtime', name: 'admin-runtime', component: () => import('@/views/admin/RuntimeView.vue'), meta: { role: 'admin', title: '运行与恢复核对' } },
   {
     path: '/login',
     name: 'login',

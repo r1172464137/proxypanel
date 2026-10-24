@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
+import SetupChecklist from '@/components/SetupChecklist.vue'
 import { Loader2 } from 'lucide-vue-next'
 import { adminApi } from '@/api/endpoints'
 import { useResource } from '@/lib/async'
@@ -27,7 +28,7 @@ const isEmpty = computed(() => {
 
 <template>
   <div class="space-y-6">
-    <PageHeader title="总览" description="一屏看关键数字。这些是面板的即时统计；节点是否真的在跑，请看「服务器」里的运行时页。">
+    <PageHeader title="工作台" description="完成服务交付，跟踪同步进度并处理异常。">
       <Button variant="outline" :disabled="overview.loading.value" @click="overview.reload()">
         <Loader2 v-if="overview.loading.value" class="animate-spin" aria-hidden="true" />
         <AppIcon v-else name="refresh" :size="15" aria-hidden="true" />
@@ -39,6 +40,7 @@ const isEmpty = computed(() => {
     <ErrorState v-else-if="overview.error.value" :error="overview.error.value" @retry="overview.reload()" />
 
     <template v-else-if="data">
+      <SetupChecklist :setup="data.setup" />
       <!-- 主要计数：4 项；用量/在线/待办作为次要 3 项，信息层级分开但仍全部保留 -->
       <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>

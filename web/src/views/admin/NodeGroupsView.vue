@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { Loader2 } from 'lucide-vue-next'
 import { adminApi } from '@/api/endpoints'
+import { allPages } from '@/lib/allPages'
 import type { BatchOperation, NodeGroupRecord, NodeRecord } from '@/api/types'
 import { usePagedList } from '@/lib/paged'
 import { errorText, isPreviewRequired } from '@/lib/errors'
@@ -48,7 +49,7 @@ const nodeNames = computed(() => {
 onMounted(async () => {
   void list.refresh()
   try {
-    nodes.value = (await adminApi.nodes.list({ limit: 200 })).items
+    nodes.value = await allPages(cursor => adminApi.nodes.list({ limit: 200, cursor }))
   } catch (caught) {
     nodesError.value = caught
   }

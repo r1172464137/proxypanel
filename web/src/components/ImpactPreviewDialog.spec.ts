@@ -24,7 +24,7 @@ const preview: BatchPreview = {
   affected_nodes: 7,
   exceptions: [{ member_id: 'm_02', reason: '已过期' }],
   warnings: ['会中断现有连接'],
-  expires_at: '2026-10-22T10:00:00Z',
+  expires_at: '2099-10-22T10:00:00Z',
 }
 
 function mountDialog() {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { allPages } from '@/lib/allPages'
 import { adminApi } from '@/api/endpoints'
 import type { NodeRecord, NodeWrite, ServerRecord } from '@/api/types'
 import { usePagedList } from '@/lib/paged'
@@ -16,7 +17,11 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 
-const list = usePagedList<NodeRecord>((cursor) => adminApi.nodes.list({ limit: 50, cursor }))
+const searchText = ref('')
+const query = ref('')
+const list = usePagedList<NodeRecord>((cursor) => adminApi.nodes.list({ limit: 50, cursor, q: query.value }))
+function search(): void { query.value = searchText.value.trim(); selected.clear(); void list.refresh() }
+watch(list.error, error => { if (error) selected.clear() })
 const servers = ref<ServerRecord[]>([])
 
 const deleteTarget = ref<NodeRecord | null>(null)
@@ -26,7 +31,7 @@ const deleteError = ref('')
 onMounted(async () => {
   void list.refresh()
   try {
-    servers.value = (await adminApi.servers.list({ limit: 200 })).items
+    servers.value = await allPages(cursor => adminApi.servers.list({ limit: 200, cursor }))
   } catch {
     servers.value = []
   }
@@ -122,7 +127,7 @@ const batch = reactive({
 const batchActionLabel = computed(() => BATCH_ACTION_LABELS[batch.action])
 
 function openBatch(): void {
-  if (!selected.size) return
+  if (!selected.size || list.loading.value || list.error.value || searchText.value.trim() !== query.value) return
   // 当前页的记录可能已被其它请求更新（例如上一次失败后列表已刷新）：
   // 打开批量时用列表里的最新 version/name 覆盖选择集，避免拿旧 version 重试必然 409。
   const current = new Map(list.items.value.map((node) => [node.id, node]))
@@ -256,6 +261,7 @@ const columns = [
       <Button v-if="selected.size" variant="ghost" @click="selected.clear()">清空选择</Button>
     </div>
 
+    <form class="flex flex-wrap gap-2" @submit.prevent="search"><label>搜索节点 <input v-model="searchText" class="rounded border p-2" aria-label="搜索节点" /></label><Button type="submit" :disabled="list.loading.value">搜索全部节点</Button></form>
     <DataTable
       :list="list"
       :columns="columns"

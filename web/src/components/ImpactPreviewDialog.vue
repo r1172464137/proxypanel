@@ -45,9 +45,21 @@ const confirmed = ref(false)
 const submitting = ref(false)
 const submitError = ref<unknown>(null)
 
+const idempotencyKey = ref('')
+const uncertain = ref(false)
+const stale = ref(false)
+const reason = ref('')
+const previewScope = ref('')
+const scope = computed(() => JSON.stringify([props.operation, [...props.memberIds].sort(), props.values]))
+const scopeChanged = computed(() => previewScope.value !== scope.value)
+
 const meta = computed(() => batchOperationMeta(props.operation))
 
 async function runPreview(): Promise<void> {
+  if (uncertain.value || submitting.value) return
+  idempotencyKey.value = newIdempotencyKey()
+  stale.value = false
+  previewScope.value = scope.value
   loading.value = true
   error.value = null
   submitError.value = null
@@ -58,6 +70,7 @@ async function runPreview(): Promise<void> {
       operation: props.operation,
       member_ids: [...props.memberIds],
       values: { ...props.values },
+      ...(reason.value ? { reason: reason.value } : {}),
     })
   } catch (caught) {
     error.value = caught
@@ -74,21 +87,29 @@ watch(
 )
 
 async function submit(): Promise<void> {
-  if (!preview.value || !confirmed.value) return
+  if (!preview.value || !confirmed.value || stale.value || scopeChanged.value) return
+  if (!uncertain.value && new Date(preview.value.expires_at).getTime() <= Date.now()) {
+    stale.value = true
+    return
+  }
   submitting.value = true
   submitError.value = null
   try {
-    const result = await adminApi.batches.submit(submitRequest(preview.value), newIdempotencyKey())
+    const result = await adminApi.batches.submit(submitRequest(preview.value), idempotencyKey.value)
+    uncertain.value = false
     pushToast(
       'success',
       '批量变更已提交',
-      '业务规则已在面板事务内提交；节点下发为异步，逐对象回执见批量结果页。',
+      '已保存，正在同步。请在变更记录中核对逐对象结果。',
     )
     emit('submitted', result.id)
     emit('close')
     await router.push(`/admin/batches/${encodeURIComponent(result.id)}`)
   } catch (caught) {
-    submitError.value = toApiError(caught)
+    const failure = toApiError(caught)
+    submitError.value = failure
+    stale.value = ['PREVIEW_STALE', 'PREVIEW_CONCLUSION_CHANGED', 'CONFLICT', 'IDEMPOTENCY_KEY_REUSED'].includes(failure.code)
+    uncertain.value = !stale.value && (failure.status === 0 || failure.status >= 500)
   } finally {
     submitting.value = false
   }
@@ -149,9 +170,12 @@ const metricRows = computed(() => {
 </script>
 
 <template>
-  <AppModal :open="open" :title="title" size="lg" @close="emit('close')">
+  <AppModal :open="open" :title="title" size="lg" @close="!submitting && !uncertain && emit('close')">
     <div class="flex flex-col gap-4">
       <p class="text-sm text-muted-foreground">{{ description || meta.description }}</p>
+      <Label>变更原因<input v-model="reason" :disabled="submitting || uncertain" class="mt-1 block w-full rounded border p-2" aria-label="变更原因" /></Label>
+      <p v-if="uncertain" role="status">结果未确认。请核对同一次提交；不要重新创建变更。关闭前请先完成核对。</p>
+      <p v-if="stale || scopeChanged" role="alert">影响或目标范围已变化，请重新预览。</p>
 
       <LoadingBlock v-if="loading" :rows="3" label="正在请求影响预览" />
       <ErrorState v-else-if="error" :error="error" retry-label="重新预览" @retry="runPreview" />
@@ -272,11 +296,11 @@ const metricRows = computed(() => {
     </div>
 
     <template #footer>
-      <Button variant="outline" :disabled="submitting" @click="emit('close')">取消</Button>
-      <Button variant="outline" :disabled="loading || submitting" @click="runPreview">重新预览</Button>
-      <Button :disabled="!preview || !confirmed || submitting" @click="submit">
+      <Button variant="outline" :disabled="submitting || uncertain" @click="emit('close')">取消</Button>
+      <Button variant="outline" :disabled="loading || submitting || uncertain" @click="runPreview">重新预览</Button>
+      <Button :disabled="!preview || !confirmed || submitting || stale || scopeChanged" @click="submit">
         <Loader2 v-if="submitting" class="animate-spin" aria-hidden="true" />
-        {{ submitting ? '提交中…' : '确认提交' }}
+        {{ submitting ? '正在核对…' : uncertain ? '核对同一次提交' : '确认提交' }}
       </Button>
     </template>
   </AppModal>
