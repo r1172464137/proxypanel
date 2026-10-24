@@ -748,6 +748,7 @@ try {
 
   // US-008 — pause reason + over-quota/expired distinction (real writes, restored).
   await record('us', 'US-PR-008', async () => {
+    await memberPage.open('/me/subscription')
     const summary = await memberPage.summary().innerText()
     assert.match(summary, /1\.00 GiB/)
     assert.match(summary, /已用|剩余|重置/)
@@ -786,7 +787,7 @@ try {
     const changedBody = await changedResponse.json()
     assert.equal(changedBody.data?.updated, true)
     // The page must state the real session outcome, not a generic success.
-    const passwordResult = mp.getByText(/密码已更新，已退出其他 \d+ 个会话。当前会话保持登录。/)
+    const passwordResult = mp.getByTestId('password-change-form').getByText(/密码已更新，已退出其他 \d+ 个会话。当前会话保持登录。/).first()
     await assertVisible(passwordResult)
     const revokedCount = Number(/已退出其他 (\d+) 个会话/.exec(await passwordResult.innerText())?.[1] ?? -1)
     assert.equal(revokedCount, changedBody.data?.sessions_revoked, 'shown revoked count must match the API result')
@@ -966,8 +967,10 @@ try {
     return { status: text.trim(), blockers: redact(blockers.trim()), mutuallyExclusive: true }
   })
 
-  // US-014 — recovery coordination: writes blocked, exit gated.
-  await record('us', 'US-PR-014', async () => {
+  // US-014 rotates the control generation. Defer it until after US-011 so the
+  // running Agent can first prove pause/resume; otherwise it correctly enters
+  // coordination_required and cannot apply the later pause revision.
+  const runUS014 = () => record('us', 'US-PR-014', async () => {
     await ap.goto(panelBase + '/admin/runtime#recovery')
     await ap.getByTestId('recovery-enter-button').click()
     await ap.getByTestId('recovery-exit-button').waitFor()
@@ -1099,8 +1102,17 @@ try {
     assert.ok(oldDenied, `permanently revoked old credential must be explicitly denied, not timed out: ${redact(oldDenyError)}`)
     // Ledger grew with the second transfer only.
     pauseStage = 'ledger-grew'
-    const rows = await db(`select coalesce(sum(up_bytes+down_bytes),0)::bigint as total from usage_entries where member_id='${memberId}'`)
-    const total = Number(rows[0].total)
+    // Sampling/upload is asynchronous after the transfer. Poll the real ledger
+    // with a hard deadline; an immediate read can legitimately still show the
+    // pre-resume total and must not be mistaken for lost accounting.
+    let total = 0
+    const ledgerDeadline = Date.now() + 60000
+    while (Date.now() < ledgerDeadline) {
+      const rows = await db(`select coalesce(sum(up_bytes+down_bytes),0)::bigint as total from usage_entries where member_id='${memberId}'`)
+      total = Number(rows[0].total)
+      if (total >= ledgerAfterTraffic + PAYLOAD.length) break
+      await new Promise(r => setTimeout(r, 500))
+    }
     assert.ok(total >= ledgerAfterTraffic + PAYLOAD.length, `ledger should grow after restored transfer (${total})`)
     pauseStage = 'usage-page-total'
     // The page value must catch up with the real ledger. Sampling continues while
@@ -1124,6 +1136,7 @@ try {
      throw e
    }
   })
+  await runUS014()
 } catch (e) {
   results.push({ kind: 'environment', id: 'prerequisite', status: 'FAIL', error: redact(e.stack ?? String(e)) })
   console.log(`FAIL prerequisite: ${redact(e.message ?? String(e))}`)
