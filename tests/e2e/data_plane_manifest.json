@@ -1,0 +1,11 @@
+{
+  "id": "data-plane-product-readiness-v1",
+  "runner": "uv run tests/e2e/run_data_plane.py",
+  "selection": "^TestDataPlaneProductReadiness$",
+  "protocol": "VLESS/TCP",
+  "fixture": {"bytes": 69632, "generator": "verified-payload- repeated 4096 times"},
+  "requires": ["Go SDK", "PostgreSQL initdb/postgres/psql", "official Xray 26.3.27 or 26.3.23", "uv"],
+  "isolation": "new user-owned temporary PG cluster and database; random schema; loopback dynamic ports; exact owned child cleanup",
+  "assertions": ["API creates server/node/group/subscription/member", "real Agent registers and applies snapshot", "actual Xray subscription export runs as official client", "SOCKS HTTP body length and SHA256", "Agent sampling commits PG usage", "member status API used_bytes equals PG", "lost committed ACK yields identical-batch retry and duplicate ACK without ledger growth", "old and new TCP connections denied within shared 60 second budget", "reactivation restores exact content via same client credentials"],
+  "exclusions": ["HTTPS public deployment", "54-client matrix", "shared deployment or agent-lab mutation", "synthetic usage writes", "mock access assertions"]
+}
