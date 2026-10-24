@@ -252,7 +252,9 @@
 
 **getUpgradeReadiness（新增，最小字段）**
 
-- `GET /api/v1/admin/upgrade-readiness`，`admin`。响应 `data`：`status`(`ready|blocked|unknown`)、`checked_at`、`candidate_version`、`schema`(`{applied_migrations:string[],pending_migrations:string[],checksum_ok:boolean}`)、`checks[]`(`{id,severity("blocker"|"warning"),state("pass"|"fail"|"unknown"),summary,affected_count,evidence}`)、`blockers[]`(string[] 稳定码)。
+校验和结论采用三态（DEC-product-readiness-013，D2 技术裁决）：`schema.checksum_ok` 为 `boolean|null`。实际完整核验成功为 `true`，已知校验和不符为 `false`；数据库检查失败、未知迁移或缺少可核验登记时为 `null`。`null` 表示无法核验，不等于成功，也不伪称已知不匹配；`status/checks/blockers` 仍按同一内部事实阻止不安全升级。该细化不改权限、升级条件或现有 legacy 字段语义，HTTP、CLI、长期契约和消费者必须一致。
+
+- `GET /api/v1/admin/upgrade-readiness`，`admin`。响应 `data`：`status`(`ready|blocked|unknown`)、`checked_at`、`candidate_version`、`schema`(`{applied_migrations:string[],pending_migrations:string[],checksum_ok:boolean|null}`)、`checks[]`(`{id,severity("blocker"|"warning"),state("pass"|"fail"|"unknown"),summary,affected_count,evidence}`)、`blockers[]`(string[] 稳定码)。
 - 稳定检查码（`blocker` 除非注明）：
 - `member_cycle_unproven`（成员已绑定但当前区间与账本/绑定历史无法互相证明）
 - `ledger_rows_without_period`（账本行没有可用区间；**只报告，不改行**）
@@ -701,6 +703,12 @@ type ReadinessCheck struct {
     AffectedCount int      `json:"affected_count"`
     Evidence      []string `json:"evidence"`
 }
+// checksum结论不可核验时用nil，序列化为null；不得默认为成功。
+type SchemaState struct {
+    AppliedMigrations []string `json:"applied_migrations"`
+    PendingMigrations []string `json:"pending_migrations"`
+    ChecksumOK        *bool    `json:"checksum_ok"`
+}
 type UpgradeReadiness struct {
     Status      string           `json:"status"` // ready | blocked | unknown
     CheckedAt   time.Time        `json:"checked_at"`
@@ -1077,3 +1085,10 @@ PANEL_WEB_ROOT 非空 → 面板提供 SPA（具体路由优先于 "/"，未知 
 | `internal/panel/store/upgrade_evidence_test.go` | CREATE | 材料缺失/越界/摘要变化/错身份/只读与导入失败回滚/原账本守恒 |
 
 注册码生成与Agent注册属于恢复期冻结的普通业务写，统一409 `RECOVERY_MODE`；既有Agent心跳/用量/回执仅按既有权限接收，不因此授予新身份。兼容错误码`NODE_IN_USE`仍用于被引用方案的删除阻断，本轮不改稳定码；界面按方案上下文解释“先迁移或解除绑定”，不显示误导性的节点占用文案。
+
+
+## D2 补充：readiness 校验和未知表示
+
+| Decision ID | Applied / Not Applicable / Superseded | Artifact Location | Notes |
+|---|---|---|---|
+| DEC-product-readiness-013 | Applied | backend §4.2；API/CLI/消费者镜像；阶段验收 | checksum_ok 为 boolean/null：true已核验成功、false已知不符、null无法核验；不改变status/checks/blockers门禁，不伪造事实。 |

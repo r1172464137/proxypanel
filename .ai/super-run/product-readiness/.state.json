@@ -12,7 +12,7 @@
       "plan": ".ai/super-run/product-readiness/backend.md",
       "tasks": {
         "dev": {
-          "status": "in_progress",
+          "status": "completed",
           "agent_spec": "/home/compile/code/t-tools/agents/backend-dev.md",
           "references": [
             ".ai/design/product-readiness.md",
@@ -52,12 +52,18 @@
             ".ai/evidence/backend-test/20261024T023351Z-c03c7af3/result.json",
             ".ai/quality/product-readiness-backend-final-candidate.md",
             ".ai/evidence/final-6d1345c/summary.json",
-            ".ai/evidence/backend-test/final-6d1345c/result.json"
-          ],
-          "last_error": "R0 independent accept rejected: missing subscription retirement/template reference guards; public contract and safe upgrade/rollback delivery drift; real PG/Redis/ENOSPC fault coverage unverified."
+            ".ai/evidence/backend-test/final-6d1345c/result.json",
+            ".ai/quality/product-readiness-backend-r1-handoff.md",
+            ".ai/evidence/backend-test/r1-integrated-targeted/result.json",
+            ".ai/evidence/backend-test/r1-integrated-targeted/helper-library-green.json",
+            ".ai/evidence/r1-final-269e4e2/frontend-data-fault/result.json",
+            ".ai/evidence/deployment/dual-hosting/r1-final-269e4e2/verified-summary.json",
+            ".ai/quality/product-readiness-backend-r2-source-closure.md",
+            ".ai/evidence/checksum-source-r2/verification.json"
+          ]
         },
         "test": {
-          "status": "pending",
+          "status": "completed",
           "agent_spec": "/home/compile/code/t-tools/agents/backend-test.md",
           "references": [
             ".ai/design/product-readiness.md",
@@ -69,12 +75,18 @@
           "evidence": [
             ".ai/quality/product-readiness-backend-final-candidate.md",
             ".ai/evidence/final-6d1345c/summary.json",
-            ".ai/evidence/backend-test/final-6d1345c/result.json"
-          ],
-          "last_error": "R0 independent accept rejected: missing subscription retirement/template reference guards; public contract and safe upgrade/rollback delivery drift; real PG/Redis/ENOSPC fault coverage unverified."
+            ".ai/evidence/backend-test/final-6d1345c/result.json",
+            ".ai/quality/product-readiness-backend-r1-handoff.md",
+            ".ai/evidence/backend-test/r1-integrated-targeted/result.json",
+            ".ai/evidence/backend-test/r1-integrated-targeted/helper-library-green.json",
+            ".ai/evidence/r1-final-269e4e2/frontend-data-fault/result.json",
+            ".ai/evidence/deployment/dual-hosting/r1-final-269e4e2/verified-summary.json",
+            ".ai/quality/product-readiness-backend-r2-source-closure.md",
+            ".ai/evidence/checksum-source-r2/verification.json"
+          ]
         },
         "accept": {
-          "status": "pending",
+          "status": "in_progress",
           "agent_spec": "/home/compile/code/t-tools/agents/backend-accept.md",
           "references": [
             ".ai/design/product-readiness.md",
@@ -85,12 +97,12 @@
             "/home/compile/code/t-tools/guides/backend/quality.md"
           ],
           "evidence": [
-            ".ai/quality/backend-accept-product-readiness-backend-20261024-034457.md"
-          ],
-          "last_error": "R0 independent accept rejected: missing subscription retirement/template reference guards; public contract and safe upgrade/rollback delivery drift; real PG/Redis/ENOSPC fault coverage unverified."
+            ".ai/quality/backend-accept-product-readiness-backend-20261024-034457.md",
+            ".ai/quality/backend-accept-product-readiness-backend-r1-20261024-050900-009359c1.md"
+          ]
         }
       },
-      "validation_revision": 1
+      "validation_revision": 2
     }
   },
   "sources": {

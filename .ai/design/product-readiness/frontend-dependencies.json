@@ -1,6 +1,6 @@
 {
   "source_doc": ".ai/design/product-readiness/frontend.md",
-  "source_sha256": "60da830168ee2d14f260880e416b4a5b23ce88e7f5aa1554c2940797ca233fd8",
+  "source_sha256": "3388a8c707090e327f6d0652c406ff7c11570acd706030e28326261bdeba0df3",
   "note": "Derived handoff cache, not a second API design source",
   "contract_dependencies": [
     {

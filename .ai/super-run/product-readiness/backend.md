@@ -260,3 +260,14 @@ R1四个有界Sol medium实现会话（用户五上限内）：DELETE契约 `01a
 主当前整合补充：长期文档已按实际retired/reference_count、CURSOR_INVALID、usage keyset、readiness同源投影更新；新增DB错误与upgrade/delivery统一runner选择；故障目录命名改UTC。仍是WIP，未有R1正式accept放行。readiness checksum使用boolean|null区分不可核验与已知不匹配，需在R1验收显式核对技术细化与上层unknown契约，不以nullable绕过任何门禁。
 
 下一步：先按用户要求备份当前分支到origin GitHub（不force、不推main、私有原始证据/凭据不提交），再构建真实UPGRADE_TEST_PANEL_BINARY并用项目uv runner执行受影响store/API/upgrade选择与consumer；物理故障3项须使用owned launcher，不能在缺PP_FAULT_OWNER的普通全选中伪造通过。补完后冻结R1候选，正式只读backend-accept revision1串行再验。R0拒绝及所有旧绿证据保留，不把备份commit称为验收完成。
+
+## R1技术闭环完成，进入唯一正式复验
+
+源码候选269e4e2已GitHub备份。R1十二相关选择的唯一红例是psql SDK缺libpq（同helper在3选择重复），按原源码补LD路径仅重跑upgrade/delivery后8根全绿；其余原始case已过，无skip/missing，原失败不覆盖。消费者typecheck/DELETE局部tests/nativebuild绿。最终同269e4e2：222前端单测、25浏览器、真实数据链、真实PG/Redis/ENOSPC3故障全绿；双HTTPS旧5→新6四场景、产物/旧行/清理均绿。
+交接.ai/quality/product-readiness-backend-r1-handoff.md。sourceGate再次passed文档集合一致。dev/test现completed，accept in_progress，revision=1；只允许独立只读accept给新结论，仍不自动完成backend或其他phase。当前tracked WIP仅.ai运行状态/交接元数据，生产/测试/配置与269e4e2相同；R1accept应按相关输入核查，不把状态记录变动当业务源码失效。不再开实现子代理或扩新需求。
+
+R1正式只读accept已派发：`01a16c43-1caf-75a9-8640-ad398506106a`，Sol high，源码269e4e2，revision1。仅复核R0 F1–F4与直接R1差异/相关证据，不重新审无关历史，不重复542全量；主不得代出结论。R1最后并行双HTTPS已成功，原始目录.ai/evidence/deployment/dual-hosting/r1-final-269e4e2，当前候选四browser/5→6/旧行与产物/cleanup均过，已更新handoff。当前无其他活跃agent或长测；流程仅剩第3步的结论消费，仍不能提前标backend完成。
+
+## R1仅规范类型不一致拒绝；revision2仅做来源收口
+
+R1正式报告.ai/quality/backend-accept-product-readiness-backend-r1-20261024-050900-009359c1.md有效REJECTED；所有实际业务/物理故障/升级/消费者门禁已通过，唯一P1是主设计boolean与既有boolean|null不同。主会话作为设计/API责任人依据既有unknown不伪造原则裁决D2：nullable为未发布诊断字段的表示细化，不改权限/业务/风险门禁/legacy兼容；DEC013明确agent来源，非伪造用户决策。现已同步唯一backend规范、主/前端追踪及两派生缓存源hash；长期API/TS/代码已一致。此次只改.ai来源/状态，不改任何runtime/test/fixture/lock/config，因此R1运行证据可按相关输入原样复用；不重造物理故障/全跑542。状态revision2 dev in_progress/test pending/accept pending，最小来源闭合核验后R2独立仅复核R1-C1，不扩大验收范围。

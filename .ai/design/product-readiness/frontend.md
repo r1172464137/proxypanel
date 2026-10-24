@@ -608,3 +608,10 @@
 主审补齐说明：以上实物候选路径用于明确复用/核验边界，不表示批准原实现或旧报告。复用能力落在一个实现处，不能平行保留同义helper；测试须证明增量价值，不复制错误期望。候选压缩测试 `internal/panel/store/review_fixes_test.go` 不自动采用，其有效场景应由已列oracle/场景测试覆盖并在Handoff交代。外部候选SQL不自动采用，追加迁移按本设计单独审查。
 
 | `web/tests/host-nginx-smoke.mjs` | MODIFY | web-demo | 两种托管的真实HTTPS/浏览器深链与会话，不把旧烟测结果当新版本证据 |
+
+
+## D2 补充：readiness 校验和未知表示
+
+| Decision ID | Applied / Not Applicable / Superseded | Artifact Location | Notes |
+|---|---|---|---|
+| DEC-product-readiness-013 | Applied | backend §4.2；API/CLI/消费者镜像；阶段验收 | checksum_ok 为 boolean/null：true已核验成功、false已知不符、null无法核验；不改变status/checks/blockers门禁，不伪造事实。 |

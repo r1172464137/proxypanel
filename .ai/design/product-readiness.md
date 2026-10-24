@@ -491,3 +491,10 @@ Go项目不调用插件默认Cargo runner。先交付本项目脚本、确认uv/
 
 ## 10. 下一步
 完成独立无上下文读者核查、决策闭合与check-design结构检查后才将生成状态写complete。随后进入可恢复实施；本次设计不声称功能或真实测试已完成。
+
+
+## D2 补充：readiness 校验和未知表示
+
+| Decision ID | Applied / Not Applicable / Superseded | Artifact Location | Notes |
+|---|---|---|---|
+| DEC-product-readiness-013 | Applied | backend §4.2；API/CLI/消费者镜像；阶段验收 | checksum_ok 为 boolean/null：true已核验成功、false已知不符、null无法核验；不改变status/checks/blockers门禁，不伪造事实。 |

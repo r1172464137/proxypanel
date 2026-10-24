@@ -1,0 +1,961 @@
+{
+  "targeted": {
+    "status": "failed",
+    "stable": true,
+    "inputs": 243,
+    "mismatches": [],
+    "checks": [
+      {
+        "id": "contract/delete",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 9,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T043929Z-cfa40b23/0-tests.jsonl"
+      },
+      {
+        "id": "api/admin-usage-pagination",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 1,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T043929Z-cfa40b23/1-tests.jsonl"
+      },
+      {
+        "id": "api/admin-core-pagination",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 1,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T043929Z-cfa40b23/2-tests.jsonl"
+      },
+      {
+        "id": "api/operations-pages-candidate",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 1,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T043929Z-cfa40b23/3-tests.jsonl"
+      },
+      {
+        "id": "api/me-pagination",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 1,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T043929Z-cfa40b23/4-tests.jsonl"
+      },
+      {
+        "id": "remaining/panel-api",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 30,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T043929Z-cfa40b23/5-tests.jsonl"
+      },
+      {
+        "id": "api/abc-readiness",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 2,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T043929Z-cfa40b23/6-tests.jsonl"
+      },
+      {
+        "id": "store/upgrade-preflight",
+        "exit": 1,
+        "discovery": 0,
+        "roots": 17,
+        "bad": [
+          [
+            "proxypanel/internal/panel/store",
+            "TestUpgradeDeliveryHelper",
+            "fail"
+          ],
+          [
+            "proxypanel/internal/panel/store",
+            null,
+            "fail"
+          ]
+        ],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T043929Z-cfa40b23/7-tests.jsonl"
+      },
+      {
+        "id": "cmd/upgrade-check",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 1,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T043929Z-cfa40b23/8-tests.jsonl"
+      },
+      {
+        "id": "store/database-error-contract",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 2,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T043929Z-cfa40b23/9-tests.jsonl"
+      },
+      {
+        "id": "upgrade/delivery",
+        "exit": 1,
+        "discovery": 0,
+        "roots": 7,
+        "bad": [
+          [
+            "proxypanel/internal/panel/store",
+            "TestUpgradeDeliveryHelper",
+            "fail"
+          ],
+          [
+            "proxypanel/internal/panel/store",
+            null,
+            "fail"
+          ]
+        ],
+        "missing": [
+          "TestUpgradeDeliveryHelper"
+        ],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T043929Z-cfa40b23/10-tests.jsonl"
+      },
+      {
+        "id": "store/database-baseline",
+        "exit": 1,
+        "discovery": 0,
+        "roots": 104,
+        "bad": [
+          [
+            "proxypanel/internal/panel/store",
+            "TestUpgradeDeliveryHelper",
+            "fail"
+          ],
+          [
+            "proxypanel/internal/panel/store",
+            null,
+            "fail"
+          ]
+        ],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T043929Z-cfa40b23/11-tests.jsonl"
+      }
+    ]
+  },
+  "helper": {
+    "status": "passed",
+    "stable": true,
+    "inputs": 243,
+    "mismatches": [],
+    "checks": [
+      {
+        "id": "upgrade/delivery",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 8,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T044330Z-2501669e/0-tests.jsonl"
+      }
+    ]
+  },
+  "r0": {
+    "status": "passed",
+    "stable": true,
+    "inputs": 234,
+    "mismatches": [
+      "cmd/panel/check.go",
+      "cmd/panel/check_test.go",
+      "deploy/manage-linux.sh",
+      "internal/panel/api/abc_readiness_test.go",
+      "internal/panel/api/admin2.go",
+      "internal/panel/api/admin_pages.go",
+      "internal/panel/api/admin_pages_test.go",
+      "internal/panel/api/operations_pages.go",
+      "internal/panel/api/operations_pages_test.go",
+      "internal/panel/api/pagination.go",
+      "internal/panel/api/pagination_test.go",
+      "internal/panel/api/patch_test.go",
+      "internal/panel/api/readiness.go",
+      "internal/panel/api/readiness_test.go",
+      "internal/panel/domain/errors.go",
+      "internal/panel/store/readiness.go",
+      "internal/panel/store/resources.go",
+      "internal/panel/store/store.go",
+      "internal/panel/store/subscription_delete_test.go",
+      "internal/panel/store/upgrade_open_test.go",
+      "scripts/backend-test-manifest.json",
+      "scripts/backend-test.py"
+    ],
+    "checks": [
+      {
+        "id": "maintenance/batch-retention",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 2,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/0-tests.jsonl"
+      },
+      {
+        "id": "store/batch-task-durability",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 14,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/1-tests.jsonl"
+      },
+      {
+        "id": "api/product-status",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 2,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/2-tests.jsonl"
+      },
+      {
+        "id": "store/period-history-candidate",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 4,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/3-tests.jsonl"
+      },
+      {
+        "id": "api/static",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 7,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/4-tests.jsonl"
+      },
+      {
+        "id": "e2e/standalone-agent",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 7,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/5-tests.jsonl"
+      },
+      {
+        "id": "period/calendar",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 17,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/6-tests.jsonl"
+      },
+      {
+        "id": "store/cycle",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 9,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/7-tests.jsonl"
+      },
+      {
+        "id": "store/database-baseline",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 98,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/8-tests.jsonl"
+      },
+      {
+        "id": "agent-state/evidence",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 4,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/9-tests.jsonl"
+      },
+      {
+        "id": "store/short-cycle-live",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 1,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/10-tests.jsonl"
+      },
+      {
+        "id": "store/identity-tx",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 9,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/11-tests.jsonl"
+      },
+      {
+        "id": "api/identity-http",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 12,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/12-tests.jsonl"
+      },
+      {
+        "id": "limit/identity-limit",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 9,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/13-tests.jsonl"
+      },
+      {
+        "id": "protocol/offline-review",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 30,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/14-tests.jsonl"
+      },
+      {
+        "id": "protocol/handshake-review",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 6,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/15-tests.jsonl"
+      },
+      {
+        "id": "agent-state/atomic-commit",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 12,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/16-tests.jsonl"
+      },
+      {
+        "id": "agent-state/full",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 16,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/17-tests.jsonl"
+      },
+      {
+        "id": "agent-supervisor/full",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 63,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/18-tests.jsonl"
+      },
+      {
+        "id": "agent-xray/full",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 78,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/19-tests.jsonl"
+      },
+      {
+        "id": "agent-reporting/full",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 17,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/20-tests.jsonl"
+      },
+      {
+        "id": "integration/protocol-agent",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 3,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/21-tests.jsonl"
+      },
+      {
+        "id": "agent-supervisor/real-lifecycle",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 6,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/22-tests.jsonl"
+      },
+      {
+        "id": "store/closed-loop-b",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 5,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/23-tests.jsonl"
+      },
+      {
+        "id": "store/abc-integration",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 2,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/24-tests.jsonl"
+      },
+      {
+        "id": "api/abc-readiness",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 2,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/25-tests.jsonl"
+      },
+      {
+        "id": "store/upgrade-preflight",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 15,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/26-tests.jsonl"
+      },
+      {
+        "id": "cmd/upgrade-check",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 1,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/27-tests.jsonl"
+      },
+      {
+        "id": "api/me-pagination",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 1,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/28-tests.jsonl"
+      },
+      {
+        "id": "store/administrator-stop",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 3,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/29-tests.jsonl"
+      },
+      {
+        "id": "panel/check-cli",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 1,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/30-tests.jsonl"
+      },
+      {
+        "id": "api/admin-core-pagination",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 1,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/31-tests.jsonl"
+      },
+      {
+        "id": "api/operations-pages-candidate",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 1,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/32-tests.jsonl"
+      },
+      {
+        "id": "store/operations-pages-unit",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 1,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/33-tests.jsonl"
+      },
+      {
+        "id": "remaining/cmd-panel",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 6,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/34-tests.jsonl"
+      },
+      {
+        "id": "remaining/agent-config",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 6,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/35-tests.jsonl"
+      },
+      {
+        "id": "remaining/agent-control",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 10,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/36-tests.jsonl"
+      },
+      {
+        "id": "remaining/agent-telemetry",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 1,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/37-tests.jsonl"
+      },
+      {
+        "id": "remaining/panel-access",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 12,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/38-tests.jsonl"
+      },
+      {
+        "id": "remaining/panel-usagecalc",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 12,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/39-tests.jsonl"
+      },
+      {
+        "id": "remaining/panel-protocol",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 22,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/40-tests.jsonl"
+      },
+      {
+        "id": "remaining/panel-api",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 30,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/41-tests.jsonl"
+      },
+      {
+        "id": "remaining/panel-maintenance",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 21,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/42-tests.jsonl"
+      },
+      {
+        "id": "remaining/panel-clientconfig-render",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 24,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/43-tests.jsonl"
+      },
+      {
+        "id": "remaining/agent-state-unix-permissions",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 1,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/44-tests.jsonl"
+      },
+      {
+        "id": "matrix/local-core-clients",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 1,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/45-tests.jsonl"
+      },
+      {
+        "id": "matrix/local-core-credential-guards",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 1,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/46-tests.jsonl"
+      },
+      {
+        "id": "matrix/reserved-tags",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 1,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/47-tests.jsonl"
+      },
+      {
+        "id": "matrix/agent-real-xray",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 3,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/48-tests.jsonl"
+      },
+      {
+        "id": "remaining/e2e-offline",
+        "exit": 0,
+        "discovery": 0,
+        "roots": 12,
+        "bad": [],
+        "missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/49-tests.jsonl"
+      }
+    ]
+  },
+  "fault": {
+    "run_id": "20261024T044830Z-578ec0f2",
+    "base_commit": "269e4e25ec4693c184cc7ebf493595ec1a97136a",
+    "source_files": {
+      "count": 239,
+      "mismatches": []
+    },
+    "scenarios": {
+      "TestRealFaultPostgresOutage": {
+        "status": "pass",
+        "exit_code": 0,
+        "command": [
+          "/tmp/pp-real-fault-oknfdagc/fault.test",
+          "-test.run=^TestRealFaultPostgresOutage$",
+          "-test.v",
+          "-test.count=1",
+          "-test.timeout=100s"
+        ],
+        "cwd": "/home/compile/Work/proxypanel/tests/e2e",
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/real-fault-r1/20261024T044830Z-578ec0f2/TestRealFaultPostgresOutage.log"
+      },
+      "TestRealFaultRedisOutage": {
+        "status": "pass",
+        "exit_code": 0,
+        "command": [
+          "/tmp/pp-real-fault-oknfdagc/fault.test",
+          "-test.run=^TestRealFaultRedisOutage$",
+          "-test.v",
+          "-test.count=1",
+          "-test.timeout=100s"
+        ],
+        "cwd": "/home/compile/Work/proxypanel/tests/e2e",
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/real-fault-r1/20261024T044830Z-578ec0f2/TestRealFaultRedisOutage.log"
+      },
+      "TestRealFaultENOSPC": {
+        "status": "pass",
+        "exit_code": 0,
+        "command": [
+          "unshare",
+          "-Urnm",
+          "sh",
+          "-eu",
+          "-c",
+          "mount --make-rprivate /; mount -t tmpfs -o size=8m,mode=700 tmpfs \"$PP_FAULT_FS\"; trap 'umount \"$PP_FAULT_FS\"' EXIT; \"$@\"",
+          "fault-mount",
+          "/tmp/pp-real-fault-oknfdagc/fault.test",
+          "-test.run=^TestRealFaultENOSPC$",
+          "-test.v",
+          "-test.count=1",
+          "-test.timeout=100s"
+        ],
+        "cwd": "/home/compile/Work/proxypanel/tests/e2e",
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/real-fault-r1/20261024T044830Z-578ec0f2/TestRealFaultENOSPC.log"
+      }
+    },
+    "skip_count": 0,
+    "production_changes": false,
+    "tools": {
+      "count": 5,
+      "mismatches": []
+    },
+    "test_binary_sha256": "eb6472e130d6190c9f60f6cfd924db17aa0e046e90ddfda68f51b3f00c63a365",
+    "timeout_recovered_owned_redis_pids": [],
+    "owned_pg_cleanup_exit": 0,
+    "owned_pg_absent": true,
+    "source_files_after": {
+      "count": 239,
+      "mismatches": []
+    },
+    "source_stable": true,
+    "original_objects_unchanged": true,
+    "host_mount_absent": true,
+    "temporary_directory_removed": true,
+    "status": "pass",
+    "original_identity_equal": true
+  },
+  "data": {
+    "run_id": "20261024T124820-3ab371f2",
+    "status": "pass",
+    "mode": "loopback DEV Panel; real Agent supervisor; verified ephemeral TLS control hop; not HTTPS deployment",
+    "existing_cores_before": {
+      "483424": {
+        "exe": "/home/compile/Work/bin/xray",
+        "starttime": "2665684"
+      },
+      "483425": {
+        "exe": "/home/compile/Work/bin/xray",
+        "starttime": "2665684"
+      },
+      "483426": {
+        "exe": "/home/compile/Work/bin/xray",
+        "starttime": "2665685"
+      },
+      "483427": {
+        "exe": "/home/compile/Work/bin/xray",
+        "starttime": "2665685"
+      },
+      "483428": {
+        "exe": "/home/compile/Work/bin/xray",
+        "starttime": "2665685"
+      },
+      "625246": {
+        "exe": "/home/compile/Work/bin/xray",
+        "starttime": "3622341"
+      },
+      "625278": {
+        "exe": "/home/compile/Work/bin/xray",
+        "starttime": "3622444"
+      },
+      "625311": {
+        "exe": "/home/compile/Work/bin/xray",
+        "starttime": "3622547"
+      },
+      "625364": {
+        "exe": "/home/compile/Work/bin/xray",
+        "starttime": "3622651"
+      },
+      "625397": {
+        "exe": "/home/compile/Work/bin/xray",
+        "starttime": "3622754"
+      }
+    },
+    "production_changes": false,
+    "base_commit": "269e4e25ec4693c184cc7ebf493595ec1a97136a",
+    "source_files": {
+      "count": 227,
+      "mismatches": []
+    },
+    "fixture_assets": {
+      "count": 10,
+      "mismatches": []
+    },
+    "binaries": {
+      "count": 3,
+      "mismatches": []
+    },
+    "owned_postgres_pid": 1467792,
+    "test_binary_sha256": "eb6472e130d6190c9f60f6cfd924db17aa0e046e90ddfda68f51b3f00c63a365",
+    "exit_code": 0,
+    "xray_hash_unchanged": true,
+    "timeout_recovered_owned_core_pids": [],
+    "owned_postgres_exit": 0,
+    "temporary_directory_removed": true,
+    "existing_cores_after": {
+      "483424": {
+        "exe": "/home/compile/Work/bin/xray",
+        "starttime": "2665684"
+      },
+      "483425": {
+        "exe": "/home/compile/Work/bin/xray",
+        "starttime": "2665684"
+      },
+      "483426": {
+        "exe": "/home/compile/Work/bin/xray",
+        "starttime": "2665685"
+      },
+      "483427": {
+        "exe": "/home/compile/Work/bin/xray",
+        "starttime": "2665685"
+      },
+      "483428": {
+        "exe": "/home/compile/Work/bin/xray",
+        "starttime": "2665685"
+      },
+      "625246": {
+        "exe": "/home/compile/Work/bin/xray",
+        "starttime": "3622341"
+      },
+      "625278": {
+        "exe": "/home/compile/Work/bin/xray",
+        "starttime": "3622444"
+      },
+      "625311": {
+        "exe": "/home/compile/Work/bin/xray",
+        "starttime": "3622547"
+      },
+      "625364": {
+        "exe": "/home/compile/Work/bin/xray",
+        "starttime": "3622651"
+      },
+      "625397": {
+        "exe": "/home/compile/Work/bin/xray",
+        "starttime": "3622754"
+      }
+    },
+    "existing_cores_unchanged": true,
+    "original_identity_equal": true
+  },
+  "deployment_independent": {
+    "spa": {
+      "old_rows": 5,
+      "new_rows": 6,
+      "preserved": true,
+      "browser": {
+        "current": {
+          "status": "passed",
+          "errors": [],
+          "checks": [
+            "anonymous API and route protection",
+            "real browser form login",
+            "deep navigation and refresh",
+            "authenticated API and Secure HttpOnly cookie",
+            "missing asset/unknown API non-HTML 404; invalid subscription non-HTML 403",
+            "browser logout then protected API/session reject",
+            "real browser form login"
+          ],
+          "browser_asset_in_loaded_fingerprints": true,
+          "ready": {
+            "data": {
+              "postgres": "ok",
+              "redis": "disabled",
+              "status": "ok"
+            },
+            "request_id": ""
+          }
+        },
+        "upgrade": {
+          "status": "passed",
+          "errors": [],
+          "checks": [
+            "persisted session after candidate replacement and deep refresh",
+            "authenticated API and Secure HttpOnly cookie",
+            "missing asset/unknown API non-HTML 404; invalid subscription non-HTML 403",
+            "browser logout then protected API/session reject"
+          ],
+          "browser_asset_in_loaded_fingerprints": true,
+          "ready": {
+            "data": {
+              "postgres": "ok",
+              "redis": "disabled",
+              "status": "ok"
+            },
+            "request_id": ""
+          }
+        }
+      }
+    },
+    "api": {
+      "old_rows": 5,
+      "new_rows": 6,
+      "preserved": true,
+      "browser": {
+        "current": {
+          "status": "passed",
+          "errors": [],
+          "checks": [
+            "anonymous API and route protection",
+            "real browser form login",
+            "deep navigation and refresh",
+            "authenticated API and Secure HttpOnly cookie",
+            "missing asset/unknown API non-HTML 404; invalid subscription non-HTML 403",
+            "browser logout then protected API/session reject",
+            "real browser form login"
+          ],
+          "browser_asset_in_loaded_fingerprints": true,
+          "ready": {
+            "data": {
+              "postgres": "ok",
+              "redis": "disabled",
+              "status": "ok"
+            },
+            "request_id": ""
+          }
+        },
+        "upgrade": {
+          "status": "passed",
+          "errors": [],
+          "checks": [
+            "persisted session after candidate replacement and deep refresh",
+            "authenticated API and Secure HttpOnly cookie",
+            "missing asset/unknown API non-HTML 404; invalid subscription non-HTML 403",
+            "browser logout then protected API/session reject"
+          ],
+          "browser_asset_in_loaded_fingerprints": true,
+          "ready": {
+            "data": {
+              "postgres": "ok",
+              "redis": "disabled",
+              "status": "ok"
+            },
+            "request_id": ""
+          }
+        }
+      }
+    },
+    "owned_after_cleanup": "",
+    "original_resources_equal": true
+  },
+  "vitest": {
+    "success": true,
+    "numTotalTests": 222,
+    "numPassedTests": 222,
+    "numFailedTests": 0,
+    "numPendingTests": 0
+  },
+  "targeted_helper_exact_inputs_equal": true,
+  "candidate": "269e4e25ec4693c184cc7ebf493595ec1a97136a",
+  "runtime_nonsecret_checks": {
+    "spa": {
+      "same_db": true,
+      "same_master_key": true,
+      "explicit_web_root": true
+    },
+    "api": {
+      "same_db": true,
+      "same_master_key": true,
+      "explicit_web_root": true
+    }
+  },
+  "report_path": "/home/compile/Work/proxypanel/.ai/quality/backend-accept-product-readiness-backend-r1-20261024-050900-009359c1.md"
+}
