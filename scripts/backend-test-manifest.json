@@ -1076,5 +1076,35 @@
     "stories": ["US-PR-011", "US-PR-013"],
     "requires": ["xray"],
     "timeout_seconds": 120
+  },
+  {
+    "id": "remaining/e2e-offline",
+    "packages": [
+      "./tests/e2e"
+    ],
+    "run": "^Test(ACKLossProxyInjection|ACKLossAgentOutbox|AgentQueueReconstruction|FaultStateDumpDecoder|CapacityInfoParsing|AgentObservationRecoveryBarrier|LifecycleParsing|LifecycleSwitchGate|LifecycleScriptStub|MatrixExportProblemIsSecretFree|MatrixPreflightBlockerSemantics|MatrixReportCountsOnlyRealRuns)$",
+    "expected_tests": [
+      "TestACKLossProxyInjection",
+      "TestACKLossAgentOutbox",
+      "TestAgentQueueReconstruction",
+      "TestFaultStateDumpDecoder",
+      "TestCapacityInfoParsing",
+      "TestAgentObservationRecoveryBarrier",
+      "TestLifecycleParsing",
+      "TestLifecycleSwitchGate",
+      "TestLifecycleScriptStub",
+      "TestMatrixExportProblemIsSecretFree",
+      "TestMatrixPreflightBlockerSemantics",
+      "TestMatrixReportCountsOnlyRealRuns"
+    ],
+    "stories": [
+      "US-PR-003",
+      "US-PR-004",
+      "US-PR-008"
+    ],
+    "requires": [
+      "unix"
+    ],
+    "timeout_seconds": 180
   }
 ]
