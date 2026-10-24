@@ -56,8 +56,7 @@ func (s *Store) invitedCredentialsTx(ctx context.Context, tx *sql.Tx, m *domain.
  VALUES ($1,$2,$3,$4,$5,'invitation')`, newID("mbd"), m.ID, sub.ID, m.BoundAt, nullableTime(m.ExpiresAt)); err != nil {
 		return dbErr(err)
 	}
-	// The shared helper initializes and (in B's implementation) records the
-	// binding interval; never duplicate its period or attribution algorithm.
+	// Binding uses the shared cycle helper; never duplicate attribution rules.
 	if err := s.refreshMemberPeriod(ctx, tx, m); err != nil {
 		return err
 	}

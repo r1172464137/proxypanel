@@ -95,7 +95,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/me/credentials/rotations", s.requireUser(s.requireCSRF(s.requireWritable(s.handleMeCredentialRotation))))
 	mux.HandleFunc("POST /api/v1/me/password", s.requireUser(s.requireCSRF(s.handleMePassword)))
 	mux.HandleFunc("GET /api/v1/me/sessions", s.requireUser(s.handleMeSessions))
-	mux.HandleFunc("DELETE /api/v1/me/sessions/{id}", s.requireUser(s.requireCSRF(s.requireWritable(s.handleMeSessionDelete))))
+	mux.HandleFunc("DELETE /api/v1/me/sessions/{id}", s.requireUser(s.requireCSRF(s.handleMeSessionDelete)))
 
 	// agent scope
 	mux.HandleFunc("POST /api/v1/agent/register", s.handleAgentRegister)
