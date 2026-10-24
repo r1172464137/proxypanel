@@ -96,12 +96,7 @@ func (s *Server) handleGetBatch(w http.ResponseWriter, r *http.Request) {
 // through to the {id} pattern's method set and answered 405, so the page could
 // only show an error.
 func (s *Server) handleListBatches(w http.ResponseWriter, r *http.Request) {
-	items, err := s.Store.ListBatches(r.Context(), 200)
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeList(w, items, nil)
+	s.operationsBatches(w, r)
 }
 
 // previewRequired rejects a direct edit that would silently change access for

@@ -889,5 +889,38 @@
       "postgres"
     ],
     "timeout_seconds": 120
+  },
+  {
+    "id": "api/operations-pages-candidate",
+    "packages": [
+      "./internal/panel/api"
+    ],
+    "run": "^TestOperationsPagesPostgres$",
+    "expected_tests": [
+      "TestOperationsPagesPostgres"
+    ],
+    "stories": [
+      "US-PR-018",
+      "US-PR-017",
+      "US-PR-014"
+    ],
+    "requires": [
+      "postgres"
+    ],
+    "timeout_seconds": 120
+  },
+  {
+    "id": "store/operations-pages-unit",
+    "packages": [
+      "./internal/panel/store"
+    ],
+    "run": "^TestOperationsQueryKeyset$",
+    "expected_tests": [
+      "TestOperationsQueryKeyset"
+    ],
+    "stories": [
+      "US-PR-018"
+    ],
+    "requires": []
   }
 ]

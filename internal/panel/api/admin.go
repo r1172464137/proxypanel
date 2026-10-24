@@ -21,21 +21,11 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAdminAgents(w http.ResponseWriter, r *http.Request) {
-	items, err := s.Store.ListAgents(r.Context(), 200)
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeList(w, items, nil)
+	s.operationsAgents(w, r)
 }
 
 func (s *Server) handleAdminCoreInstances(w http.ResponseWriter, r *http.Request) {
-	items, err := s.Store.ListCoreInstances(r.Context(), 200)
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeList(w, items, nil)
+	s.operationsCoreInstances(w, r)
 }
 
 func (s *Server) handleListServers(w http.ResponseWriter, r *http.Request) {

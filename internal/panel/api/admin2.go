@@ -748,12 +748,7 @@ func (s *Server) handleDeleteTemplate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListInvitations(w http.ResponseWriter, r *http.Request) {
-	items, err := s.Store.ListInvitations(r.Context(), 200)
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	s.writeList(w, items, nil)
+	s.operationsInvitations(w, r)
 }
 
 func (s *Server) handleCreateInvitation(w http.ResponseWriter, r *http.Request) {
