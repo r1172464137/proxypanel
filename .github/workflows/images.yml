@@ -28,7 +28,57 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
+  verify-go:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: proxypanel
+          POSTGRES_PASSWORD: ci-test-only
+          POSTGRES_DB: proxypanel
+        ports: ['15432:5432']
+        options: >-
+          --health-cmd "pg_isready -U proxypanel -d proxypanel"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      PANEL_TEST_DATABASE_URL: postgres://proxypanel:ci-test-only@127.0.0.1:15432/proxypanel?sslmode=disable
+      PANEL_TEST_DB_ISOLATED: '1'
+      PANEL_BASH: /bin/bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.13.5'
+      - name: Build and affected dependency regressions
+        run: |
+          set -euo pipefail
+          go mod verify
+          go build ./...
+          go test -count=1 ./internal/panel/secrets
+          uv run --no-project python scripts/backend-test.py --json \
+            store/identity-tx protocol/offline-review
+      - name: Vulnerability reachability gate
+        # JSON mode does NOT fail on findings. Text mode enforces the default
+        # symbol-level gate; retain JSON separately, including module advisories.
+        run: |
+          set -euo pipefail
+          go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 -json ./... > govulncheck.json
+          go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+      - name: Retain raw vulnerability evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: govulncheck
+          path: govulncheck.json
+          retention-days: 30
+
   build-and-push:
+    needs: [verify-go, web-artifact]
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -73,6 +123,19 @@ jobs:
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
+
+      # Validate the non-root panel and host-nginx A/B routing before any push.
+      # Uses the existing repository entry point, not a hypothetical CI command.
+      - name: Validate local amd64 images before publishing
+        run: |
+          set -euo pipefail
+          docker build --build-arg TARGETARCH=amd64 -f deploy/Dockerfile.panel \
+            -t proxypanel-panel:ci image-context
+          docker build --build-arg TARGETARCH=amd64 -f deploy/Dockerfile.agent \
+            -t proxypanel-agent:ci image-context
+          docker run --rm proxypanel-agent:ci -version > /tmp/agent-local-version.txt
+          grep -q proxypanel-agent /tmp/agent-local-version.txt
+          bash scripts/verify-panel-image.sh proxypanel-panel:ci
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -196,7 +259,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '22.23.2'
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -204,9 +267,10 @@ jobs:
         working-directory: web
         run: |
           set -euo pipefail
-          npm ci
+          npm ci --include=dev
+          npm audit --audit-level=high
           npm run typecheck
-          npm test
+          NODE_ENV=development npm test
           npm run build
 
       - name: Upload web dist
