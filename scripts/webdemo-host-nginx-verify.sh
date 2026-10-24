@@ -29,7 +29,7 @@ umask 077
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$(openssl rand -hex 4)"
 EVIDENCE="${PPF_EVIDENCE:-$ROOT/.ai/evidence/web-demo/F/host-nginx-$RUN_ID}"
-LOCK="${PPF_LOCK:-/home/compile/Work/.locks/proxypanel-webdemo-local-runtime.lock}"
+LOCK="/home/compile/Work/.locks/proxypanel-webdemo-local-runtime.lock"
 LOCK_WAIT="${PPF_LOCK_WAIT:-60}"
 NODE_MODULES="${PPF_NODE_MODULES:-/home/compile/Work/proxypanel/web/node_modules}"
 GO_BIN="${PPF_GO:-/home/compile/sdk/go1.27.3/go/bin/go}"
@@ -43,7 +43,7 @@ NSS_VERSION_PIN="3.98-1ubuntu0.3"
 NSS_EPOCH_PIN="2"
 UBUNTU_HTTPS="https://archive.ubuntu.com/ubuntu"
 KEYRING="/usr/share/keyrings/ubuntu-archive-keyring.gpg"
-CURL_HTTPS=(--proto '=https' --tlsv1.2 --max-redirs 3 --noproxy '*')
+CURL_HTTPS=(--proto '=https' --tlsv1.2 --max-redirs 3 --connect-timeout 10 --max-time 60 --noproxy '*')
 CURL_LOCAL=(--noproxy '*' --max-time 10)
 
 REPORT="$EVIDENCE/result.json"
@@ -478,11 +478,12 @@ build_panel() {
   PANELBIN="$panelbin"
   PANEL_BIN_SHA="$(sha256 "$panelbin")"
 
-  WEBROOT="$ROOT/web/dist"
-  if [ ! -f "$WEBROOT/index.html" ]; then
-    ( cd "$ROOT/web" && npm run build ) >"$EVIDENCE/web-build.log" 2>&1 \
-      || fail "web build failed (web/dist/index.html unavailable)"
-  fi
+  # Always build this candidate; an existing ignored dist may belong to an old
+  # source revision. Keep the generated files inside this run's private owner.
+  WEBROOT="$WORK/dist"
+  ensure_node_modules
+  ( cd "$ROOT/web" && npm run build -- --outDir "$WEBROOT" ) >"$EVIDENCE/web-build.log" 2>&1 \
+    || fail "fresh candidate web build failed"
   WEB_INDEX_SHA="$(sha256 "$WEBROOT/index.html")"
   ASSET_JS="$(grep -o 'assets/[^"]*\.js' "$WEBROOT/index.html" | head -1)"
   [ -n "$ASSET_JS" ] || fail "could not locate hashed asset in dist/index.html"
@@ -639,7 +640,7 @@ nginx_write_config() {
     body_root="$WORK/nginx/prefix/static"   # not used in spa mode; kept empty
   fi
   if [ "$mode" = "api" ]; then
-    cp -r "$ROOT/web/dist/." "$prefix/static/"
+    cp -r "$WEBROOT/." "$prefix/static/"
   fi
   cat >"$prefix/conf/nginx.conf" <<EOF
 worker_processes 1;
@@ -734,10 +735,12 @@ stop_pg() {
   # The socket/port may take a moment to be released; the after-snapshot must not
   # race it, otherwise our own port would look like an unrelated lost listener.
   local _i
-  for _i in $(seq 1 50); do
-    ss -ltn 2>/dev/null | grep -q ":$PG_PORT " || break
-    sleep 0.1
-  done
+  if [ -n "${PG_PORT:-}" ]; then
+    for _i in $(seq 1 50); do
+      ss -ltn "sport = :$PG_PORT" 2>/dev/null | grep -q LISTEN || break
+      sleep 0.1
+    done
+  fi
   return 0
 }
 
@@ -911,14 +914,17 @@ browser_mode_selfsigned() {
 # contract test. A skip or 0 executed cases must never be readable as a pass.
 go_contract_run() {
   local json="$EVIDENCE/go-test.json" rawexit="$EVIDENCE/go-test.rawexit"
-  ( cd "$ROOT" && "$GO_BIN" test ./tests/e2e/ -run '^TestWebdemoHostNginxVerifyScriptContract$' \
-      -count=1 -v -json ) >"$json" 2>"$EVIDENCE/go-test.stderr.log"
-  echo "$?" >"$rawexit"
+  local rc=0
+  ( cd "$ROOT" && "$GO_BIN" test ./tests/e2e/ \
+      -run '^(TestWebdemoHostNginxVerifyScriptContract|TestWebdemoHostNginxStaleListenerFails)$' \
+      -count=1 -v -json ) >"$json" 2>"$EVIDENCE/go-test.stderr.log" || rc=$?
+  echo "$rc" >"$rawexit"
   chmod 600 "$json" "$rawexit" "$EVIDENCE/go-test.stderr.log"
   [ "$(cat "$rawexit")" = "0" ] || { tail -5 "$EVIDENCE/go-test.stderr.log" >&2; fail "Go contract test exited $(cat "$rawexit")"; }
   python3 - "$json" "$EVIDENCE/go-test.summary.json" <<'PY'
 import json, sys
 acts = {'run': 0, 'pass': 0, 'skip': 0, 'fail': 0}
+passed = set()
 for line in open(sys.argv[1]):
     line = line.strip()
     if not line.startswith('{'):
@@ -926,6 +932,10 @@ for line in open(sys.argv[1]):
     ev = json.loads(line)
     if ev.get('Action') in acts:
         acts[ev['Action']] += 1
+    if ev.get('Action') == 'pass' and ev.get('Test'):
+        passed.add(ev['Test'])
+expected = {'TestWebdemoHostNginxVerifyScriptContract', 'TestWebdemoHostNginxStaleListenerFails'}
+assert expected <= passed, f'expected cases not passed: {expected - passed}'
 json.dump(acts, open(sys.argv[2], 'w'), indent=2)
 assert acts['run'] > 0, f'no Go test executed: {acts}'
 assert acts['skip'] == 0, f'Go test skipped: {acts}'
@@ -1101,4 +1111,10 @@ main() {
   log "HOST_NGINX_VERIFIED evidence=$EVIDENCE"
 }
 
+# A post-hoc elapsed assertion alone cannot stop a stuck browser/download. The
+# canonical entry has a real end-to-end watchdog, including failure cleanup.
+if [ "${PPF_HOST_NGINX_WATCHDOG:-0}" != 1 ]; then
+  export PPF_HOST_NGINX_WATCHDOG=1
+  exec timeout --signal=TERM --kill-after=20 "${PPF_MAX_SECONDS:-180}" bash "$0" "$@"
+fi
 main "$@"
