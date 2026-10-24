@@ -1,5 +1,5 @@
 /** 加载/提交状态统一封装：显式 loading / error / retry，绝不静默吞错。 */
-import { ref, shallowRef, type Ref, type ShallowRef } from 'vue'
+import { getCurrentScope, onScopeDispose, ref, shallowRef, type Ref, type ShallowRef } from 'vue'
 import { toApiError } from './errors'
 import type { ApiError } from '@/api/http'
 
@@ -9,6 +9,7 @@ export interface Resource<T> {
   loading: Ref<boolean>
   loaded: Ref<boolean>
   reload: () => Promise<void>
+  reset: () => void
 }
 
 export function useResource<T>(loader: (signal: AbortSignal) => Promise<T>): Resource<T> {
@@ -39,7 +40,16 @@ export function useResource<T>(loader: (signal: AbortSignal) => Promise<T>): Res
     }
   }
 
-  return { data, error, loading, loaded, reload }
+  function reset(): void {
+    controller?.abort()
+    controller = null
+    data.value = null
+    error.value = null
+    loading.value = false
+    loaded.value = false
+  }
+
+  return { data, error, loading, loaded, reload, reset }
 }
 
 export interface Action<Args extends unknown[], R> {
@@ -79,32 +89,65 @@ export function useAction<Args extends unknown[], R>(fn: (...args: Args) => Prom
   return { pending, error, data, run, reset }
 }
 
-/** 轮询任务/状态的简单定时器封装（组件卸载时停止）。 */
+/** Poll only while visible, with one in-flight read and explicit lifetime ownership. */
 export function usePolling(callback: () => void | Promise<void>, intervalMs: number, immediate = false) {
+  const error = shallowRef<ApiError | null>(null)
   let timer: number | null = null
-  let stopped = false
+  let active = false
+  let inFlight = false
+  let generation = 0
 
-  async function tick(): Promise<void> {
-    if (stopped) return
-    await callback()
-    if (stopped) return
-    timer = window.setTimeout(() => void tick(), intervalMs)
+  function clearTimer(): void {
+    if (timer !== null) window.clearTimeout(timer)
+    timer = null
   }
 
-  function start(): void {
-    stopped = false
-    if (timer !== null) return
-    if (immediate) void tick()
-    else timer = window.setTimeout(() => void tick(), intervalMs)
+  function schedule(): void {
+    if (!active || document.hidden || inFlight || timer !== null) return
+    const expected = generation
+    timer = window.setTimeout(() => void tick(expected), intervalMs)
   }
 
-  function stop(): void {
-    stopped = true
-    if (timer !== null) {
-      window.clearTimeout(timer)
-      timer = null
+  async function tick(expected: number): Promise<void> {
+    if (expected !== generation) return
+    timer = null
+    if (!active || document.hidden || inFlight) return
+    inFlight = true
+    try {
+      await callback()
+    } catch (caught) {
+      if (expected === generation && active) {
+        error.value = toApiError(caught)
+        stop() // Unexpected callback failures need an explicit retry, not a hidden loop.
+      }
+    } finally {
+      inFlight = false
+      schedule()
     }
   }
 
-  return { start, stop }
+  function visibilityChanged(): void {
+    clearTimer()
+    if (!document.hidden && active && !inFlight) void tick(generation)
+  }
+
+  function start(): void {
+    if (active) return
+    active = true
+    generation++
+    error.value = null
+    document.addEventListener('visibilitychange', visibilityChanged)
+    if (immediate && !document.hidden) void tick(generation)
+    else schedule()
+  }
+
+  function stop(): void {
+    active = false
+    generation++
+    clearTimer()
+    document.removeEventListener('visibilitychange', visibilityChanged)
+  }
+
+  if (getCurrentScope()) onScopeDispose(stop)
+  return { start, stop, error }
 }
