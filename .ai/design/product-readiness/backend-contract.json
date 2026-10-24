@@ -1,0 +1,2054 @@
+{
+  "source_doc": ".ai/design/product-readiness/backend.md",
+  "source_sha256": "36f031bc9985aa1b310ea5aa4cb117e73ba46c7a082984f5c400ec52395d6539",
+  "note": "Derived handoff cache, not a second API design source",
+  "contract_summary": [
+    {
+      "operation_id": "getHealth",
+      "method": "GET",
+      "path": "/healthz",
+      "request_fields": [],
+      "response_fields": [
+        "status"
+      ],
+      "error_codes": [],
+      "callers": [
+        "internal"
+      ]
+    },
+    {
+      "operation_id": "getReady",
+      "method": "GET",
+      "path": "/readyz",
+      "request_fields": [],
+      "response_fields": [
+        "status",
+        "postgres",
+        "redis",
+        "version",
+        "commit"
+      ],
+      "error_codes": [
+        503
+      ],
+      "callers": [
+        "internal"
+      ]
+    },
+    {
+      "operation_id": "login",
+      "method": "POST",
+      "path": "/api/v1/auth/login",
+      "request_fields": [
+        "username",
+        "password"
+      ],
+      "response_fields": [
+        "user",
+        "csrf_token"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403,
+        429
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "getSession",
+      "method": "GET",
+      "path": "/api/v1/auth/session",
+      "request_fields": [],
+      "response_fields": [
+        "user",
+        "csrf_token"
+      ],
+      "error_codes": [
+        401
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "logout",
+      "method": "POST",
+      "path": "/api/v1/auth/logout",
+      "request_fields": [],
+      "response_fields": [
+        "revoked"
+      ],
+      "error_codes": [
+        401,
+        403
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "redeemInvitation",
+      "method": "POST",
+      "path": "/api/v1/auth/redeem",
+      "request_fields": [
+        "code",
+        "username",
+        "password"
+      ],
+      "response_fields": [
+        "id",
+        "username",
+        "role",
+        "active",
+        "proxy_enabled",
+        "subscription_id",
+        "expires_at",
+        "period_start",
+        "period_end",
+        "period_timezone",
+        "period_anchor_day",
+        "bound_at"
+      ],
+      "error_codes": [
+        400,
+        409,
+        429
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "getSubscriptionOutput",
+      "method": "GET",
+      "path": "/sub/{token}",
+      "request_fields": [
+        "format",
+        "base64"
+      ],
+      "response_fields": [],
+      "error_codes": [
+        400,
+        403,
+        422
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "getMeStatus",
+      "method": "GET",
+      "path": "/api/v1/me/status",
+      "request_fields": [],
+      "response_fields": [
+        "member",
+        "access",
+        "nodes_allowed",
+        "data_complete",
+        "data_issues"
+      ],
+      "error_codes": [
+        401
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "listMeNodes",
+      "method": "GET",
+      "path": "/api/v1/me/nodes",
+      "request_fields": [
+        "limit",
+        "cursor"
+      ],
+      "response_fields": [
+        "items",
+        "next_cursor"
+      ],
+      "error_codes": [
+        401
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "getMeUsage",
+      "method": "GET",
+      "path": "/api/v1/me/usage",
+      "request_fields": [
+        "limit",
+        "cursor"
+      ],
+      "response_fields": [
+        "items",
+        "next_cursor"
+      ],
+      "error_codes": [
+        400,
+        401
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "getMeSubscription",
+      "method": "GET",
+      "path": "/api/v1/me/subscription",
+      "request_fields": [],
+      "response_fields": [
+        "url",
+        "token",
+        "formats",
+        "format_status",
+        "expires_at",
+        "period_end",
+        "rotation_impact"
+      ],
+      "error_codes": [
+        401,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "rotateMeSubscriptionToken",
+      "method": "POST",
+      "path": "/api/v1/me/subscription/token/rotations",
+      "request_fields": [],
+      "response_fields": [
+        "token",
+        "url"
+      ],
+      "error_codes": [
+        401,
+        403,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "rotateMeCredentials",
+      "method": "POST",
+      "path": "/api/v1/me/credentials/rotations",
+      "request_fields": [
+        "scope",
+        "node_id"
+      ],
+      "response_fields": [
+        "rotated",
+        "scope"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "changeMePassword",
+      "method": "POST",
+      "path": "/api/v1/me/password",
+      "request_fields": [
+        "current_password",
+        "new_password"
+      ],
+      "response_fields": [
+        "updated",
+        "sessions_revoked"
+      ],
+      "error_codes": [
+        400,
+        401
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "listMeSessions",
+      "method": "GET",
+      "path": "/api/v1/me/sessions",
+      "request_fields": [
+        "limit",
+        "cursor"
+      ],
+      "response_fields": [
+        "items",
+        "next_cursor"
+      ],
+      "error_codes": [
+        401
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "deleteMeSession",
+      "method": "DELETE",
+      "path": "/api/v1/me/sessions/{sessionId}",
+      "request_fields": [],
+      "response_fields": [
+        "revoked"
+      ],
+      "error_codes": [
+        400,
+        401,
+        404
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "registerAgent",
+      "method": "POST",
+      "path": "/api/v1/agent/register",
+      "request_fields": [
+        "code",
+        "name",
+        "version"
+      ],
+      "response_fields": [
+        "agent_id",
+        "token",
+        "control_generation"
+      ],
+      "error_codes": [
+        400,
+        401,
+        409
+      ],
+      "callers": [
+        "agent"
+      ]
+    },
+    {
+      "operation_id": "getAgentSnapshot",
+      "method": "GET",
+      "path": "/api/v1/agent/snapshot",
+      "request_fields": [
+        "revision",
+        "control_generation"
+      ],
+      "response_fields": [
+        "schema_version",
+        "control_generation",
+        "revision",
+        "issued_at",
+        "expected_user_count",
+        "instances"
+      ],
+      "error_codes": [
+        401,
+        409,
+        500
+      ],
+      "callers": [
+        "agent"
+      ]
+    },
+    {
+      "operation_id": "reportAgentApplied",
+      "method": "POST",
+      "path": "/api/v1/agent/applied",
+      "request_fields": [
+        "control_generation",
+        "revision",
+        "state",
+        "applied_at",
+        "results"
+      ],
+      "response_fields": [
+        "accepted"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403,
+        409
+      ],
+      "callers": [
+        "agent"
+      ]
+    },
+    {
+      "operation_id": "submitAgentUsage",
+      "method": "POST",
+      "path": "/api/v1/agent/usage",
+      "request_fields": [
+        "schema_version",
+        "batch_id",
+        "samples"
+      ],
+      "response_fields": [
+        "batch_id",
+        "status"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403,
+        409,
+        422
+      ],
+      "callers": [
+        "agent"
+      ]
+    },
+    {
+      "operation_id": "agentHeartbeat",
+      "method": "POST",
+      "path": "/api/v1/agent/heartbeat",
+      "request_fields": [
+        "version",
+        "xray_version",
+        "revision",
+        "sent_at",
+        "uptime_seconds",
+        "queue_depth",
+        "metrics",
+        "instances"
+      ],
+      "response_fields": [
+        "accepted"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403
+      ],
+      "callers": [
+        "agent"
+      ]
+    },
+    {
+      "operation_id": "getRecoveryMode",
+      "method": "GET",
+      "path": "/api/v1/admin/recovery-mode",
+      "request_fields": [],
+      "response_fields": [
+        "control_generation",
+        "revision_counter",
+        "recovery_mode",
+        "recovery_entered_at",
+        "updated_at"
+      ],
+      "error_codes": [
+        401,
+        403
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "enterRecoveryMode",
+      "method": "POST",
+      "path": "/api/v1/admin/recovery-mode/enter",
+      "request_fields": [],
+      "response_fields": [
+        "control_generation",
+        "revision_counter",
+        "recovery_mode",
+        "recovery_entered_at",
+        "updated_at"
+      ],
+      "error_codes": [
+        401,
+        403,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "exitRecoveryMode",
+      "method": "POST",
+      "path": "/api/v1/admin/recovery-mode/exit",
+      "request_fields": [
+        "confirm",
+        "agent_revisions_checked",
+        "ledger_checked"
+      ],
+      "response_fields": [
+        "control_generation",
+        "revision_counter",
+        "recovery_mode",
+        "recovery_entered_at",
+        "updated_at",
+        "unverified_agents",
+        "advisories"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "getAdminOverview",
+      "method": "GET",
+      "path": "/api/v1/admin/overview",
+      "request_fields": [],
+      "response_fields": [
+        "counts",
+        "usage_bytes",
+        "agents_online",
+        "pending_tasks",
+        "recent_events",
+        "setup"
+      ],
+      "error_codes": [
+        401,
+        403
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "getUpgradeReadiness",
+      "method": "GET",
+      "path": "/api/v1/admin/upgrade-readiness",
+      "request_fields": [],
+      "response_fields": [
+        "status",
+        "checked_at",
+        "candidate_version",
+        "schema",
+        "checks",
+        "blockers"
+      ],
+      "error_codes": [
+        401,
+        403,
+        500
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "listAgents",
+      "method": "GET",
+      "path": "/api/v1/admin/agents",
+      "request_fields": [
+        "limit",
+        "cursor"
+      ],
+      "response_fields": [
+        "items",
+        "next_cursor"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "listCoreInstances",
+      "method": "GET",
+      "path": "/api/v1/admin/core-instances",
+      "request_fields": [
+        "limit",
+        "cursor"
+      ],
+      "response_fields": [
+        "items",
+        "next_cursor"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "listServers",
+      "method": "GET",
+      "path": "/api/v1/admin/servers",
+      "request_fields": [
+        "limit",
+        "cursor"
+      ],
+      "response_fields": [
+        "items",
+        "next_cursor"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "createServer",
+      "method": "POST",
+      "path": "/api/v1/admin/servers",
+      "request_fields": [
+        "name",
+        "address",
+        "region",
+        "notes",
+        "expires_at",
+        "cost_minor",
+        "currency"
+      ],
+      "response_fields": [
+        "id",
+        "name",
+        "address",
+        "region",
+        "notes",
+        "expires_at",
+        "cost_minor",
+        "currency",
+        "archived",
+        "version",
+        "created_at",
+        "updated_at"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "getServer",
+      "method": "GET",
+      "path": "/api/v1/admin/servers/{serverId}",
+      "request_fields": [],
+      "response_fields": [
+        "id",
+        "name",
+        "address",
+        "region",
+        "notes",
+        "expires_at",
+        "cost_minor",
+        "currency",
+        "archived",
+        "version",
+        "created_at",
+        "updated_at"
+      ],
+      "error_codes": [
+        401,
+        403,
+        404
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "updateServer",
+      "method": "PATCH",
+      "path": "/api/v1/admin/servers/{serverId}",
+      "request_fields": [
+        "version",
+        "name",
+        "address",
+        "region",
+        "notes",
+        "expires_at",
+        "cost_minor",
+        "currency"
+      ],
+      "response_fields": [
+        "id",
+        "name",
+        "address",
+        "region",
+        "notes",
+        "expires_at",
+        "cost_minor",
+        "currency",
+        "archived",
+        "version",
+        "created_at",
+        "updated_at"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403,
+        404,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "deleteServer",
+      "method": "DELETE",
+      "path": "/api/v1/admin/servers/{serverId}",
+      "request_fields": [],
+      "response_fields": [
+        "id",
+        "name",
+        "address",
+        "region",
+        "notes",
+        "expires_at",
+        "cost_minor",
+        "currency",
+        "archived",
+        "version",
+        "created_at",
+        "updated_at"
+      ],
+      "error_codes": [
+        401,
+        403,
+        404,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "createRegistrationCode",
+      "method": "POST",
+      "path": "/api/v1/admin/servers/{serverId}/registration-codes",
+      "request_fields": [],
+      "response_fields": [
+        "id",
+        "code",
+        "expires_at"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403,
+        404,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "listNodes",
+      "method": "GET",
+      "path": "/api/v1/admin/nodes",
+      "request_fields": [
+        "server_id",
+        "q",
+        "limit",
+        "cursor"
+      ],
+      "response_fields": [
+        "items",
+        "next_cursor"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "createNode",
+      "method": "POST",
+      "path": "/api/v1/admin/nodes",
+      "request_fields": [
+        "name",
+        "server_id",
+        "enabled",
+        "host",
+        "port",
+        "external_port",
+        "listen",
+        "protocol",
+        "flow",
+        "cipher",
+        "server_key",
+        "stream_settings",
+        "protocol_settings",
+        "client_settings",
+        "sort_order"
+      ],
+      "response_fields": [
+        "id",
+        "name",
+        "server_id",
+        "enabled",
+        "host",
+        "port",
+        "external_port",
+        "listen",
+        "protocol",
+        "flow",
+        "cipher",
+        "stream_settings",
+        "protocol_settings",
+        "client_settings",
+        "sort_order",
+        "archived",
+        "version",
+        "server_key_set",
+        "created_at",
+        "updated_at"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403,
+        404,
+        409,
+        422
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "getNode",
+      "method": "GET",
+      "path": "/api/v1/admin/nodes/{nodeId}",
+      "request_fields": [],
+      "response_fields": [
+        "id",
+        "name",
+        "server_id",
+        "enabled",
+        "host",
+        "port",
+        "external_port",
+        "listen",
+        "protocol",
+        "flow",
+        "cipher",
+        "stream_settings",
+        "protocol_settings",
+        "client_settings",
+        "sort_order",
+        "archived",
+        "version",
+        "server_key_set",
+        "created_at",
+        "updated_at"
+      ],
+      "error_codes": [
+        401,
+        403,
+        404
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "updateNode",
+      "method": "PATCH",
+      "path": "/api/v1/admin/nodes/{nodeId}",
+      "request_fields": [
+        "version",
+        "name",
+        "server_id",
+        "enabled",
+        "host",
+        "port",
+        "external_port",
+        "listen",
+        "protocol",
+        "flow",
+        "cipher",
+        "server_key",
+        "stream_settings",
+        "protocol_settings",
+        "client_settings",
+        "sort_order"
+      ],
+      "response_fields": [
+        "id",
+        "name",
+        "server_id",
+        "enabled",
+        "host",
+        "port",
+        "external_port",
+        "listen",
+        "protocol",
+        "flow",
+        "cipher",
+        "stream_settings",
+        "protocol_settings",
+        "client_settings",
+        "sort_order",
+        "archived",
+        "version",
+        "server_key_set",
+        "created_at",
+        "updated_at"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403,
+        404,
+        409,
+        422
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "deleteNode",
+      "method": "DELETE",
+      "path": "/api/v1/admin/nodes/{nodeId}",
+      "request_fields": [],
+      "response_fields": [
+        "id",
+        "name",
+        "server_id",
+        "enabled",
+        "host",
+        "port",
+        "external_port",
+        "listen",
+        "protocol",
+        "flow",
+        "cipher",
+        "stream_settings",
+        "protocol_settings",
+        "client_settings",
+        "sort_order",
+        "archived",
+        "version",
+        "server_key_set",
+        "created_at",
+        "updated_at"
+      ],
+      "error_codes": [
+        401,
+        403,
+        404,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "listNodeGroups",
+      "method": "GET",
+      "path": "/api/v1/admin/node-groups",
+      "request_fields": [
+        "limit",
+        "cursor"
+      ],
+      "response_fields": [
+        "items",
+        "next_cursor"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "createNodeGroup",
+      "method": "POST",
+      "path": "/api/v1/admin/node-groups",
+      "request_fields": [
+        "name",
+        "description",
+        "node_ids"
+      ],
+      "response_fields": [
+        "id",
+        "name",
+        "description",
+        "node_ids",
+        "version",
+        "created_at",
+        "updated_at"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "getNodeGroup",
+      "method": "GET",
+      "path": "/api/v1/admin/node-groups/{groupId}",
+      "request_fields": [],
+      "response_fields": [
+        "id",
+        "name",
+        "description",
+        "node_ids",
+        "version",
+        "created_at",
+        "updated_at"
+      ],
+      "error_codes": [
+        401,
+        403,
+        404
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "updateNodeGroup",
+      "method": "PATCH",
+      "path": "/api/v1/admin/node-groups/{groupId}",
+      "request_fields": [
+        "version",
+        "name",
+        "description",
+        "node_ids"
+      ],
+      "response_fields": [
+        "id",
+        "name",
+        "description",
+        "node_ids",
+        "version",
+        "created_at",
+        "updated_at"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403,
+        404,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "deleteNodeGroup",
+      "method": "DELETE",
+      "path": "/api/v1/admin/node-groups/{groupId}",
+      "request_fields": [],
+      "response_fields": [
+        "deleted",
+        "id"
+      ],
+      "error_codes": [
+        401,
+        403,
+        404,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "listSubscriptions",
+      "method": "GET",
+      "path": "/api/v1/admin/subscriptions",
+      "request_fields": [
+        "limit",
+        "cursor"
+      ],
+      "response_fields": [
+        "items",
+        "next_cursor"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "createSubscription",
+      "method": "POST",
+      "path": "/api/v1/admin/subscriptions",
+      "request_fields": [
+        "name",
+        "description",
+        "node_group_ids",
+        "quota_bytes",
+        "timezone",
+        "anchor_day",
+        "default_valid_days",
+        "allow_new_bindings",
+        "access_enabled",
+        "template_id",
+        "archived"
+      ],
+      "response_fields": [
+        "id",
+        "name",
+        "description",
+        "node_group_ids",
+        "quota_bytes",
+        "timezone",
+        "anchor_day",
+        "default_valid_days",
+        "allow_new_bindings",
+        "access_enabled",
+        "archived",
+        "template_id",
+        "pending_period_rule",
+        "bound_members",
+        "version",
+        "created_at",
+        "updated_at"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "getSubscription",
+      "method": "GET",
+      "path": "/api/v1/admin/subscriptions/{subscriptionId}",
+      "request_fields": [],
+      "response_fields": [
+        "id",
+        "name",
+        "description",
+        "node_group_ids",
+        "quota_bytes",
+        "timezone",
+        "anchor_day",
+        "default_valid_days",
+        "allow_new_bindings",
+        "access_enabled",
+        "archived",
+        "template_id",
+        "pending_period_rule",
+        "bound_members",
+        "version",
+        "created_at",
+        "updated_at"
+      ],
+      "error_codes": [
+        401,
+        403,
+        404
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "updateSubscription",
+      "method": "PATCH",
+      "path": "/api/v1/admin/subscriptions/{subscriptionId}",
+      "request_fields": [
+        "version",
+        "name",
+        "description",
+        "node_group_ids",
+        "quota_bytes",
+        "timezone",
+        "anchor_day",
+        "default_valid_days",
+        "allow_new_bindings",
+        "access_enabled",
+        "template_id",
+        "archived"
+      ],
+      "response_fields": [
+        "id",
+        "name",
+        "description",
+        "node_group_ids",
+        "quota_bytes",
+        "timezone",
+        "anchor_day",
+        "default_valid_days",
+        "allow_new_bindings",
+        "access_enabled",
+        "archived",
+        "template_id",
+        "pending_period_rule",
+        "bound_members",
+        "version",
+        "created_at",
+        "updated_at"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403,
+        404,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "deleteSubscription",
+      "method": "DELETE",
+      "path": "/api/v1/admin/subscriptions/{subscriptionId}",
+      "request_fields": [],
+      "response_fields": [
+        "id",
+        "name",
+        "description",
+        "node_group_ids",
+        "quota_bytes",
+        "timezone",
+        "anchor_day",
+        "default_valid_days",
+        "allow_new_bindings",
+        "access_enabled",
+        "archived",
+        "template_id",
+        "pending_period_rule",
+        "bound_members",
+        "version",
+        "created_at",
+        "updated_at",
+        "retired"
+      ],
+      "error_codes": [
+        401,
+        403,
+        404,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "listMembers",
+      "method": "GET",
+      "path": "/api/v1/admin/members",
+      "request_fields": [
+        "subscription_id",
+        "include_archived",
+        "q",
+        "limit",
+        "cursor"
+      ],
+      "response_fields": [
+        "items",
+        "next_cursor"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "createMember",
+      "method": "POST",
+      "path": "/api/v1/admin/members",
+      "request_fields": [
+        "username",
+        "password",
+        "role",
+        "active",
+        "proxy_enabled",
+        "subscription_id",
+        "expires_at",
+        "quota_override_bytes",
+        "quota_override_enabled"
+      ],
+      "response_fields": [
+        "id",
+        "username",
+        "role",
+        "active",
+        "proxy_enabled",
+        "archived",
+        "subscription_id",
+        "expires_at",
+        "quota_override_bytes",
+        "quota_override_enabled",
+        "over_quota",
+        "bound_at",
+        "period_start",
+        "period_end",
+        "period_timezone",
+        "period_anchor_day",
+        "pending_period_rule",
+        "last_login_at",
+        "used_bytes",
+        "effective_quota_bytes",
+        "access_reasons",
+        "proxy_access",
+        "allowed_node_ids",
+        "data_complete",
+        "data_issues",
+        "version",
+        "created_at",
+        "updated_at"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403,
+        404,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "getMember",
+      "method": "GET",
+      "path": "/api/v1/admin/members/{memberId}",
+      "request_fields": [],
+      "response_fields": [
+        "member",
+        "access"
+      ],
+      "error_codes": [
+        401,
+        403,
+        404
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "updateMember",
+      "method": "PATCH",
+      "path": "/api/v1/admin/members/{memberId}",
+      "request_fields": [
+        "version",
+        "username",
+        "password",
+        "role",
+        "active",
+        "proxy_enabled",
+        "subscription_id",
+        "expires_at",
+        "quota_override_bytes",
+        "quota_override_enabled"
+      ],
+      "response_fields": [
+        "id",
+        "username",
+        "role",
+        "active",
+        "proxy_enabled",
+        "archived",
+        "subscription_id",
+        "expires_at",
+        "quota_override_bytes",
+        "quota_override_enabled",
+        "over_quota",
+        "bound_at",
+        "period_start",
+        "period_end",
+        "period_timezone",
+        "period_anchor_day",
+        "pending_period_rule",
+        "last_login_at",
+        "used_bytes",
+        "effective_quota_bytes",
+        "access_reasons",
+        "proxy_access",
+        "allowed_node_ids",
+        "data_complete",
+        "data_issues",
+        "version",
+        "created_at",
+        "updated_at"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403,
+        404,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "deleteMember",
+      "method": "DELETE",
+      "path": "/api/v1/admin/members/{memberId}",
+      "request_fields": [],
+      "response_fields": [
+        "id",
+        "username",
+        "role",
+        "active",
+        "proxy_enabled",
+        "archived",
+        "subscription_id",
+        "expires_at",
+        "quota_override_bytes",
+        "quota_override_enabled",
+        "over_quota",
+        "bound_at",
+        "period_start",
+        "period_end",
+        "period_timezone",
+        "period_anchor_day",
+        "pending_period_rule",
+        "last_login_at",
+        "used_bytes",
+        "effective_quota_bytes",
+        "access_reasons",
+        "proxy_access",
+        "allowed_node_ids",
+        "data_complete",
+        "data_issues",
+        "version",
+        "created_at",
+        "updated_at"
+      ],
+      "error_codes": [
+        401,
+        403,
+        404,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "rotateMemberSubscriptionToken",
+      "method": "POST",
+      "path": "/api/v1/admin/members/{memberId}/subscription-token/rotations",
+      "request_fields": [],
+      "response_fields": [
+        "token",
+        "url"
+      ],
+      "error_codes": [
+        401,
+        403,
+        404,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "rotateMemberCredentials",
+      "method": "POST",
+      "path": "/api/v1/admin/members/{memberId}/credentials/rotations",
+      "request_fields": [
+        "scope",
+        "node_id"
+      ],
+      "response_fields": [
+        "rotated",
+        "scope"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403,
+        404,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "createMemberQuotaAdjustment",
+      "method": "POST",
+      "path": "/api/v1/admin/members/{memberId}/quota-adjustments",
+      "request_fields": [
+        "bytes",
+        "reason"
+      ],
+      "response_fields": [
+        "id",
+        "member_id",
+        "bytes",
+        "reason",
+        "period_start",
+        "created_by",
+        "created_at"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403,
+        404,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "listTemplates",
+      "method": "GET",
+      "path": "/api/v1/admin/templates",
+      "request_fields": [
+        "limit",
+        "cursor"
+      ],
+      "response_fields": [
+        "items",
+        "next_cursor"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "createTemplate",
+      "method": "POST",
+      "path": "/api/v1/admin/templates",
+      "request_fields": [
+        "name",
+        "format",
+        "content",
+        "description"
+      ],
+      "response_fields": [
+        "id",
+        "name",
+        "format",
+        "content",
+        "description",
+        "version",
+        "created_at",
+        "updated_at"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "getTemplate",
+      "method": "GET",
+      "path": "/api/v1/admin/templates/{templateId}",
+      "request_fields": [],
+      "response_fields": [
+        "id",
+        "name",
+        "format",
+        "content",
+        "description",
+        "version",
+        "created_at",
+        "updated_at"
+      ],
+      "error_codes": [
+        401,
+        403,
+        404
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "updateTemplate",
+      "method": "PATCH",
+      "path": "/api/v1/admin/templates/{templateId}",
+      "request_fields": [
+        "version",
+        "name",
+        "format",
+        "content",
+        "description"
+      ],
+      "response_fields": [
+        "id",
+        "name",
+        "format",
+        "content",
+        "description",
+        "version",
+        "created_at",
+        "updated_at"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403,
+        404,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "deleteTemplate",
+      "method": "DELETE",
+      "path": "/api/v1/admin/templates/{templateId}",
+      "request_fields": [],
+      "response_fields": [
+        "deleted",
+        "id"
+      ],
+      "error_codes": [
+        401,
+        403,
+        404,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "listInvitations",
+      "method": "GET",
+      "path": "/api/v1/admin/invitations",
+      "request_fields": [
+        "limit",
+        "cursor"
+      ],
+      "response_fields": [
+        "items",
+        "next_cursor"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "createInvitation",
+      "method": "POST",
+      "path": "/api/v1/admin/invitations",
+      "request_fields": [
+        "subscription_id",
+        "expires_at",
+        "max_uses"
+      ],
+      "response_fields": [
+        "id",
+        "code",
+        "expires_at"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403,
+        404,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "revokeInvitation",
+      "method": "POST",
+      "path": "/api/v1/admin/invitations/{invitationId}/revoke",
+      "request_fields": [],
+      "response_fields": [
+        "revoked",
+        "id"
+      ],
+      "error_codes": [
+        401,
+        403,
+        404,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "getAdminUsage",
+      "method": "GET",
+      "path": "/api/v1/admin/usage",
+      "request_fields": [
+        "member_id",
+        "node_id",
+        "from",
+        "to",
+        "limit",
+        "cursor"
+      ],
+      "response_fields": [
+        "items",
+        "next_cursor"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "previewBatch",
+      "method": "POST",
+      "path": "/api/v1/admin/batches/preview",
+      "request_fields": [
+        "operation",
+        "member_ids",
+        "values",
+        "reason"
+      ],
+      "response_fields": [
+        "id",
+        "operation",
+        "version",
+        "rules_version",
+        "member_set_digest",
+        "member_count",
+        "affected_count",
+        "affected_nodes",
+        "affected_agents",
+        "items",
+        "exceptions",
+        "warnings",
+        "conclusion",
+        "expires_at",
+        "created_at"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "submitBatch",
+      "method": "POST",
+      "path": "/api/v1/admin/batches",
+      "request_fields": [
+        "preview_id",
+        "rules_version",
+        "member_set_digest",
+        "confirm"
+      ],
+      "response_fields": [
+        "id",
+        "preview_id",
+        "operation",
+        "state",
+        "results",
+        "summary",
+        "member_count",
+        "idempotent_replay",
+        "created_at"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "listBatches",
+      "method": "GET",
+      "path": "/api/v1/admin/batches",
+      "request_fields": [
+        "limit",
+        "cursor"
+      ],
+      "response_fields": [
+        "items",
+        "next_cursor"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "getBatch",
+      "method": "GET",
+      "path": "/api/v1/admin/batches/{batchId}",
+      "request_fields": [],
+      "response_fields": [
+        "batch",
+        "results",
+        "summary",
+        "id",
+        "state",
+        "operation"
+      ],
+      "error_codes": [
+        401,
+        403,
+        404
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "listEvents",
+      "method": "GET",
+      "path": "/api/v1/admin/events",
+      "request_fields": [
+        "state",
+        "q",
+        "limit",
+        "cursor"
+      ],
+      "response_fields": [
+        "items",
+        "next_cursor"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "ackEvent",
+      "method": "POST",
+      "path": "/api/v1/admin/events/{eventId}/ack",
+      "request_fields": [],
+      "response_fields": [
+        "acked",
+        "id"
+      ],
+      "error_codes": [
+        401,
+        403,
+        404,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "listTasks",
+      "method": "GET",
+      "path": "/api/v1/admin/tasks",
+      "request_fields": [
+        "state",
+        "batch_id",
+        "agent_id",
+        "limit",
+        "cursor"
+      ],
+      "response_fields": [
+        "items",
+        "next_cursor"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "retryTask",
+      "method": "POST",
+      "path": "/api/v1/admin/tasks/{taskId}/retry",
+      "request_fields": [],
+      "response_fields": [
+        "id",
+        "kind",
+        "agent_id",
+        "node_id",
+        "member_id",
+        "batch_id",
+        "state",
+        "attempts",
+        "max_attempts",
+        "last_error",
+        "available_at",
+        "locked_at",
+        "created_at",
+        "updated_at"
+      ],
+      "error_codes": [
+        401,
+        403,
+        404,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "listAuditLogs",
+      "method": "GET",
+      "path": "/api/v1/admin/audit-logs",
+      "request_fields": [
+        "action",
+        "actor",
+        "limit",
+        "cursor"
+      ],
+      "response_fields": [
+        "items",
+        "next_cursor"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "getSettings",
+      "method": "GET",
+      "path": "/api/v1/admin/settings",
+      "request_fields": [],
+      "response_fields": [
+        "timezone",
+        "retention_days",
+        "telegram_enabled",
+        "telegram_chat_id",
+        "telegram_token_set",
+        "template_defaults",
+        "version",
+        "updated_at"
+      ],
+      "error_codes": [
+        401,
+        403
+      ],
+      "callers": [
+        "frontend"
+      ]
+    },
+    {
+      "operation_id": "updateSettings",
+      "method": "PUT",
+      "path": "/api/v1/admin/settings",
+      "request_fields": [
+        "version",
+        "timezone",
+        "retention_days",
+        "telegram_enabled",
+        "telegram_chat_id",
+        "telegram_token",
+        "template_defaults"
+      ],
+      "response_fields": [
+        "timezone",
+        "retention_days",
+        "telegram_enabled",
+        "telegram_chat_id",
+        "telegram_token_set",
+        "template_defaults",
+        "version",
+        "updated_at"
+      ],
+      "error_codes": [
+        400,
+        401,
+        403,
+        409
+      ],
+      "callers": [
+        "frontend"
+      ]
+    }
+  ]
+}

@@ -1183,5 +1183,48 @@
       "owned-fault"
     ],
     "timeout_seconds": 100
+  },
+  {
+    "id": "store/database-error-contract",
+    "packages": [
+      "./internal/panel/store"
+    ],
+    "run": "^(TestDBErrPostgresConnectionFailuresAreRetryable|TestDBErrRetainsConstraintAndTransactionSemantics)$",
+    "expected_tests": [
+      "TestDBErrPostgresConnectionFailuresAreRetryable",
+      "TestDBErrRetainsConstraintAndTransactionSemantics"
+    ],
+    "stories": [
+      "US-PR-011",
+      "US-PR-016"
+    ],
+    "requires": [],
+    "timeout_seconds": 60
+  },
+  {
+    "id": "upgrade/delivery",
+    "packages": [
+      "./internal/panel/store",
+      "./cmd/panel"
+    ],
+    "run": "^(TestUpgradeDeliveryHelper|TestAdministratorStopReadyImport|TestAdministratorStopRejects|TestAdministratorStopImportRollback|TestUpgradeOpenControlledMigration|TestUpgradeOpenFinalProofRecheck|TestUpgradeOpenPostMigrationSemantics|TestCheckPreflightWithoutMasterKeyOrMigrations)$",
+    "expected_tests": [
+      "TestUpgradeDeliveryHelper",
+      "TestAdministratorStopReadyImport",
+      "TestAdministratorStopRejects",
+      "TestAdministratorStopImportRollback",
+      "TestUpgradeOpenControlledMigration",
+      "TestUpgradeOpenFinalProofRecheck",
+      "TestUpgradeOpenPostMigrationSemantics",
+      "TestCheckPreflightWithoutMasterKeyOrMigrations"
+    ],
+    "stories": [
+      "US-PR-016"
+    ],
+    "requires": [
+      "postgres",
+      "unix"
+    ],
+    "timeout_seconds": 240
   }
 ]

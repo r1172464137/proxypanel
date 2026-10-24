@@ -1,0 +1,1108 @@
+{
+  "source_doc": ".ai/design/product-readiness/frontend.md",
+  "source_sha256": "60da830168ee2d14f260880e416b4a5b23ce88e7f5aa1554c2940797ca233fd8",
+  "note": "Derived handoff cache, not a second API design source",
+  "contract_dependencies": [
+    {
+      "operation_id": "login",
+      "method": "POST",
+      "path": "/api/v1/auth/login",
+      "request_fields_used": [
+        "username",
+        "password"
+      ],
+      "response_fields_used": [
+        "user",
+        "csrf_token"
+      ]
+    },
+    {
+      "operation_id": "getSession",
+      "method": "GET",
+      "path": "/api/v1/auth/session",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "user",
+        "csrf_token"
+      ]
+    },
+    {
+      "operation_id": "logout",
+      "method": "POST",
+      "path": "/api/v1/auth/logout",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "revoked"
+      ]
+    },
+    {
+      "operation_id": "redeemInvitation",
+      "method": "POST",
+      "path": "/api/v1/auth/redeem",
+      "request_fields_used": [
+        "code",
+        "username",
+        "password"
+      ],
+      "response_fields_used": [
+        "id",
+        "username",
+        "role",
+        "active",
+        "proxy_enabled",
+        "subscription_id",
+        "period_start",
+        "period_end",
+        "expires_at"
+      ]
+    },
+    {
+      "operation_id": "getSubscriptionOutput",
+      "method": "GET",
+      "path": "/sub/{token}",
+      "request_fields_used": [
+        "format",
+        "base64"
+      ],
+      "response_fields_used": []
+    },
+    {
+      "operation_id": "getMeStatus",
+      "method": "GET",
+      "path": "/api/v1/me/status",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "member",
+        "access",
+        "nodes_allowed",
+        "data_complete",
+        "data_issues"
+      ]
+    },
+    {
+      "operation_id": "listMeNodes",
+      "method": "GET",
+      "path": "/api/v1/me/nodes",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "items",
+        "next_cursor"
+      ]
+    },
+    {
+      "operation_id": "getMeUsage",
+      "method": "GET",
+      "path": "/api/v1/me/usage",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "items",
+        "next_cursor"
+      ]
+    },
+    {
+      "operation_id": "getMeSubscription",
+      "method": "GET",
+      "path": "/api/v1/me/subscription",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "url",
+        "token",
+        "formats",
+        "format_status",
+        "expires_at",
+        "period_end",
+        "rotation_impact"
+      ]
+    },
+    {
+      "operation_id": "rotateMeSubscriptionToken",
+      "method": "POST",
+      "path": "/api/v1/me/subscription/token/rotations",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "token",
+        "url"
+      ]
+    },
+    {
+      "operation_id": "rotateMeCredentials",
+      "method": "POST",
+      "path": "/api/v1/me/credentials/rotations",
+      "request_fields_used": [
+        "scope",
+        "node_id"
+      ],
+      "response_fields_used": [
+        "rotated",
+        "scope"
+      ]
+    },
+    {
+      "operation_id": "changeMePassword",
+      "method": "POST",
+      "path": "/api/v1/me/password",
+      "request_fields_used": [
+        "current_password",
+        "new_password"
+      ],
+      "response_fields_used": [
+        "updated",
+        "sessions_revoked"
+      ]
+    },
+    {
+      "operation_id": "listMeSessions",
+      "method": "GET",
+      "path": "/api/v1/me/sessions",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "items",
+        "next_cursor"
+      ]
+    },
+    {
+      "operation_id": "deleteMeSession",
+      "method": "DELETE",
+      "path": "/api/v1/me/sessions/{sessionId}",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "revoked"
+      ]
+    },
+    {
+      "operation_id": "getRecoveryMode",
+      "method": "GET",
+      "path": "/api/v1/admin/recovery-mode",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "control_generation",
+        "revision_counter",
+        "recovery_mode",
+        "recovery_entered_at",
+        "updated_at"
+      ]
+    },
+    {
+      "operation_id": "enterRecoveryMode",
+      "method": "POST",
+      "path": "/api/v1/admin/recovery-mode/enter",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "control_generation",
+        "recovery_mode",
+        "recovery_entered_at",
+        "updated_at"
+      ]
+    },
+    {
+      "operation_id": "exitRecoveryMode",
+      "method": "POST",
+      "path": "/api/v1/admin/recovery-mode/exit",
+      "request_fields_used": [
+        "confirm",
+        "agent_revisions_checked",
+        "ledger_checked"
+      ],
+      "response_fields_used": [
+        "recovery_mode",
+        "updated_at",
+        "unverified_agents",
+        "advisories"
+      ]
+    },
+    {
+      "operation_id": "getAdminOverview",
+      "method": "GET",
+      "path": "/api/v1/admin/overview",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "counts",
+        "usage_bytes",
+        "agents_online",
+        "pending_tasks",
+        "recent_events",
+        "setup"
+      ]
+    },
+    {
+      "operation_id": "getUpgradeReadiness",
+      "method": "GET",
+      "path": "/api/v1/admin/upgrade-readiness",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "status",
+        "checked_at",
+        "candidate_version",
+        "schema",
+        "checks",
+        "blockers"
+      ]
+    },
+    {
+      "operation_id": "listAgents",
+      "method": "GET",
+      "path": "/api/v1/admin/agents",
+      "request_fields_used": [
+        "limit",
+        "cursor"
+      ],
+      "response_fields_used": [
+        "items",
+        "next_cursor"
+      ]
+    },
+    {
+      "operation_id": "listCoreInstances",
+      "method": "GET",
+      "path": "/api/v1/admin/core-instances",
+      "request_fields_used": [
+        "limit",
+        "cursor"
+      ],
+      "response_fields_used": [
+        "items",
+        "next_cursor"
+      ]
+    },
+    {
+      "operation_id": "listServers",
+      "method": "GET",
+      "path": "/api/v1/admin/servers",
+      "request_fields_used": [
+        "limit",
+        "cursor"
+      ],
+      "response_fields_used": [
+        "items",
+        "next_cursor"
+      ]
+    },
+    {
+      "operation_id": "createServer",
+      "method": "POST",
+      "path": "/api/v1/admin/servers",
+      "request_fields_used": [
+        "name",
+        "address",
+        "region",
+        "notes",
+        "expires_at",
+        "cost_minor",
+        "currency"
+      ],
+      "response_fields_used": [
+        "id",
+        "name",
+        "address",
+        "region",
+        "expires_at",
+        "archived",
+        "version"
+      ]
+    },
+    {
+      "operation_id": "getServer",
+      "method": "GET",
+      "path": "/api/v1/admin/servers/{serverId}",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "id",
+        "name",
+        "address",
+        "region",
+        "notes",
+        "expires_at",
+        "archived",
+        "version",
+        "updated_at"
+      ]
+    },
+    {
+      "operation_id": "updateServer",
+      "method": "PATCH",
+      "path": "/api/v1/admin/servers/{serverId}",
+      "request_fields_used": [
+        "version",
+        "name",
+        "address",
+        "region",
+        "notes",
+        "expires_at",
+        "cost_minor",
+        "currency"
+      ],
+      "response_fields_used": [
+        "id",
+        "version",
+        "updated_at"
+      ]
+    },
+    {
+      "operation_id": "deleteServer",
+      "method": "DELETE",
+      "path": "/api/v1/admin/servers/{serverId}",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "id",
+        "archived",
+        "version"
+      ]
+    },
+    {
+      "operation_id": "createRegistrationCode",
+      "method": "POST",
+      "path": "/api/v1/admin/servers/{serverId}/registration-codes",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "id",
+        "code",
+        "expires_at"
+      ]
+    },
+    {
+      "operation_id": "listNodes",
+      "method": "GET",
+      "path": "/api/v1/admin/nodes",
+      "request_fields_used": [
+        "server_id",
+        "q",
+        "limit",
+        "cursor"
+      ],
+      "response_fields_used": [
+        "items",
+        "next_cursor"
+      ]
+    },
+    {
+      "operation_id": "createNode",
+      "method": "POST",
+      "path": "/api/v1/admin/nodes",
+      "request_fields_used": [
+        "name",
+        "server_id",
+        "enabled",
+        "host",
+        "port",
+        "external_port",
+        "listen",
+        "protocol",
+        "flow",
+        "cipher",
+        "server_key",
+        "stream_settings",
+        "protocol_settings",
+        "client_settings",
+        "sort_order"
+      ],
+      "response_fields_used": [
+        "id",
+        "version",
+        "server_key_set",
+        "enabled",
+        "protocol"
+      ]
+    },
+    {
+      "operation_id": "getNode",
+      "method": "GET",
+      "path": "/api/v1/admin/nodes/{nodeId}",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "id",
+        "name",
+        "server_id",
+        "enabled",
+        "host",
+        "port",
+        "external_port",
+        "listen",
+        "protocol",
+        "flow",
+        "cipher",
+        "stream_settings",
+        "protocol_settings",
+        "client_settings",
+        "sort_order",
+        "archived",
+        "version",
+        "server_key_set",
+        "updated_at"
+      ]
+    },
+    {
+      "operation_id": "updateNode",
+      "method": "PATCH",
+      "path": "/api/v1/admin/nodes/{nodeId}",
+      "request_fields_used": [
+        "version",
+        "name",
+        "server_id",
+        "enabled",
+        "host",
+        "port",
+        "external_port",
+        "listen",
+        "protocol",
+        "flow",
+        "cipher",
+        "server_key",
+        "stream_settings",
+        "protocol_settings",
+        "client_settings",
+        "sort_order"
+      ],
+      "response_fields_used": [
+        "id",
+        "version",
+        "server_key_set",
+        "stream_settings",
+        "protocol_settings",
+        "client_settings",
+        "updated_at"
+      ]
+    },
+    {
+      "operation_id": "deleteNode",
+      "method": "DELETE",
+      "path": "/api/v1/admin/nodes/{nodeId}",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "id",
+        "archived",
+        "version"
+      ]
+    },
+    {
+      "operation_id": "listNodeGroups",
+      "method": "GET",
+      "path": "/api/v1/admin/node-groups",
+      "request_fields_used": [
+        "limit",
+        "cursor"
+      ],
+      "response_fields_used": [
+        "items",
+        "next_cursor"
+      ]
+    },
+    {
+      "operation_id": "createNodeGroup",
+      "method": "POST",
+      "path": "/api/v1/admin/node-groups",
+      "request_fields_used": [
+        "name",
+        "description",
+        "node_ids"
+      ],
+      "response_fields_used": [
+        "id",
+        "version",
+        "node_ids"
+      ]
+    },
+    {
+      "operation_id": "getNodeGroup",
+      "method": "GET",
+      "path": "/api/v1/admin/node-groups/{groupId}",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "id",
+        "name",
+        "description",
+        "node_ids",
+        "version"
+      ]
+    },
+    {
+      "operation_id": "updateNodeGroup",
+      "method": "PATCH",
+      "path": "/api/v1/admin/node-groups/{groupId}",
+      "request_fields_used": [
+        "version",
+        "name",
+        "description",
+        "node_ids"
+      ],
+      "response_fields_used": [
+        "id",
+        "version",
+        "node_ids",
+        "updated_at"
+      ]
+    },
+    {
+      "operation_id": "deleteNodeGroup",
+      "method": "DELETE",
+      "path": "/api/v1/admin/node-groups/{groupId}",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "deleted",
+        "id"
+      ]
+    },
+    {
+      "operation_id": "listSubscriptions",
+      "method": "GET",
+      "path": "/api/v1/admin/subscriptions",
+      "request_fields_used": [
+        "limit",
+        "cursor"
+      ],
+      "response_fields_used": [
+        "items",
+        "next_cursor"
+      ]
+    },
+    {
+      "operation_id": "createSubscription",
+      "method": "POST",
+      "path": "/api/v1/admin/subscriptions",
+      "request_fields_used": [
+        "name",
+        "description",
+        "node_group_ids",
+        "quota_bytes",
+        "timezone",
+        "anchor_day",
+        "default_valid_days",
+        "allow_new_bindings",
+        "access_enabled",
+        "template_id",
+        "archived"
+      ],
+      "response_fields_used": [
+        "id",
+        "name",
+        "node_group_ids",
+        "quota_bytes",
+        "timezone",
+        "anchor_day",
+        "default_valid_days",
+        "allow_new_bindings",
+        "access_enabled",
+        "archived",
+        "template_id",
+        "pending_period_rule",
+        "bound_members",
+        "version"
+      ]
+    },
+    {
+      "operation_id": "getSubscription",
+      "method": "GET",
+      "path": "/api/v1/admin/subscriptions/{subscriptionId}",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "id",
+        "name",
+        "description",
+        "node_group_ids",
+        "quota_bytes",
+        "timezone",
+        "anchor_day",
+        "default_valid_days",
+        "allow_new_bindings",
+        "access_enabled",
+        "archived",
+        "template_id",
+        "pending_period_rule",
+        "bound_members",
+        "version"
+      ]
+    },
+    {
+      "operation_id": "updateSubscription",
+      "method": "PATCH",
+      "path": "/api/v1/admin/subscriptions/{subscriptionId}",
+      "request_fields_used": [
+        "version",
+        "name",
+        "description",
+        "node_group_ids",
+        "quota_bytes",
+        "timezone",
+        "anchor_day",
+        "default_valid_days",
+        "allow_new_bindings",
+        "access_enabled",
+        "template_id",
+        "archived"
+      ],
+      "response_fields_used": [
+        "id",
+        "version",
+        "pending_period_rule",
+        "bound_members",
+        "archived"
+      ]
+    },
+    {
+      "operation_id": "deleteSubscription",
+      "method": "DELETE",
+      "path": "/api/v1/admin/subscriptions/{subscriptionId}",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "id",
+        "retired"
+      ]
+    },
+    {
+      "operation_id": "listMembers",
+      "method": "GET",
+      "path": "/api/v1/admin/members",
+      "request_fields_used": [
+        "subscription_id",
+        "include_archived",
+        "q",
+        "limit",
+        "cursor"
+      ],
+      "response_fields_used": [
+        "items",
+        "next_cursor"
+      ]
+    },
+    {
+      "operation_id": "createMember",
+      "method": "POST",
+      "path": "/api/v1/admin/members",
+      "request_fields_used": [
+        "username",
+        "password",
+        "role",
+        "active",
+        "proxy_enabled",
+        "subscription_id",
+        "expires_at",
+        "quota_override_bytes",
+        "quota_override_enabled"
+      ],
+      "response_fields_used": [
+        "id",
+        "username",
+        "role",
+        "active",
+        "proxy_enabled",
+        "archived",
+        "subscription_id",
+        "expires_at",
+        "over_quota",
+        "period_start",
+        "period_end",
+        "period_timezone",
+        "period_anchor_day",
+        "used_bytes",
+        "effective_quota_bytes",
+        "access_reasons",
+        "proxy_access",
+        "allowed_node_ids",
+        "data_complete",
+        "data_issues",
+        "version"
+      ]
+    },
+    {
+      "operation_id": "getMember",
+      "method": "GET",
+      "path": "/api/v1/admin/members/{memberId}",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "member",
+        "access"
+      ]
+    },
+    {
+      "operation_id": "updateMember",
+      "method": "PATCH",
+      "path": "/api/v1/admin/members/{memberId}",
+      "request_fields_used": [
+        "version",
+        "username",
+        "password",
+        "role",
+        "active",
+        "proxy_enabled",
+        "subscription_id",
+        "expires_at",
+        "quota_override_bytes",
+        "quota_override_enabled"
+      ],
+      "response_fields_used": [
+        "id",
+        "version",
+        "proxy_access",
+        "over_quota",
+        "access_reasons",
+        "used_bytes",
+        "effective_quota_bytes",
+        "allowed_node_ids",
+        "data_complete",
+        "data_issues"
+      ]
+    },
+    {
+      "operation_id": "deleteMember",
+      "method": "DELETE",
+      "path": "/api/v1/admin/members/{memberId}",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "id",
+        "archived",
+        "version"
+      ]
+    },
+    {
+      "operation_id": "rotateMemberSubscriptionToken",
+      "method": "POST",
+      "path": "/api/v1/admin/members/{memberId}/subscription-token/rotations",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "token",
+        "url"
+      ]
+    },
+    {
+      "operation_id": "rotateMemberCredentials",
+      "method": "POST",
+      "path": "/api/v1/admin/members/{memberId}/credentials/rotations",
+      "request_fields_used": [
+        "scope",
+        "node_id"
+      ],
+      "response_fields_used": [
+        "rotated",
+        "scope"
+      ]
+    },
+    {
+      "operation_id": "createMemberQuotaAdjustment",
+      "method": "POST",
+      "path": "/api/v1/admin/members/{memberId}/quota-adjustments",
+      "request_fields_used": [
+        "bytes",
+        "reason"
+      ],
+      "response_fields_used": [
+        "id",
+        "member_id",
+        "bytes",
+        "reason",
+        "period_start",
+        "created_at"
+      ]
+    },
+    {
+      "operation_id": "listTemplates",
+      "method": "GET",
+      "path": "/api/v1/admin/templates",
+      "request_fields_used": [
+        "limit",
+        "cursor"
+      ],
+      "response_fields_used": [
+        "items",
+        "next_cursor"
+      ]
+    },
+    {
+      "operation_id": "createTemplate",
+      "method": "POST",
+      "path": "/api/v1/admin/templates",
+      "request_fields_used": [
+        "name",
+        "format",
+        "content",
+        "description"
+      ],
+      "response_fields_used": [
+        "id",
+        "name",
+        "format",
+        "content",
+        "description",
+        "version"
+      ]
+    },
+    {
+      "operation_id": "getTemplate",
+      "method": "GET",
+      "path": "/api/v1/admin/templates/{templateId}",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "id",
+        "name",
+        "format",
+        "content",
+        "description",
+        "version"
+      ]
+    },
+    {
+      "operation_id": "updateTemplate",
+      "method": "PATCH",
+      "path": "/api/v1/admin/templates/{templateId}",
+      "request_fields_used": [
+        "version",
+        "name",
+        "format",
+        "content",
+        "description"
+      ],
+      "response_fields_used": [
+        "id",
+        "version",
+        "updated_at"
+      ]
+    },
+    {
+      "operation_id": "deleteTemplate",
+      "method": "DELETE",
+      "path": "/api/v1/admin/templates/{templateId}",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "deleted",
+        "id"
+      ]
+    },
+    {
+      "operation_id": "listInvitations",
+      "method": "GET",
+      "path": "/api/v1/admin/invitations",
+      "request_fields_used": [
+        "limit",
+        "cursor"
+      ],
+      "response_fields_used": [
+        "items",
+        "next_cursor"
+      ]
+    },
+    {
+      "operation_id": "createInvitation",
+      "method": "POST",
+      "path": "/api/v1/admin/invitations",
+      "request_fields_used": [
+        "subscription_id",
+        "expires_at",
+        "max_uses"
+      ],
+      "response_fields_used": [
+        "id",
+        "code",
+        "expires_at"
+      ]
+    },
+    {
+      "operation_id": "revokeInvitation",
+      "method": "POST",
+      "path": "/api/v1/admin/invitations/{invitationId}/revoke",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "revoked",
+        "id"
+      ]
+    },
+    {
+      "operation_id": "getAdminUsage",
+      "method": "GET",
+      "path": "/api/v1/admin/usage",
+      "request_fields_used": [
+        "member_id",
+        "node_id",
+        "from",
+        "to",
+        "limit",
+        "cursor"
+      ],
+      "response_fields_used": [
+        "items",
+        "next_cursor"
+      ]
+    },
+    {
+      "operation_id": "previewBatch",
+      "method": "POST",
+      "path": "/api/v1/admin/batches/preview",
+      "request_fields_used": [
+        "operation",
+        "member_ids",
+        "values",
+        "reason"
+      ],
+      "response_fields_used": [
+        "id",
+        "operation",
+        "version",
+        "rules_version",
+        "member_set_digest",
+        "member_count",
+        "affected_count",
+        "affected_nodes",
+        "affected_agents",
+        "items",
+        "exceptions",
+        "warnings",
+        "conclusion",
+        "expires_at"
+      ]
+    },
+    {
+      "operation_id": "submitBatch",
+      "method": "POST",
+      "path": "/api/v1/admin/batches",
+      "request_fields_used": [
+        "preview_id",
+        "rules_version",
+        "member_set_digest",
+        "confirm"
+      ],
+      "response_fields_used": [
+        "id",
+        "preview_id",
+        "operation",
+        "state",
+        "results",
+        "summary",
+        "member_count",
+        "idempotent_replay",
+        "created_at"
+      ]
+    },
+    {
+      "operation_id": "listBatches",
+      "method": "GET",
+      "path": "/api/v1/admin/batches",
+      "request_fields_used": [
+        "limit",
+        "cursor"
+      ],
+      "response_fields_used": [
+        "items",
+        "next_cursor"
+      ]
+    },
+    {
+      "operation_id": "getBatch",
+      "method": "GET",
+      "path": "/api/v1/admin/batches/{batchId}",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "batch",
+        "results",
+        "summary",
+        "id",
+        "state",
+        "operation"
+      ]
+    },
+    {
+      "operation_id": "listEvents",
+      "method": "GET",
+      "path": "/api/v1/admin/events",
+      "request_fields_used": [
+        "state",
+        "q",
+        "limit",
+        "cursor"
+      ],
+      "response_fields_used": [
+        "items",
+        "next_cursor"
+      ]
+    },
+    {
+      "operation_id": "ackEvent",
+      "method": "POST",
+      "path": "/api/v1/admin/events/{eventId}/ack",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "acked",
+        "id"
+      ]
+    },
+    {
+      "operation_id": "listTasks",
+      "method": "GET",
+      "path": "/api/v1/admin/tasks",
+      "request_fields_used": [
+        "state",
+        "batch_id",
+        "agent_id",
+        "limit",
+        "cursor"
+      ],
+      "response_fields_used": [
+        "items",
+        "next_cursor"
+      ]
+    },
+    {
+      "operation_id": "retryTask",
+      "method": "POST",
+      "path": "/api/v1/admin/tasks/{taskId}/retry",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "id",
+        "kind",
+        "agent_id",
+        "node_id",
+        "state",
+        "attempts",
+        "max_attempts",
+        "last_error",
+        "available_at"
+      ]
+    },
+    {
+      "operation_id": "listAuditLogs",
+      "method": "GET",
+      "path": "/api/v1/admin/audit-logs",
+      "request_fields_used": [
+        "action",
+        "actor",
+        "limit",
+        "cursor"
+      ],
+      "response_fields_used": [
+        "items",
+        "next_cursor"
+      ]
+    },
+    {
+      "operation_id": "getSettings",
+      "method": "GET",
+      "path": "/api/v1/admin/settings",
+      "request_fields_used": [],
+      "response_fields_used": [
+        "timezone",
+        "retention_days",
+        "telegram_enabled",
+        "telegram_chat_id",
+        "telegram_token_set",
+        "template_defaults",
+        "version",
+        "updated_at"
+      ]
+    },
+    {
+      "operation_id": "updateSettings",
+      "method": "PUT",
+      "path": "/api/v1/admin/settings",
+      "request_fields_used": [
+        "version",
+        "timezone",
+        "retention_days",
+        "telegram_enabled",
+        "telegram_chat_id",
+        "telegram_token",
+        "template_defaults"
+      ],
+      "response_fields_used": [
+        "version",
+        "updated_at",
+        "telegram_token_set"
+      ]
+    }
+  ]
+}

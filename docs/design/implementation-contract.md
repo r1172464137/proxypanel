@@ -20,14 +20,14 @@
 ## HTTP约定
 
 - 单对象/动作成功：`{"data": ...,"request_id":""}`（当前对象包络 request_id 为空；追踪用 X-Request-Id）；列表：`{"items":[],"next_cursor":null}`；错误：`{"error":{"code":"...","message":"...","retryable":false,"request_id":"...","details":{}}}`（details 可省略）。`/me/usage` 的 items 是对象 `{usage:[],adjustments:[]}`，不是数组。
-- 时间RFC3339 UTC，ID使用服务端随机不透明字符串，版本int64。分页 items 空集合使用[]；readiness 诊断失败等对象中的切片可能为 null，按 [API 参考](../reference/api.md#11-升级-readiness只读诊断与本地材料边界) 的真实 JSON 类型消费。
+- 时间RFC3339 UTC，ID使用服务端随机不透明字符串，版本int64。分页 items 空集合使用[]；readiness 的 schema/checks/blockers 及兼容迁移数组空集合也使用[]，无法核验的 checksum_ok 为 null，按 [API 参考](../reference/api.md#11-升级-readiness只读诊断与本地材料边界) 的真实 JSON 类型消费。
 - 正式浏览器/Agent 入口使用 HTTPS；宿主 nginx 可终止 TLS，再通过受控明文链路访问面板。Docker 镜像无 nginx，仅单 Go 进程，宿主回环 8081 → 容器 `0.0.0.0:8080`，不再要求反代模式监听回环；DEV 仍必须回环，只用于裸进程本机开发，不用于普通 Docker bridge。
 - 镜像默认 `PANEL_WEB_ROOT=/usr/share/proxypanel/web` 托管 SPA，显式空为 API-only（宿主 nginx 托管 dist）；裸进程默认 API-only。直接 TLS 可任意监听，成对证书优先于反代路径；DEV 回环检查独立生效。
 - 会话Cookie `pp_session`，HttpOnly，SameSite=Strict，生产Secure；写接口要求X-CSRF-Token（登录/邀请兑换/Agent Bearer除外）。GET session返回csrf_token。
 - 初始管理员仅服务端bootstrap：`PANEL_ADMIN_USER`、`PANEL_ADMIN_PASSWORD`，只在用户表为空时创建；不公开无保护的bootstrap HTTP接口。不提供默认密码。
 - 变更需校验JSON/字段/关系；客户端版本通过body.version；批量submit需要Idempotency-Key。验证错误400，未登录401，CSRF/权限403，不存在404，版本/幂等冲突409，依赖不可用503。
-- 六个管理核心集合、七个运维集合及本人 nodes/sessions/usage 已实现 keyset 分页：默认 limit=50，整数夹取1..200；有后续才给不透明 next_cursor，否则 null。cursor 绑定端点及有效过滤（运维另绑定管理员，本人列表绑定本人），改过滤必须从第一页开始；核心 nodes/members 与运维 events 支持各自作用域的 q，不提供全接口通用搜索。稳定排序、过滤表与400字段错误详见 [分页契约](../reference/api.md#9-分页检索与对象形状)。
-- 已批准但待闭合的差异：管理 usage 仍未接入 cursor，其 limit 错误规则也未统一；不能把这个缺口描述为所有列表未分页，或把单页当全集。见 API 参考 §9.4。
+- 六个管理核心集合、七个运维集合及本人 nodes/sessions/usage 已实现 keyset 分页：默认 limit=50，整数夹取1..200；有后续才给不透明 next_cursor，否则 null。cursor 绑定端点及有效过滤（管理列表绑定当前管理员，本人列表绑定本人），改过滤必须从第一页开始；核心 nodes/members 与运维 events 支持各自作用域的 q，不提供全接口通用搜索。稳定排序、过滤表与400字段错误详见 [分页契约](../reference/api.md#9-分页检索与对象形状)。
+- 管理 usage 同样使用真实 keyset、默认50/夹取1..200及统一参数错误；排序为 period_start 降序、member_id/node_id/period_end 升序。非法或失效游标为400 CURSOR_INVALID，其他参数错误仍为 VALIDATION_FAILED。见 API 参考 §9.4。
 
 ### 公共认证
 
@@ -83,11 +83,11 @@ Node协议配置：stream_settings为Xray原生streamSettings（network,security
 | POST | /recovery-mode/enter | 进入恢复协调：冻结普通管理员授权写及成员令牌/凭据轮换（409 RECOVERY_MODE），轮换 `control_generation`；login/logout、本人改密及撤销本人其他会话为救援例外，保留身份/CSRF等校验 |
 | POST | /recovery-mode/exit | 必须 confirm="verified"、agent_revisions_checked=true、ledger_checked=true；仅显式核对通过后退出，各 Agent 仍需本地接受新generation，不盲目放行旧权限 |
 
-### DELETE 行为变更（批准契约，修复合入后待验证）
+### DELETE 行为变更
 
 - 服务方案：同事务锁方案；有未归档绑定成员 → 409 NODE_IN_USE；无当前绑定但有 member_bindings 历史 → archived=true，归档快照带 retired=true，保留绑定/账本/节点组关联；完全无绑定历史 → 物理删除。已归档重复删除仍先检查绑定，无绑定则幂等返回归档态。
 - 模板：有未归档方案引用 → 409 CONFLICT，details.reason=template_in_use 并带引用数；否则物理删，只有归档方案的引用允许由外键清空。不能静默清空未归档方案模板。
-- 基线 6d1345c 尚无这两处目标分支；本轮仅同步文档，不宣称已验证。最终成功快照包装与 details 引用计数字段待主负责人在 DELETE 合入后核对，见 [API DELETE 契约](../reference/api.md#10-两个-delete-的确定契约行为变更)。
+- 方案成功 data 保留原快照并附加 retired 布尔值：退役为true，物理删除为false；GET不增加此字段。模板拒绝详情使用 reason=template_in_use、reference_count。见 [API DELETE 契约](../reference/api.md#10-两个-delete-的确定契约行为变更)。
 
 订阅/节点组对已有成员的影响编辑也需预览：允许 /batches/preview operation=update_subscription/update_node_group，values包含id/version/patch；submit同上。直接PATCH若影响现有授权，应拒绝并返回PREVIEW_REQUIRED，前端转预览流程。
 

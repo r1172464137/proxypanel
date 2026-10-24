@@ -72,7 +72,8 @@
 | `CSRF_FAILED` | 403 | 缺 CSRF 令牌或值不匹配 |
 | `FORBIDDEN` | 403 | 已登录但无权限（如成员访问 `/admin/**`） |
 | `NOT_FOUND` | 404 | 对象不存在、不在可见范围内，**或已被软删除** |
-| `VALIDATION_FAILED` | 400 | 入参不合法；字段细节见 `field_errors` |
+| `VALIDATION_FAILED` | 400 | 非游标入参不合法；字段细节见 `field_errors` |
+| `CURSOR_INVALID` | 400 | 游标非法或作用域失效；附 `field_errors.cursor` |
 | `CONFLICT` | 409 | 版本冲突或引用阻止删除（模板见 §10） |
 | `LAST_ADMIN` | 409 | 会移除最后一个可用管理员 |
 | `PREVIEW_REQUIRED` | 409 | 该操作必须走预览-确认两段式 |
@@ -80,7 +81,8 @@
 | `PREVIEW_CONCLUSION_CHANGED` | 409 | 预览结论与提交时不一致 |
 | `IDEMPOTENCY_KEY_REUSED` | 409 | 同一幂等键被用于不同载荷 |
 | `RECOVERY_MODE` | 409 | 恢复协调下普通授权写冻结；救援例外见 §5.2 |
-| `NODE_IN_USE` | 409 | 服务器/节点组仍被引用，不能删 |
+| `READINESS_BLOCKED` | 409 | 不安全升级/业务启动被拒绝，附真实 `details.blockers`；不用于拒绝只读诊断或进入恢复 |
+| `NODE_IN_USE` | 409 | 服务器/节点组仍被引用，或方案仍有未归档绑定成员 |
 | `SUBSCRIPTION_NOT_BINDABLE` | 409 | 目标订阅不可绑定 |
 | `REVISION_STALE` | 409 | Agent 提交的 revision 落后 |
 | `BATCH_PAYLOAD_MISMATCH` | 409 | 用量批次载荷与账本不一致 |
@@ -88,13 +90,13 @@
 | `PROTOCOL_NOT_SUPPORTED` | **422** | 客户端格式无法表达该节点 |
 | `BATCH_CLOCK_SKEW` | **422** | 用量批次时间戳偏移过大 |
 | `RATE_LIMITED` | 429 | 触发限流 |
-| `DB_UNAVAILABLE` | 503 | 数据库不可用 |
+| `DB_UNAVAILABLE` | 503 | 数据库连接、关闭/重启或超时故障，可重试；不返回驱动原文 |
 | `AGENT_AUTH_FAILED` | 401 | Agent 令牌无效 |
 | `SNAPSHOT_SCHEMA_UNSUPPORTED` | 400 | 快照 schema 版本不支持 |
 | `LEDGER_UNATTRIBUTABLE` | 422 | 样本无法归属已证明区间，不落账、不 ACK |
 | `INTERNAL` | 500 | 未预期错误 |
 
-分页参数错误当前为 `400 VALIDATION_FAILED`，不是 `CURSOR_INVALID`；readiness 的 `blocked/unknown` 是成功诊断响应中的状态，不等同 HTTP 409（见 §11）。
+非法/失效游标返回 `400 CURSOR_INVALID`；limit、q、未知/重复参数等非游标验证仍为 `400 VALIDATION_FAILED`。readiness 的 `blocked/unknown` 是只读诊断响应中的状态，不等同该 GET 返回 HTTP 409（见 §11）。
 
 ---
 
@@ -328,7 +330,7 @@ api -X PATCH "$PANEL/api/v1/admin/nodes/$(echo "$NODE" | jq -r .id)" \
 | members | subscription_id、include_archived、q；默认隐藏 archived | lower(username), id |
 | templates | 无 | lower(name), id |
 
-`q` 仅 nodes/members 支持，去首尾空白、至多64字符，大小写不敏感的**字面子串**；`%`、`_`、反斜线不是通配符。`include_archived` 仅大小写不敏感的 `true` 表示包含。cursor 绑定集合和规范化后的全部过滤值；这些管理核心游标不绑定具体管理员 ID。未知参数、重复参数、非法 cursor、跨集合或改过滤续页均为 `400 VALIDATION_FAILED`，对应 `field_errors.<参数>=invalid`；过长 q 为 `q=too_long`。
+`q` 仅 nodes/members 支持，去首尾空白、至多64字符，大小写不敏感的**字面子串**；`%`、`_`、反斜线不是通配符。`include_archived` 仅大小写不敏感的 `true` 表示包含。cursor 绑定集合、当前管理员 ID 和规范化后的全部过滤值。未知/重复参数返回 `400 VALIDATION_FAILED`，对应 `field_errors.<参数>=invalid`；过长 q 为 `q=too_long`。非法 cursor、跨集合/管理员或改过滤续页返回 `400 CURSOR_INVALID`，保留 `field_errors.cursor=invalid`。旧的未绑定管理员游标需要重新从第一页获取。
 
 ### 9.2 七个运维集合
 
@@ -344,11 +346,11 @@ api -X PATCH "$PANEL/api/v1/admin/nodes/$(echo "$NODE" | jq -r .id)" \
 | tasks | state、batch_id、agent_id | created_at, id 降序 |
 | audit-logs | action、actor | created_at, id 降序 |
 
-state/batch_id/agent_id/action 是精确匹配；actor 精确匹配 actor_id 或 actor_username。events.q 对 message 做大小写不敏感的字面子串检索，不去首尾空白，至多64字符（无效 UTF-8 也拒绝）。cursor 绑定**当前管理员、端点、有效过滤值**；改过滤/跨身份/跨集合为 `400 VALIDATION_FAILED` + `field_errors.cursor=expired_scope`，损坏/非法为 `cursor=invalid`，q 过长为 `q=too_long`。这组只读取表内声明的有效参数，其他参数当前被忽略，不能据此声称支持 q 搜索 agents/tasks 或全字段搜索。
+state/batch_id/agent_id/action 是精确匹配；actor 精确匹配 actor_id 或 actor_username。events.q 对 message 做大小写不敏感的字面子串检索，不去首尾空白，至多64字符（无效 UTF-8 也拒绝）。cursor 绑定**当前管理员、端点、有效过滤值**；改过滤/跨身份/跨集合为 `400 CURSOR_INVALID` + `field_errors.cursor=expired_scope`，损坏/非法为 `cursor=invalid`，q 过长为 `q=too_long`。这组只读取表内声明的有效参数，其他参数当前被忽略，不能据此声称支持 q 搜索 agents/tasks 或全字段搜索。
 
 ### 9.3 本人列表与用量对象
 
-`/api/v1/me/nodes`、`/me/sessions`、`/me/usage` 支持 limit/cursor，作用域绑定端点及本人 ID；无 q/额外过滤能力。非法、跨本人或跨端点 cursor 返回 `400 VALIDATION_FAILED` + `field_errors.cursor=invalid`。
+`/api/v1/me/nodes`、`/me/sessions`、`/me/usage` 支持 limit/cursor，作用域绑定端点及本人 ID；无 q/额外过滤能力。非法、跨本人或跨端点 cursor 返回 `400 CURSOR_INVALID` + `field_errors.cursor=invalid`。
 
 - nodes：先求**完整授权结果**再分页，按 sort_order、lower(name)、id 升序；不会用分页输入裁剪授权判定。
 - sessions：created_at、id 降序，元素含 current 标志；仅返回本人会话。
@@ -362,27 +364,35 @@ state/batch_id/agent_id/action 是精确匹配；actor 精确匹配 actor_id 或
 
 状态摘要读取 `/me/status`：`data={member,access,nodes_allowed,data_complete,data_issues}`。**known / unknown / unlimited / zero 是解释状态，不是新增 JSON 字段或统一枚举**：数据完整时数值才可按已知（known）展示；`data_complete=false` 时展示未知（unknown），保留已知数值但不伪报正常；完整证据下 `effective_quota_bytes=null` 表示不限量（unlimited），数字0是真实零额度（zero），`used_bytes=0` 是零用量而非未知。`proxy_access="unknown"` 与 `data_issues`（如 cycle_unproven、ledger_unattributable）必须显式呈现，不可把缺周期解释成不限量。
 
-### 9.4 管理用量的待闭合差异
+### 9.4 管理用量
 
-批准契约要求 `/api/v1/admin/usage?member_id=&node_id=&from=&to=&limit=&cursor=` 也返回真实 next_cursor；from/to 为 RFC3339 或 YYYY-MM-DD（UTC 零点），过滤 period_start，to 必须晚于 from。**当前基线该 handler 尚未接入 cursor**（`handleAdminUsage` / `usageWindow`）；这不是上述13个管理列表或本人 usage 的限制。调用者不得把其单页当全集；此差异待后端负责人闭合，不把目标降为固定单页。非法 from/to 当前返回400；其 limit 解析也尚不符合上文统一错误规则。
+`/api/v1/admin/usage?member_id=&node_id=&from=&to=&limit=&cursor=` 返回 `items:UsageRow[]` 和真实 `next_cursor`。from/to 接受 RFC3339 或 YYYY-MM-DD（UTC 零点），按周期起点过滤，to 必须晚于 from。member_id/node_id 为精确过滤；默认 limit=50，整数夹取1..200，非整数、未知/重复参数和非法时间条件为400 VALIDATION_FAILED。
+
+排序为 **period_start DESC、member_id ASC、node_id ASC、period_end ASC**，字符串按 C 排序；聚合保留完整 member/node/period 身份，不切割同一聚合行，sum、flags、direction、algorithm_version 语义不变。cursor 绑定端点、管理员和规范化过滤，不绑定 limit；非法或过滤/身份作用域失配为400 CURSOR_INVALID。采用实时 keyset，不承诺跨请求数据库快照；不能把一页当全集。
 
 ## 10. 两个 DELETE 的确定契约（行为变更）
 
 DELETE 不要求 body/query 的 version；旧调用者携带 version 仍兼容，不能外推 PATCH/PUT 的必填规则。
 
 - **方案 `/admin/subscriptions/{id}`**：同事务锁方案，先查未归档绑定成员；有绑定 → `409 NODE_IN_USE`。无当前绑定但存在 `member_bindings` 历史 → 归档（archived=true），返回归档快照并带 `data.retired=true`，保留账本、绑定历史及方案节点组关联；没有绑定历史 → 物理删除。已归档再 DELETE：仍先检查当前绑定；无绑定则幂等返回归档态。不能删历史绕过外键。
-- **模板 `/admin/templates/{id}`**：被未归档方案引用 → `409 CONFLICT`，`error.details.reason="template_in_use"`，details 还须给引用数，引用保持不变；解除引用后可物理删，只有已归档方案引用也可删（外键清空那些归档方案的 template_id）。
+- **模板 `/admin/templates/{id}`**：被未归档方案引用 → `409 CONFLICT`，`error.details.reason="template_in_use"`，`details.reference_count` 给出引用数，引用保持不变；解除引用后可物理删，只有已归档方案引用也可删（外键清空那些归档方案的 template_id）。
 
-以上为批准目标，**基线 6d1345c 尚未实现这两处新分支，待 DELETE 修复合入后验证**。本次仅文档同步，不宣称运行验证；成功响应中归档快照的最终包装及模板 details 引用计数字段名需随实现核对，故不提供猜测字段的 JSON 示例。
+方案成功响应的 `data` 仍是原 Subscription 快照，并附加 `retired:boolean`：历史退役或归档幂等返回true，物理删除返回false；不存在额外的 subscription 嵌套，GET不增加该字段。物理删除后的重复请求仍按不存在返回404。模板成功保持 `data={deleted:true,id}`；引用冲突返回稳定的 `reason` 与 `reference_count`，不能通过忽略冲突自动解除在用引用。
 
 ## 11. 升级 readiness：只读诊断与本地材料边界
 
 `GET /api/v1/admin/upgrade-readiness` 为管理员只读端点，恢复期间可读，返回 `200` + data 对象；诊断状态为 ready / blocked / unknown，检查不可用也回 unknown，不自动修改授权/账本、不执行迁移。
 
-当前 `store.UpgradeReadiness` 的 JSON 字段为 status、phase、checks、applied_migrations、pending_migrations、pending_batches、duplicate_batches；可选 stop_verification、database_sha256、evidence_sha256（空值省略）。`checks[]` 为 `{code,status,count,remedy}`，不是 `{id,severity,state,...}`；HTTP 正常 phase 为 post-migrate。批准设计中的 candidate_version/schema/blockers 与上述实际 DTO 尚不一致，已作为差异交负责人裁决；不得在客户端猜造这些字段，也不以本文的现状说明取消批准目标。诊断失败分支示例（完整包络）：
+HTTP 和 CLI 从同一内部结果投影公共字段，不另做一套核对：`status`、本次UTC核对时间 `checked_at`、实际Go构建模块版本 `candidate_version`、`schema={applied_migrations:[],pending_migrations:[],checksum_ok}`、`checks[]`、`blockers[]`。没有构建版本元数据时如实返回 `(devel)` 或 `devel`，不据路径猜造发布版本。
+
+`checks[]` 含 `id,severity,state,summary,affected_count,evidence[]`：severity 为 blocker/warning，state 为 pass/fail/unknown；只投影实际存在的核对项，不补造全通过行。blockers 为真实 fail/unknown 的稳定检查ID去重列表。为区分“确知不匹配”和“无法核验”，`schema.checksum_ok` 为 **boolean|null**：完整核验成功 true，已知校验和不符 false，检查不可用/未知迁移等无法判定时 null。不能把 null 显示为已核验成功，也不能凭校验和通过绕过其它业务阻断。
+
+兼容字段继续保留：phase、applied_migrations、pending_migrations、pending_batches、duplicate_batches，可选 stop_verification/database_sha256/evidence_sha256；每条 check 也保留 code/status/count/remedy。新旧字段由同一结果生成。异常 fallback 的旧队列计数0仅是兼容占位，**不是 Agent 本地未确认队列为空的证据**；应先按 status/checks 判定未知。数组空集合为[]。
+
+诊断不可用示例（仅列公共字段，兼容别名省略）：
 
 ```json
-{"data":{"status":"unknown","phase":"post-migrate","checks":[{"code":"INSPECTION_UNAVAILABLE","status":"unknown","count":1,"remedy":"Verify database access and configured migration files using panel check."}],"applied_migrations":null,"pending_migrations":null,"pending_batches":0,"duplicate_batches":0},"request_id":""}
+{"data":{"status":"unknown","checked_at":"2026-10-24T04:00:00Z","candidate_version":"(devel)","schema":{"applied_migrations":[],"pending_migrations":[],"checksum_ok":null},"checks":[{"id":"inspection_unavailable","severity":"blocker","state":"unknown","summary":"Verify database access, schema and configured migration files, then rerun the read-only check.","affected_count":1,"evidence":["check=INSPECTION_UNAVAILABLE; status=unknown; affected_count=1"]}],"blockers":["inspection_unavailable"]},"request_id":""}
 ```
 
 命令行 `panel check --preflight --evidence /srv/proxypanel-review/manifest.json --json` 使用 **Panel 所在服务器/容器内**的本地只读材料路径；默认材料路径取 `PANEL_UPGRADE_EVIDENCE_FILE`，迁移目录取 `PANEL_MIGRATIONS_DIR`。HTTP query/body 不能选择任意文件，不提供上传/任意路径读取 API。材料必须由操作者预先审查并在服务端准备；不能把浏览器本机路径传给 HTTP 冒充预检。

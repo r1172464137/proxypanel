@@ -1,0 +1,59 @@
+{
+  "scope": "3435f1d..fe4bf8e",
+  "kind": "bounded_specialist_review_not_final_acceptance",
+  "finder_session": "01a16910-3fa8-75a9-8640-accb70c87227",
+  "candidates": [
+    {
+      "candidate_id": "CPREV-001",
+      "file": "scripts/backend-test.py",
+      "line": 165,
+      "summary": "Overlapping selections retain duplicate test executions/counts",
+      "failure_scenario": "Default selection includes both store/cycle and store/database-baseline, running 9 cases twice; summing per-selection expected counts gives90 rather than81 unique cases.",
+      "status": "verified_refuted",
+      "note": "Current project reports already avoid duplicate summation; verifier must assess actual consumer/output correctness versus optional aggregation/performance improvement.",
+      "verdict": "REFUTED",
+      "verifier_session": "01a16920-1069-75a9-8640-acd866e5d8da",
+      "reason": "Per-selection execution is explicit; no current consumer reports sum as unique coverage; classification is optional metrics/performance improvement."
+    },
+    {
+      "candidate_id": "CPREV-002",
+      "file": "scripts/backend-test.py",
+      "line": 91,
+      "summary": "Fingerprint omits service unit consumed by installer test fixture",
+      "status": "fixed_and_verified",
+      "verifier_session": "01a1691b-5cd5-75a9-8640-acd724e35bc8",
+      "verdict": "CONFIRMED",
+      "implementation_session": "01a16b3d-d410-75a9-8640-ace073ef9b4a"
+    },
+    {
+      "candidate_id": "CPREV-003",
+      "file": "tests/e2e/deploy_agent_test.go",
+      "line": 222,
+      "summary": "stdin --help test may exit before BASH_SOURCE guard",
+      "status": "fixed_and_verified",
+      "verifier_session": "01a1691b-5ccd-75a9-8640-acd4b5c27f23",
+      "verdict": "CONFIRMED",
+      "verification_report": ".ai/evidence/backend-test/20261023T141957Z-9b9a22f0/result.json"
+    },
+    {
+      "candidate_id": "CPREV-004",
+      "file": "internal/panel/store/access.go",
+      "line": 521,
+      "summary": "short transition window may not match usage allocation period_start",
+      "status": "fixed_and_verified",
+      "verifier_session": "01a16b3d-d3fe-75a9-8640-acda2ae1f9a1",
+      "verdict": "CONFIRMED"
+    },
+    {
+      "candidate_id": "CPREV-005",
+      "file": "internal/panel/period/period.go",
+      "line": 154,
+      "summary": "cross-month rollback may hide already occurred earlier midnight",
+      "status": "fixed_and_verified",
+      "verifier_session": "01a16b3d-d40b-75a9-8640-acdf124d4b3f",
+      "verdict": "CONFIRMED",
+      "red_report": ".ai/evidence/backend-test/20261024T001329Z-60083e27/result.json"
+    }
+  ],
+  "policy": "Finder candidates are not confirmations. Do not modify reviewed source before independent verdict and report. Other unfinished features are not treated as regressions solely because they are pending."
+}

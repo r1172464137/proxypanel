@@ -1,0 +1,2080 @@
+{
+  "candidate": "6d1345c54b5fc5b3ea0033275338da8ff8362820",
+  "fingerprints": {
+    "count": 234,
+    "mismatches": []
+  },
+  "runner": {
+    "selections": 50,
+    "unique_passed": 542,
+    "checks": [
+      {
+        "id": "maintenance/batch-retention",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 2,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/0-tests.jsonl"
+      },
+      {
+        "id": "store/batch-task-durability",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 14,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/1-tests.jsonl"
+      },
+      {
+        "id": "api/product-status",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 2,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/2-tests.jsonl"
+      },
+      {
+        "id": "store/period-history-candidate",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 4,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/3-tests.jsonl"
+      },
+      {
+        "id": "api/static",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 7,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/4-tests.jsonl"
+      },
+      {
+        "id": "e2e/standalone-agent",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 7,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/5-tests.jsonl"
+      },
+      {
+        "id": "period/calendar",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 17,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/6-tests.jsonl"
+      },
+      {
+        "id": "store/cycle",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 9,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/7-tests.jsonl"
+      },
+      {
+        "id": "store/database-baseline",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 98,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/8-tests.jsonl"
+      },
+      {
+        "id": "agent-state/evidence",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 4,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/9-tests.jsonl"
+      },
+      {
+        "id": "store/short-cycle-live",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 1,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/10-tests.jsonl"
+      },
+      {
+        "id": "store/identity-tx",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 9,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/11-tests.jsonl"
+      },
+      {
+        "id": "api/identity-http",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 12,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/12-tests.jsonl"
+      },
+      {
+        "id": "limit/identity-limit",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 9,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/13-tests.jsonl"
+      },
+      {
+        "id": "protocol/offline-review",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 30,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/14-tests.jsonl"
+      },
+      {
+        "id": "protocol/handshake-review",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 6,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/15-tests.jsonl"
+      },
+      {
+        "id": "agent-state/atomic-commit",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 12,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/16-tests.jsonl"
+      },
+      {
+        "id": "agent-state/full",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 16,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/17-tests.jsonl"
+      },
+      {
+        "id": "agent-supervisor/full",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 63,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/18-tests.jsonl"
+      },
+      {
+        "id": "agent-xray/full",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 78,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/19-tests.jsonl"
+      },
+      {
+        "id": "agent-reporting/full",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 17,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/20-tests.jsonl"
+      },
+      {
+        "id": "integration/protocol-agent",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 3,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/21-tests.jsonl"
+      },
+      {
+        "id": "agent-supervisor/real-lifecycle",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 6,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/22-tests.jsonl"
+      },
+      {
+        "id": "store/closed-loop-b",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 5,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/23-tests.jsonl"
+      },
+      {
+        "id": "store/abc-integration",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 2,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/24-tests.jsonl"
+      },
+      {
+        "id": "api/abc-readiness",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 2,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/25-tests.jsonl"
+      },
+      {
+        "id": "store/upgrade-preflight",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 15,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/26-tests.jsonl"
+      },
+      {
+        "id": "cmd/upgrade-check",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 1,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/27-tests.jsonl"
+      },
+      {
+        "id": "api/me-pagination",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 1,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/28-tests.jsonl"
+      },
+      {
+        "id": "store/administrator-stop",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 3,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/29-tests.jsonl"
+      },
+      {
+        "id": "panel/check-cli",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 1,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/30-tests.jsonl"
+      },
+      {
+        "id": "api/admin-core-pagination",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 1,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/31-tests.jsonl"
+      },
+      {
+        "id": "api/operations-pages-candidate",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 1,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/32-tests.jsonl"
+      },
+      {
+        "id": "store/operations-pages-unit",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 1,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/33-tests.jsonl"
+      },
+      {
+        "id": "remaining/cmd-panel",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 6,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/34-tests.jsonl"
+      },
+      {
+        "id": "remaining/agent-config",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 6,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/35-tests.jsonl"
+      },
+      {
+        "id": "remaining/agent-control",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 10,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/36-tests.jsonl"
+      },
+      {
+        "id": "remaining/agent-telemetry",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 1,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/37-tests.jsonl"
+      },
+      {
+        "id": "remaining/panel-access",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 12,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/38-tests.jsonl"
+      },
+      {
+        "id": "remaining/panel-usagecalc",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 12,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/39-tests.jsonl"
+      },
+      {
+        "id": "remaining/panel-protocol",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 22,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/40-tests.jsonl"
+      },
+      {
+        "id": "remaining/panel-api",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 30,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/41-tests.jsonl"
+      },
+      {
+        "id": "remaining/panel-maintenance",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 21,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/42-tests.jsonl"
+      },
+      {
+        "id": "remaining/panel-clientconfig-render",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 24,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/43-tests.jsonl"
+      },
+      {
+        "id": "remaining/agent-state-unix-permissions",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 1,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/44-tests.jsonl"
+      },
+      {
+        "id": "matrix/local-core-clients",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 1,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/45-tests.jsonl"
+      },
+      {
+        "id": "matrix/local-core-credential-guards",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 1,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/46-tests.jsonl"
+      },
+      {
+        "id": "matrix/reserved-tags",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 1,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/47-tests.jsonl"
+      },
+      {
+        "id": "matrix/agent-real-xray",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 3,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/48-tests.jsonl"
+      },
+      {
+        "id": "remaining/e2e-offline",
+        "exit": 0,
+        "discovery_exit": 0,
+        "passed_roots": 12,
+        "failed_or_skipped": [],
+        "expected_missing": [],
+        "log": "/home/compile/Work/proxypanel/.ai/evidence/backend-test/20261024T032530Z-ca404f10/49-tests.jsonl"
+      }
+    ],
+    "copy_identical": false
+  },
+  "govulncheck": {
+    "config": [
+      {
+        "protocol_version": "v1.0.0",
+        "scanner_name": "govulncheck",
+        "scanner_version": "v1.9.0",
+        "db": "https://vuln.go.dev",
+        "db_last_modified": "2026-10-21T00:27:29Z",
+        "go_version": "go1.27.3",
+        "scan_level": "symbol",
+        "scan_mode": "source"
+      }
+    ],
+    "findings": [
+      {
+        "osv": "GO-2026-5932",
+        "trace": [
+          {
+            "module": "golang.org/x/crypto",
+            "version": "v0.56.0"
+          }
+        ]
+      }
+    ]
+  },
+  "deployment": {
+    "scenarios": {
+      "spa-current": {
+        "migrations": [
+          [
+            "0001_init.sql",
+            "7b66684c676c39865cabad585d8ffffeab273beb1eb61deb6f8a0f0dbb04d415",
+            "2026-10-24 03:32:31.861517+00"
+          ],
+          [
+            "0002_batch_preview.sql",
+            "d74662653a23db233317869ccd6a09b116447f1d95c4ac846b6734db4dbd8d79",
+            "2026-10-24 03:32:32.117728+00"
+          ],
+          [
+            "0003_maintenance.sql",
+            "09896ad6350017f966c9e59f3cdcb007ba0b36d254fe5545c492df7b0b441e83",
+            "2026-10-24 03:32:32.169539+00"
+          ],
+          [
+            "0004_node_external_port.sql",
+            "80b14b3d4e17da11c955d017c162be75dd4754b9e0f9fb2d798c9f584082e919",
+            "2026-10-24 03:32:32.214614+00"
+          ],
+          [
+            "0005_period_and_owner_history.sql",
+            "3416e9bbdf73f5cfe83845914bd5a1d30df6440df6888769a0cfffa8877b6432",
+            "2026-10-24 03:32:32.23638+00"
+          ]
+        ],
+        "browser": {
+          "phase": "current",
+          "base": "https://127.0.0.1:34325",
+          "status": "passed",
+          "checks": [
+            "anonymous API and route protection",
+            "real browser form login",
+            "deep navigation and refresh",
+            "authenticated API and Secure HttpOnly cookie",
+            "missing asset/unknown API non-HTML 404; invalid subscription non-HTML 403",
+            "browser logout then protected API/session reject",
+            "real browser form login"
+          ],
+          "errors": [],
+          "responses": [
+            {
+              "url": "https://127.0.0.1:34325/admin/nodes",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-BQKdZcZK.css",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-Bljqs4uK.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/inter-latin-wght-normal-Dx4kXJAl.woff2",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/auth/session",
+              "status": 401
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/LoginView-Dw4L1wgl.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-CBFxvP_3.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Card.vue_vue_type_script_setup_true_lang-CP6qfWY4.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Label.vue_vue_type_script_setup_true_lang-BzB9k4az.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Input.vue_vue_type_script_setup_true_lang-Hlqeu6ee.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/login",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-Bljqs4uK.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-BQKdZcZK.css",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/inter-latin-wght-normal-Dx4kXJAl.woff2",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/auth/session",
+              "status": 401
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/LoginView-Dw4L1wgl.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-CBFxvP_3.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Card.vue_vue_type_script_setup_true_lang-CP6qfWY4.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Input.vue_vue_type_script_setup_true_lang-Hlqeu6ee.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Label.vue_vue_type_script_setup_true_lang-BzB9k4az.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/auth/login",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/OverviewView-64uNh0HV.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/format-C0n3U-TB.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/StatusBadge.vue_vue_type_script_setup_true_lang-CPyg0eMY.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/EmptyState.vue_vue_type_script_setup_true_lang-CEPU-MOC.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/CardTitle.vue_vue_type_script_setup_true_lang-DbG1z6JY.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/CardContent.vue_vue_type_script_setup_true_lang-D1GN2aYN.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/LoadingBlock.vue_vue_type_script_setup_true_lang-BCsN3dRC.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/overview",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/admin/nodes",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-Bljqs4uK.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-BQKdZcZK.css",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/inter-latin-wght-normal-Dx4kXJAl.woff2",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/auth/session",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/LoadingBlock.vue_vue_type_script_setup_true_lang-BCsN3dRC.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-CBFxvP_3.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/EmptyState.vue_vue_type_script_setup_true_lang-CEPU-MOC.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Card.vue_vue_type_script_setup_true_lang-CP6qfWY4.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/StatusBadge.vue_vue_type_script_setup_true_lang-CPyg0eMY.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Label.vue_vue_type_script_setup_true_lang-BzB9k4az.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/NodesView-CK1hDbqR.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/allPages-1gdQ79Jg.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/TableHeader.vue_vue_type_script_setup_true_lang-Bqz4PTLm.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/paged-DP_q3S4H.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/nodeDraft-QfhybWai.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/DataTable.vue_vue_type_script_setup_true_lang-DR3Yc4NC.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/toast-Da_-6DgY.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/json-BgyK6ywS.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/recovery-mode",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/ConfirmDialog.vue_vue_type_script_setup_true_lang-BksULYe2.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/FieldRoot-BsgdxpNn.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/RovingFocusItem-qSbElsg7.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/VisuallyHidden-kp3u4KLO.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Checkbox.vue_vue_type_script_setup_true_lang-9UWwuIuk.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/AppModal.vue_vue_type_script_setup_true_lang-CQAAjiWf.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/nodes?limit=50",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/servers?limit=200",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/admin/nodes",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-Bljqs4uK.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-BQKdZcZK.css",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/inter-latin-wght-normal-Dx4kXJAl.woff2",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/auth/session",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/NodesView-CK1hDbqR.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/allPages-1gdQ79Jg.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/paged-DP_q3S4H.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/nodeDraft-QfhybWai.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/json-BgyK6ywS.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/toast-Da_-6DgY.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/LoadingBlock.vue_vue_type_script_setup_true_lang-BCsN3dRC.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-CBFxvP_3.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/DataTable.vue_vue_type_script_setup_true_lang-DR3Yc4NC.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/TableHeader.vue_vue_type_script_setup_true_lang-Bqz4PTLm.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/EmptyState.vue_vue_type_script_setup_true_lang-CEPU-MOC.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Card.vue_vue_type_script_setup_true_lang-CP6qfWY4.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/StatusBadge.vue_vue_type_script_setup_true_lang-CPyg0eMY.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/ConfirmDialog.vue_vue_type_script_setup_true_lang-BksULYe2.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/AppModal.vue_vue_type_script_setup_true_lang-CQAAjiWf.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Checkbox.vue_vue_type_script_setup_true_lang-9UWwuIuk.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/FieldRoot-BsgdxpNn.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/VisuallyHidden-kp3u4KLO.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/RovingFocusItem-qSbElsg7.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Label.vue_vue_type_script_setup_true_lang-BzB9k4az.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/recovery-mode",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/nodes?limit=50",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/servers?limit=200",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/auth/logout",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/LoginView-Dw4L1wgl.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Input.vue_vue_type_script_setup_true_lang-Hlqeu6ee.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/login",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-Bljqs4uK.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-BQKdZcZK.css",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/inter-latin-wght-normal-Dx4kXJAl.woff2",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/auth/session",
+              "status": 401
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/LoginView-Dw4L1wgl.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-CBFxvP_3.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Card.vue_vue_type_script_setup_true_lang-CP6qfWY4.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Input.vue_vue_type_script_setup_true_lang-Hlqeu6ee.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Label.vue_vue_type_script_setup_true_lang-BzB9k4az.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/auth/login",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/OverviewView-64uNh0HV.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/format-C0n3U-TB.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/LoadingBlock.vue_vue_type_script_setup_true_lang-BCsN3dRC.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/EmptyState.vue_vue_type_script_setup_true_lang-CEPU-MOC.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/StatusBadge.vue_vue_type_script_setup_true_lang-CPyg0eMY.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/CardContent.vue_vue_type_script_setup_true_lang-D1GN2aYN.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/CardTitle.vue_vue_type_script_setup_true_lang-DbG1z6JY.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/recovery-mode",
+              "status": 200
+            }
+          ],
+          "asset": {
+            "path": "/assets/index-Bljqs4uK.js",
+            "sha256": "c384127e1e2fe5a08e73b6eaee75d343bfdc517fdd0b9c6d3d42e775de267c19"
+          }
+        },
+        "fingerprints": "d04675002b8cd0c3b6b57802dde8273333a68dc9e4c31fa856a5a56cd38ee91d  panel\n59a00caf16d303c669781e83947f28ebf25d3acff12743cbba8bdd387ba50801  dist/assets/AppModal.vue_vue_type_script_setup_true_lang-CQAAjiWf.js\n8f1eb02f97db4e315fb087e53bd2b62b9454ebe1e3af54833b96acf79b05d0e6  dist/assets/AuditView-Br5sEsf8.js\nfaadc94fe297a78b0346b51d12237a864a2abee346db83745fa1900cce20e7a8  dist/assets/BatchDetailView-5EZ9G8Id.js\n656aa5d96de61dc9af70543fed026fcb964324a2c9731eeceb52c2f0cd2894c9  dist/assets/BatchListView-Bqsuh3o3.js\nfa1c59873cc9fb9b31bd4f54d88f12eb8a98021f66f577fb552176d79fc57a09  dist/assets/Card.vue_vue_type_script_setup_true_lang-CP6qfWY4.js\n82b530f97b6fbedfdbfa9e97b79b48b1f28e770e0434442d08c9c0e00ea0573c  dist/assets/CardContent.vue_vue_type_script_setup_true_lang-D1GN2aYN.js\n64b15d5c4edd91c5220854fda7aa1433cba8aeadb1804c10c50afaf37b36413e  dist/assets/CardTitle.vue_vue_type_script_setup_true_lang-DbG1z6JY.js\n911a04da49e9a0f3dccbcd36f1ec5e79d42925935281939bab63c547c94e82d2  dist/assets/Checkbox.vue_vue_type_script_setup_true_lang-9UWwuIuk.js\n92a72121b6a21fae2f2335f5053f0c0ea26c92ef093e01532e56f92f451c7827  dist/assets/CollapsibleTrigger.vue_vue_type_script_setup_true_lang-ew2qoAmf.js\n3f69a1f31129b5e7b1cea06eae4ee98530471478e9371144706feacb8ca62102  dist/assets/ConfirmDialog.vue_vue_type_script_setup_true_lang-BksULYe2.js\ne00cbf9d10d9851b862748983acbacf7ce9cd7f3d6ba876ab014cf08932c422b  dist/assets/CopyField.vue_vue_type_script_setup_true_lang-Clsnerra.js\n4979669e381d46568d981f6e59da9bbd6c401214e577025a1459d0b34992f031  dist/assets/DataTable.vue_vue_type_script_setup_true_lang-DR3Yc4NC.js\nbef71ccbd1fcde37bc5a21f8363ea030fadf997fa294d00b62502b0253538e1f  dist/assets/EmptyState.vue_vue_type_script_setup_true_lang-CEPU-MOC.js\n41e6bf865cd97b46146b8953d06505e53e844f1c32681ff5bd8d666c2312cc22  dist/assets/EventsView-gy3yt_Ym.js\n88a2efea7504255197f0b97f3262c11aa13bf158d63f3f601a19e4fa83a9df59  dist/assets/FieldRoot-BsgdxpNn.js\n6d2ce657516e194253b4fdd6ec637e2a3ccf0f1c83cf23a377413310d38b5a2c  dist/assets/ImpactPreviewDialog.vue_vue_type_script_setup_true_lang-DAf-qgiJ.js\n901823ddc3178ccd8176e0f38d2abfa42615d9f2e5d2ac5f184b2862b9be972f  dist/assets/Input.vue_vue_type_script_setup_true_lang-Hlqeu6ee.js\n395766fea10e80db179fb1af684645c2ef2596f201aafea52978be2cea152056  dist/assets/InvitationsView-3SUP_3c5.js\n2f31a7c93d6b9d05951d3e9534d91adbe0275bb1fc65369179c3201fd59326be  dist/assets/JsonEditor.vue_vue_type_script_setup_true_lang-DVvy8ewU.js\n88de09b44f5b1d6699cf62ba464d8df4890517b2b0250ab91ef7ce917678179a  dist/assets/Label.vue_vue_type_script_setup_true_lang-BzB9k4az.js\n21dd9f28cd189027b57109fbc3e90a58af1dbc35f1dec40f12403d83fd0d9e2f  dist/assets/LoadingBlock.vue_vue_type_script_setup_true_lang-BCsN3dRC.js\n927869b5a84f5b1660bedcdaf83a6c12df89513fd98eb69378ad499d605fe936  dist/assets/LoginView-Dw4L1wgl.js\n75564fda295001269cb2a06845332db5b9d21250a270ede39c9452a9cc6ce382  dist/assets/MeCredentialsView-DAtn5Gmb.js\n9cc3b9ac2b0237af201c37fa5cbe461a936a8b6fc6922210daabb3f8ace7fecf  dist/assets/MeSecurityView-DZdce9zx.js\nd245702469376133f010cffc3ac66fea43b47a631e1c78f899449c23c73a37a4  dist/assets/MeStatusView-BUyKwKJ6.js\n6c9999101daebc24d827b05991c022e0413174193007b70563b62b098b907886  dist/assets/MeSubscriptionView-DWQ6ja-M.js\na0c31bb488e2aa603a651a0d7568dd5d3d51e801fc356d5713c84c830350ecae  dist/assets/MeUsageView-CzFta6Ll.js\n4b29d9132d1b95ee68feaa5342471abf058c9f660aa53202f1322d40b5f007a3  dist/assets/MemberDetailView-u5OfSgnt.js\n201a927a7cb6cd5121d378fc320f878d9fc6dfde61282330ec54073db7a4f799  dist/assets/MembersView-wqKaYTG_.js\na8c515861554ddb22f4571026eca6ca1f8d2b0e7d0a4aed0b26e277be17cc863  dist/assets/NodeEditorView-CqTY6-Sq.js\n7238b40957481497ccc017d997af2e6e0c948fc3fd140c9753b76c994e821de3  dist/assets/NodeGroupsView-dn2dLh-6.js\nbbc1cfac4bc199615fd2abf0f07862295a89217d97ff484c6c5b8b2c6c62ae7f  dist/assets/NodesView-CK1hDbqR.js\n377f2755ac9de6d7133a2553d91591004779e2061d6415b2efaefc97b84854a2  dist/assets/NotFoundView-BSQPSj_L.js\n2233c9639ed8228dae7d6d3e73020a5ada6f1392d3e72f2ff8944eee074e45c5  dist/assets/OverviewView-64uNh0HV.js\nea4bde3668937b6a5d46b4bac7874391e022fd63a21459b155c58350c0af2253  dist/assets/QrPanel.vue_vue_type_script_setup_true_lang-D_fXaW_K.js\n8c60b99ceea6be4f9150b944a1d193334b19b63a080bbcb094bbf8ea0283edce  dist/assets/RadioGroupItem.vue_vue_type_script_setup_true_lang-DnPNfrG6.js\nf1d0e09a6a88c750f1903f4ff9c05ccef37e430ce79d540bfa0e1e39986749c4  dist/assets/RedeemView-s4q7K20U.js\nbe233cf3980d4b357b2af7087a7e0434142bf2ad221f26f93209128cc8208089  dist/assets/RovingFocusItem-qSbElsg7.js\n03e5a87fe32b57998a975346e10fbd76cdd72615b08b5e912db4d8d15f9953a9  dist/assets/RuntimeView-JSkQu2KS.js\n51a5856263878b4524b79f6901ffc717a131a7e3e3062b6ea392e1d1a5d89c3c  dist/assets/SelectValue.vue_vue_type_script_setup_true_lang-98MQYcZ9.js\nc3e1966f50939afee85005dbbe5a88e8141c75db0b593ac2c97dfc01b7c1613f  dist/assets/ServerRuntimeView-DJHh43qX.js\nf19da1d47c8e6649ebddd268a4029b394fb9a64ef57011205884a0417e962980  dist/assets/ServersView-LmTUgmDA.js\nd53a3599d8ee431d2723e9c7e9cc77cf57b790339b32558987b55fdc4ba5d445  dist/assets/SettingsView-aDvHqD1l.js\n885e350bde7ee04ae781ba97ac2f2c0e40070b665ee10d921507f3be9754ac8e  dist/assets/StatusBadge.vue_vue_type_script_setup_true_lang-CPyg0eMY.js\n7637db97d4711140a5183a98831e8fb6f7d45cd24ae6b683d155c67b14f9a56d  dist/assets/SubscriptionEditorView-Cei-FATh.js\nd23fd32870e02d108a97bad6a4508021dc2d72bf5de039cc73d4be7b3292370f  dist/assets/SubscriptionsView-BRaXiXx0.js\n24e3398afa84b3577ef66424e33f0bd094600dff150a6741fa53bd0222b8cdaa  dist/assets/TableHeader.vue_vue_type_script_setup_true_lang-Bqz4PTLm.js\n8a5a412183ee783653d6ddbeadc687084fa291354527f5b1f544c2a6a8d82d77  dist/assets/TabsTrigger.vue_vue_type_script_setup_true_lang-P4uDLXYP.js\ne5f8427577cd6e0716a9fc496ac814c799658c0e6e9adff600c730e25cd5cb92  dist/assets/TasksView-CF5Uix1J.js\nf2fd41bf07e5af8b35234782d945f3ca3a1176b75e879c401b23f89b5edb0666  dist/assets/TemplatesView-DNQr9HMI.js\n1307524b70f95c7ad6856a2ddd4a30b90b4eba85e6003e4ca5d32d45fb0fd4f5  dist/assets/Textarea.vue_vue_type_script_setup_true_lang-DsYRMQrJ.js\n370a46a4eff383f1c6109efb1a6e56f6736e134bd14491000ded1ef17dc68952  dist/assets/UsageView-DwbsxXTx.js\n7e13a3138b8181b2d9b4044f0937a33a70fad510128034b92fe11d4ad72c68a4  dist/assets/VisuallyHidden-kp3u4KLO.js\n4c1d08a8dfab320b1a768aa460eaa2aa6ad7725081165ecfcfd9d0a71b050852  dist/assets/accessReasons-BS_swUhJ.js\n1797484757abe0feeb34dfa444d8a6801fe8a11d515439d5e520c7c753a741e1  dist/assets/allPages-1gdQ79Jg.js\ne099c7591b1af5a44a5f7fe5f95164c31c6fd94ecf621bc42913761bcd12ef9c  dist/assets/batch-C6UOhhmx.js\n01af68d521f48453d780fbdbfcc4673af145e5da8986af9b09a433b469a535cf  dist/assets/format-C0n3U-TB.js\n10e9d2957a297a64125d8703b81e574695c2b4e5026d393619c27dba98c956fc  dist/assets/index-BQKdZcZK.css\nc384127e1e2fe5a08e73b6eaee75d343bfdc517fdd0b9c6d3d42e775de267c19  dist/assets/index-Bljqs4uK.js\nbbdb6a63433ea3c9dc0bd0398d631be8196f2d7df7d2b727c2da075ec84a666e  dist/assets/index-CBFxvP_3.js\nca157063339ac4ad418f214f3abfed119b0798ab4d377386ce5c9e5a7a435ebd  dist/assets/inter-cyrillic-ext-wght-normal-BOeWTOD4.woff2\n71d5ee93cc1e9f1d520a3a8b66456de18c7879d8df09d57fcd2eaff75fef0075  dist/assets/inter-cyrillic-wght-normal-DqGufNeO.woff2\n6e9e020a25f9b56d418f2c085b1d3c09725a4da23fe693a5b463064606732190  dist/assets/inter-greek-ext-wght-normal-DlzME5K_.woff2\n1be3448e292fbf05ffe176fe1e43f135013d50b1e7d324ad1a558f623d3bb6f6  dist/assets/inter-greek-wght-normal-CkhJZR-_.woff2\n34b9c504cab7a73e37b746343a449132e56cf7b5481af2cb81dc74dcff25c956  dist/assets/inter-latin-ext-wght-normal-DO1Apj_S.woff2\n3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62  dist/assets/inter-latin-wght-normal-Dx4kXJAl.woff2\n5c66f9e07e90c6d4ac4922cc68d60de26c17b1858e677fb5e603fce3952b3ff2  dist/assets/inter-vietnamese-wght-normal-CBcvBZtf.woff2\n2253e4fecd1603de3a3d239d14601afd1ba1bea87fc357af4585ce3e53c3514c  dist/assets/json-BgyK6ywS.js\n8e9ee5fca1684f588234570649b8a57814df3b6a37af4f1f68e4d2dbc244c156  dist/assets/memberDraft-LMjhAQI2.js\n5d168c3656e0e4c47b5ec0a02e57d450dac1793a74816e7cf4485af13374bf4e  dist/assets/memberService-CFHAVOWO.js\nb2b0804deffcf368415844c367bbcd38de3a7c9510f59e054ff1abca06553be2  dist/assets/nodeDraft-QfhybWai.js\nf984e2a2361df42fc0e8d9cf6e16b49a843196e2b9e05d4fc1b3ce6f15bdb6a8  dist/assets/paged-DP_q3S4H.js\n50a77caa0675b041fd541ee238c8ef08b793c16618e02931323f9233b503c497  dist/assets/toast-Da_-6DgY.js\n8a49e525c5aef0d9bbfceb7266bb978cfce8ddb87460c62da0164f8de4666712  dist/index.html\n7b66684c676c39865cabad585d8ffffeab273beb1eb61deb6f8a0f0dbb04d415  migrations/0001_init.sql\nd74662653a23db233317869ccd6a09b116447f1d95c4ac846b6734db4dbd8d79  migrations/0002_batch_preview.sql\n09896ad6350017f966c9e59f3cdcb007ba0b36d254fe5545c492df7b0b441e83  migrations/0003_maintenance.sql\n80b14b3d4e17da11c955d017c162be75dd4754b9e0f9fb2d798c9f584082e919  migrations/0004_node_external_port.sql\n3416e9bbdf73f5cfe83845914bd5a1d30df6440df6888769a0cfffa8877b6432  migrations/0005_period_and_owner_history.sql\n",
+        "ready": {
+          "data": {
+            "postgres": "ok",
+            "redis": "disabled",
+            "status": "ok"
+          },
+          "request_id": ""
+        }
+      },
+      "spa-upgrade": {
+        "migrations": [
+          [
+            "0001_init.sql",
+            "7b66684c676c39865cabad585d8ffffeab273beb1eb61deb6f8a0f0dbb04d415",
+            "2026-10-24 03:32:31.861517+00"
+          ],
+          [
+            "0002_batch_preview.sql",
+            "d74662653a23db233317869ccd6a09b116447f1d95c4ac846b6734db4dbd8d79",
+            "2026-10-24 03:32:32.117728+00"
+          ],
+          [
+            "0003_maintenance.sql",
+            "09896ad6350017f966c9e59f3cdcb007ba0b36d254fe5545c492df7b0b441e83",
+            "2026-10-24 03:32:32.169539+00"
+          ],
+          [
+            "0004_node_external_port.sql",
+            "80b14b3d4e17da11c955d017c162be75dd4754b9e0f9fb2d798c9f584082e919",
+            "2026-10-24 03:32:32.214614+00"
+          ],
+          [
+            "0005_period_and_owner_history.sql",
+            "3416e9bbdf73f5cfe83845914bd5a1d30df6440df6888769a0cfffa8877b6432",
+            "2026-10-24 03:32:32.23638+00"
+          ],
+          [
+            "0006_batch_task_durability.sql",
+            "d08d5e0b5e95496ce80ab4bda89dfa48e911e999036828487517182a384884d2",
+            "2026-10-24 03:32:42.011415+00"
+          ]
+        ],
+        "browser": {
+          "phase": "upgrade",
+          "base": "https://127.0.0.1:34325",
+          "status": "passed",
+          "checks": [
+            "persisted session after candidate replacement and deep refresh",
+            "authenticated API and Secure HttpOnly cookie",
+            "missing asset/unknown API non-HTML 404; invalid subscription non-HTML 403",
+            "browser logout then protected API/session reject"
+          ],
+          "errors": [],
+          "responses": [
+            {
+              "url": "https://127.0.0.1:34325/admin/nodes",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-BQKdZcZK.css",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-Dy27MwwO.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/inter-latin-wght-normal-Dx4kXJAl.woff2",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/auth/session",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/NodesView-DYIfbWGT.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/allPages-1gdQ79Jg.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/paged-DOGT7hXL.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/nodeDraft-QfhybWai.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/TableHeader.vue_vue_type_script_setup_true_lang-GGQ-fhD8.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/DataTable.vue_vue_type_script_setup_true_lang-D6engIlJ.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/toast-DsqVZ_EB.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/EmptyState.vue_vue_type_script_setup_true_lang-DXYSUoQO.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/LoadingBlock.vue_vue_type_script_setup_true_lang-D4g0bRkM.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-CmZ4lPJ5.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/json-BgyK6ywS.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Label.vue_vue_type_script_setup_true_lang-BuzyoBNj.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/recovery-mode",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/VisuallyHidden-Cp4CfAnz.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/FieldRoot-CpxtHy3B.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/ConfirmDialog.vue_vue_type_script_setup_true_lang-BtIan0VM.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/StatusBadge.vue_vue_type_script_setup_true_lang-BOo8qAYz.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Checkbox.vue_vue_type_script_setup_true_lang-BvFcZT8Z.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Card.vue_vue_type_script_setup_true_lang-BWD7MBth.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/AppModal.vue_vue_type_script_setup_true_lang-JWQBeDfU.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/RovingFocusItem-BkolsG1W.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/nodes?limit=50",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/servers?limit=200",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/admin/nodes",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-Dy27MwwO.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-BQKdZcZK.css",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/inter-latin-wght-normal-Dx4kXJAl.woff2",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/auth/session",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/NodesView-DYIfbWGT.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/allPages-1gdQ79Jg.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/paged-DOGT7hXL.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/nodeDraft-QfhybWai.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/json-BgyK6ywS.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/toast-DsqVZ_EB.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/LoadingBlock.vue_vue_type_script_setup_true_lang-D4g0bRkM.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-CmZ4lPJ5.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/DataTable.vue_vue_type_script_setup_true_lang-D6engIlJ.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/TableHeader.vue_vue_type_script_setup_true_lang-GGQ-fhD8.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/EmptyState.vue_vue_type_script_setup_true_lang-DXYSUoQO.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Card.vue_vue_type_script_setup_true_lang-BWD7MBth.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/StatusBadge.vue_vue_type_script_setup_true_lang-BOo8qAYz.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/ConfirmDialog.vue_vue_type_script_setup_true_lang-BtIan0VM.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/AppModal.vue_vue_type_script_setup_true_lang-JWQBeDfU.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Checkbox.vue_vue_type_script_setup_true_lang-BvFcZT8Z.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/FieldRoot-CpxtHy3B.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/VisuallyHidden-Cp4CfAnz.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/RovingFocusItem-BkolsG1W.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Label.vue_vue_type_script_setup_true_lang-BuzyoBNj.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/recovery-mode",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/nodes?limit=50",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/servers?limit=200",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/auth/logout",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/LoginView-CAZJU7uH.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Input.vue_vue_type_script_setup_true_lang-Btr4WMzp.js",
+              "status": 200
+            }
+          ],
+          "asset": {
+            "path": "/assets/index-Dy27MwwO.js",
+            "sha256": "0d323358c9e2ae4cecd6a61ed733bb4fb217855c8e9f290b3864519d56893927"
+          }
+        },
+        "fingerprints": "f6f90e49b07d8226b34ebfe2f443a6ee255daa398f7263d494bc5ed8e87fcd46  panel\nf12e383ba4dc2ae8e0d3b9226f34351974e5e7871b39022c26bdc0a40e36e038  dist/assets/AppModal.vue_vue_type_script_setup_true_lang-JWQBeDfU.js\n9a34aa7a175f415405932511dd1d807a63c9a5f44f6561a9c0ed629e63df8728  dist/assets/AuditView-CIQTXPB7.js\na883ae89776169909b20c347c8a1e2675f3ebee7dd2726183d0b79afbcb2f814  dist/assets/BatchDetailView-QqmKEjCH.js\n1f60cb451adebfb510965750d6dbf9334dc0010d1a42ea30c554cd22be1e6700  dist/assets/BatchListView-sIVesxBo.js\ne8ff78882d2e86541fb7a5f70e57695e4db91c19d16ae1ebfd2dfa39e4f56e7e  dist/assets/Card.vue_vue_type_script_setup_true_lang-BWD7MBth.js\n1627fbe3894f2c3dc7597081c3ae034a61e26d859d10c6908fd2a96943cf6aa9  dist/assets/CardContent.vue_vue_type_script_setup_true_lang-s2HaPbxq.js\n7a25f7b5d82f23b66c4c37e8a4595563cea62eb020063114a85d5603f49baaa3  dist/assets/CardTitle.vue_vue_type_script_setup_true_lang-lrjEsEe3.js\n333b3bc4fa0fa0efa5c11060e082a828a4abbabc8fb71a362d491dc0e40490a5  dist/assets/Checkbox.vue_vue_type_script_setup_true_lang-BvFcZT8Z.js\n0712d93cd6d1b8d0af42ef41a325eae5e66bf737c3581f19b01989567870119f  dist/assets/CollapsibleTrigger.vue_vue_type_script_setup_true_lang-BDJoqlKA.js\n62649d660215ae55bb3053fb832be556e3ffeceb5aecc4afe8572a7f5811663d  dist/assets/ConfirmDialog.vue_vue_type_script_setup_true_lang-BtIan0VM.js\na7025cb5404235e40c13d8ca75762016ea296f635f3967753e4d0d044b1a0c19  dist/assets/CopyField.vue_vue_type_script_setup_true_lang-IZmttIVI.js\n61e653d7610a80eacd1031b5839a2fc5bf7a6172424b19db5edda45d90156a7a  dist/assets/DataTable.vue_vue_type_script_setup_true_lang-D6engIlJ.js\na49a613dcd6cf4d881490630940e8da96c1e55a6607cbbecf9f7bacb3a431456  dist/assets/EmptyState.vue_vue_type_script_setup_true_lang-DXYSUoQO.js\n762825c74b22701f2abcae50f25c4049ce10861ba5a95fba2c5d1bf41dc6489f  dist/assets/EventsView-Ci-ow1Xf.js\nea9f7840b708292968dcc1812a06fdac041478228eda5231cf700e71be1a84fd  dist/assets/FieldRoot-CpxtHy3B.js\n043638db3dab54f1b5eb10ac691211d6606e7e9a312fdd6477c4fb4cfc59128b  dist/assets/ImpactPreviewDialog.vue_vue_type_script_setup_true_lang-vEzHpO3T.js\ne61fe2456827a697bc674ec17c3893d3ba0759595f8270a96ed7a25d1b2158b7  dist/assets/Input.vue_vue_type_script_setup_true_lang-Btr4WMzp.js\nb4c67a43dc93de7d54ede17f539f74dd8a62ff8d1307cef0f8118e43b79b73dd  dist/assets/InvitationsView-CFaoGttX.js\n1154e9d9ff534eb1fb8d891c0ca7f375e205bea371a0e47fa9f120dd9d2d027f  dist/assets/JsonEditor.vue_vue_type_script_setup_true_lang-DGWbC2Dg.js\n39b77c2a71d68f79cbacfc845a28473761319f8be3b79b3f7434bd964679919e  dist/assets/Label.vue_vue_type_script_setup_true_lang-BuzyoBNj.js\n0e9081caf1909d791cce60f91583d267aa7849e0f1e776aa7947c1e77285c512  dist/assets/LoadingBlock.vue_vue_type_script_setup_true_lang-D4g0bRkM.js\n31b1a1ce3b37f97e21627f3c7de61e68a7e276d69a3ef3305a0855ffffb1afe7  dist/assets/LoginView-CAZJU7uH.js\n2a67b7f6352af4e09e5bfe2dfab771bee30e2e789463b8b0d6eb07f634fde570  dist/assets/MeCredentialsView-Bw3Xgo1b.js\n8704530392053a32a3433bb5fb961747f6992d2cefab03f39d4d161053b96356  dist/assets/MeSecurityView-C_bL1soT.js\n63bfac5e7a41aac402ceeae3c0a2e057a5ecd20143ae2c188f38da486578057d  dist/assets/MeStatusView-CJqK0eBk.js\nd568e94ae03fa86e4b5fc7438e9e5ae55946d65ea5e884d2326acbc395537118  dist/assets/MeSubscriptionView-DhjEcMJJ.js\nd237ce0e23274c1512e173306b11ec4b8b2814d0867bad4b1ba33ab806fe8ca3  dist/assets/MeUsageView-Cw_ISLVX.js\n54216fef03ddc79abded8f8732df453d07e27658c80033a023aa669b383f20a1  dist/assets/MemberDetailView-BJ74lL0g.js\nc88d2f304319eec6cb3626a591bfe5dae3781bfa62ed63b179c2fd3348d226a7  dist/assets/MembersView-Bo7DJd9g.js\n0e2f99ab57f816186b5a58968a4392f3be435b90b79a4cb92e883bc64eef4295  dist/assets/NodeEditorView-B6hbYDp-.js\n8fa34d1bb2bf80a6247a85df35e9e9c1bfe25689341b79087cee41ff9a808d84  dist/assets/NodeGroupsView-B6Yfb8l7.js\n9ee74b9a9c2de4dff1e2e00544f9228395174e7368dddbd835a7a76e66eb4702  dist/assets/NodesView-DYIfbWGT.js\n26626752b8b3ba966e0f6ebd708efd4ea51d97bfec7a920085766213c41a7901  dist/assets/NotFoundView-nKgQdnSx.js\nef89c0288d6dee0d22cc8862a15575f9fe2f69858457d1c15decce7a8ec311c0  dist/assets/OverviewView-7ohwgI0i.js\n35acd802348bc075787f72558131392dea28a27c2a3431511533f49ad076db4b  dist/assets/QrPanel.vue_vue_type_script_setup_true_lang-CzZZq9OD.js\nb5df77d0a2ebbef05ca76304098cef5b0758354864e3a04e75ee61a29dbca8fc  dist/assets/RadioGroupItem.vue_vue_type_script_setup_true_lang-D5Nu_8HR.js\n1856371695d5258ab434da84bd7d1a98f8c4efc1854c57db25c71f327f9a4a62  dist/assets/RedeemView-CZ2jEC8v.js\n1a441c97a5504bce5fdcefcd3a5a1a0df3b2ffca3cdb7c57e64d137148b916a3  dist/assets/RovingFocusItem-BkolsG1W.js\n57d370fcdbac25e92c30be323420bdc813cc12369d52111a3d136b11c79b398b  dist/assets/RuntimeView-CZen1EG5.js\n41b65da951959491dfa19beafe3f1bf66dd3bc6938d8a049432bf591b55e0c57  dist/assets/SelectValue.vue_vue_type_script_setup_true_lang-DJspZTkq.js\n6d837fa03a7ebff06830c8491abb71aba690621210bd72d58a61156155b38f90  dist/assets/ServerRuntimeView-DiigBib0.js\n0960ac932b22b01f79f85fb119055ca37cd11e582762aba804b277537b6e34b8  dist/assets/ServersView-Bsbo9gYl.js\ncafae84cafff862bb0cccd569a21c9a1ce1a18f00f20b953ebd3b62601876b94  dist/assets/SettingsView-BSe0T4gc.js\nac19e99423225c1ddc62fa1368bb890f365ff244a76f08b5311199d39e95fd3e  dist/assets/StatusBadge.vue_vue_type_script_setup_true_lang-BOo8qAYz.js\na792d8f68b7632f93407163fdcf133b0bf4dd42f7605d54ee54b9f87ac2a8228  dist/assets/SubscriptionEditorView-Dcfucm5q.js\n8a3d95ac4bd90bdaf6121259596729f8459214354559ddba90f0b1733ab0dc3f  dist/assets/SubscriptionsView-DVvuzyy3.js\n53b5620bc204a7b4be2f24dfddebe477330e7f183d45546332b41bac11a304b8  dist/assets/TableHeader.vue_vue_type_script_setup_true_lang-GGQ-fhD8.js\nbb0ce6e634a5640f646b50665ed0357135002f917a406d67fba2ac760475ec7a  dist/assets/TabsTrigger.vue_vue_type_script_setup_true_lang-BQkIGVEv.js\nc3a27cb4d04d91480298a81f7b90e6bcc223246f6858bc4c4b1741a1230d77f5  dist/assets/TasksView-E33jNrsC.js\n0aca89f7a6a74eba3ee103a9e06f62913b77c8b002dd8d6d738c627a182caded  dist/assets/TemplatesView-DqTqoBBQ.js\n0ed5e11bb4925fbb2429157c77fd858bde1d74d92c411596c9f2f2e0c89f3e2a  dist/assets/Textarea.vue_vue_type_script_setup_true_lang-SW_HleyU.js\n2e79ac15af1580661b67e24bd19888988d9ed3143b149889ad9be633ae22dfa9  dist/assets/UsageView-DJDr-Pib.js\n5357abca1908631e7f82604a719ba6c4c179c767f19e7f833ab528101d82cab6  dist/assets/VisuallyHidden-Cp4CfAnz.js\n4c1d08a8dfab320b1a768aa460eaa2aa6ad7725081165ecfcfd9d0a71b050852  dist/assets/accessReasons-BS_swUhJ.js\n1797484757abe0feeb34dfa444d8a6801fe8a11d515439d5e520c7c753a741e1  dist/assets/allPages-1gdQ79Jg.js\ne099c7591b1af5a44a5f7fe5f95164c31c6fd94ecf621bc42913761bcd12ef9c  dist/assets/batch-C6UOhhmx.js\n01af68d521f48453d780fbdbfcc4673af145e5da8986af9b09a433b469a535cf  dist/assets/format-C0n3U-TB.js\n10e9d2957a297a64125d8703b81e574695c2b4e5026d393619c27dba98c956fc  dist/assets/index-BQKdZcZK.css\n5fa00d1b4eeeedd1aecaf9b19e2666a9b9a57ae1bbf55bd07ccc517867062917  dist/assets/index-CmZ4lPJ5.js\n0d323358c9e2ae4cecd6a61ed733bb4fb217855c8e9f290b3864519d56893927  dist/assets/index-Dy27MwwO.js\nca157063339ac4ad418f214f3abfed119b0798ab4d377386ce5c9e5a7a435ebd  dist/assets/inter-cyrillic-ext-wght-normal-BOeWTOD4.woff2\n71d5ee93cc1e9f1d520a3a8b66456de18c7879d8df09d57fcd2eaff75fef0075  dist/assets/inter-cyrillic-wght-normal-DqGufNeO.woff2\n6e9e020a25f9b56d418f2c085b1d3c09725a4da23fe693a5b463064606732190  dist/assets/inter-greek-ext-wght-normal-DlzME5K_.woff2\n1be3448e292fbf05ffe176fe1e43f135013d50b1e7d324ad1a558f623d3bb6f6  dist/assets/inter-greek-wght-normal-CkhJZR-_.woff2\n34b9c504cab7a73e37b746343a449132e56cf7b5481af2cb81dc74dcff25c956  dist/assets/inter-latin-ext-wght-normal-DO1Apj_S.woff2\n3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62  dist/assets/inter-latin-wght-normal-Dx4kXJAl.woff2\n5c66f9e07e90c6d4ac4922cc68d60de26c17b1858e677fb5e603fce3952b3ff2  dist/assets/inter-vietnamese-wght-normal-CBcvBZtf.woff2\n2253e4fecd1603de3a3d239d14601afd1ba1bea87fc357af4585ce3e53c3514c  dist/assets/json-BgyK6ywS.js\n8e9ee5fca1684f588234570649b8a57814df3b6a37af4f1f68e4d2dbc244c156  dist/assets/memberDraft-LMjhAQI2.js\nc6d9625df24be3035bda9123d7c70e500777ed6f44080157ed12467b7b8362e8  dist/assets/memberService-RStd1sqM.js\nb2b0804deffcf368415844c367bbcd38de3a7c9510f59e054ff1abca06553be2  dist/assets/nodeDraft-QfhybWai.js\n32d0b5e9fe4f7afd4b97625bbe5e44ea30e7bff531c2f9603c9f645b61965934  dist/assets/paged-DOGT7hXL.js\ncf3d9feb31a7b7e50f5111541ca2328b60bcb6dcb54f53efb05adbced7024009  dist/assets/toast-DsqVZ_EB.js\nae60f9a3405ee02ceea18eadf7ebc2f6e8a44e02dc675d394043932d7a99d03c  dist/index.html\n7b66684c676c39865cabad585d8ffffeab273beb1eb61deb6f8a0f0dbb04d415  migrations/0001_init.sql\nd74662653a23db233317869ccd6a09b116447f1d95c4ac846b6734db4dbd8d79  migrations/0002_batch_preview.sql\n09896ad6350017f966c9e59f3cdcb007ba0b36d254fe5545c492df7b0b441e83  migrations/0003_maintenance.sql\n80b14b3d4e17da11c955d017c162be75dd4754b9e0f9fb2d798c9f584082e919  migrations/0004_node_external_port.sql\n3416e9bbdf73f5cfe83845914bd5a1d30df6440df6888769a0cfffa8877b6432  migrations/0005_period_and_owner_history.sql\nd08d5e0b5e95496ce80ab4bda89dfa48e911e999036828487517182a384884d2  migrations/0006_batch_task_durability.sql\n",
+        "ready": {
+          "data": {
+            "postgres": "ok",
+            "redis": "disabled",
+            "status": "ok"
+          },
+          "request_id": ""
+        }
+      },
+      "api-current": {
+        "migrations": [
+          [
+            "0001_init.sql",
+            "7b66684c676c39865cabad585d8ffffeab273beb1eb61deb6f8a0f0dbb04d415",
+            "2026-10-24 03:32:48.19819+00"
+          ],
+          [
+            "0002_batch_preview.sql",
+            "d74662653a23db233317869ccd6a09b116447f1d95c4ac846b6734db4dbd8d79",
+            "2026-10-24 03:32:48.448736+00"
+          ],
+          [
+            "0003_maintenance.sql",
+            "09896ad6350017f966c9e59f3cdcb007ba0b36d254fe5545c492df7b0b441e83",
+            "2026-10-24 03:32:48.497656+00"
+          ],
+          [
+            "0004_node_external_port.sql",
+            "80b14b3d4e17da11c955d017c162be75dd4754b9e0f9fb2d798c9f584082e919",
+            "2026-10-24 03:32:48.537132+00"
+          ],
+          [
+            "0005_period_and_owner_history.sql",
+            "3416e9bbdf73f5cfe83845914bd5a1d30df6440df6888769a0cfffa8877b6432",
+            "2026-10-24 03:32:48.559183+00"
+          ]
+        ],
+        "browser": {
+          "phase": "current",
+          "base": "https://127.0.0.1:34325",
+          "status": "passed",
+          "checks": [
+            "anonymous API and route protection",
+            "real browser form login",
+            "deep navigation and refresh",
+            "authenticated API and Secure HttpOnly cookie",
+            "missing asset/unknown API non-HTML 404; invalid subscription non-HTML 403",
+            "browser logout then protected API/session reject",
+            "real browser form login"
+          ],
+          "errors": [],
+          "responses": [
+            {
+              "url": "https://127.0.0.1:34325/admin/nodes",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-BQKdZcZK.css",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-Bljqs4uK.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/inter-latin-wght-normal-Dx4kXJAl.woff2",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/auth/session",
+              "status": 401
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/LoginView-Dw4L1wgl.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-CBFxvP_3.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Card.vue_vue_type_script_setup_true_lang-CP6qfWY4.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Input.vue_vue_type_script_setup_true_lang-Hlqeu6ee.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Label.vue_vue_type_script_setup_true_lang-BzB9k4az.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/login",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-Bljqs4uK.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-BQKdZcZK.css",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/inter-latin-wght-normal-Dx4kXJAl.woff2",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/auth/session",
+              "status": 401
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/LoginView-Dw4L1wgl.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-CBFxvP_3.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Card.vue_vue_type_script_setup_true_lang-CP6qfWY4.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Input.vue_vue_type_script_setup_true_lang-Hlqeu6ee.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Label.vue_vue_type_script_setup_true_lang-BzB9k4az.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/auth/login",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/OverviewView-64uNh0HV.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/format-C0n3U-TB.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/LoadingBlock.vue_vue_type_script_setup_true_lang-BCsN3dRC.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/EmptyState.vue_vue_type_script_setup_true_lang-CEPU-MOC.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/StatusBadge.vue_vue_type_script_setup_true_lang-CPyg0eMY.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/CardContent.vue_vue_type_script_setup_true_lang-D1GN2aYN.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/CardTitle.vue_vue_type_script_setup_true_lang-DbG1z6JY.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/recovery-mode",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/admin/nodes",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-Bljqs4uK.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-BQKdZcZK.css",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/inter-latin-wght-normal-Dx4kXJAl.woff2",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/auth/session",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/LoadingBlock.vue_vue_type_script_setup_true_lang-BCsN3dRC.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-CBFxvP_3.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/EmptyState.vue_vue_type_script_setup_true_lang-CEPU-MOC.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Card.vue_vue_type_script_setup_true_lang-CP6qfWY4.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/StatusBadge.vue_vue_type_script_setup_true_lang-CPyg0eMY.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Label.vue_vue_type_script_setup_true_lang-BzB9k4az.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/allPages-1gdQ79Jg.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/NodesView-CK1hDbqR.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/paged-DP_q3S4H.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/nodeDraft-QfhybWai.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/json-BgyK6ywS.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/toast-Da_-6DgY.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/DataTable.vue_vue_type_script_setup_true_lang-DR3Yc4NC.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/TableHeader.vue_vue_type_script_setup_true_lang-Bqz4PTLm.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/ConfirmDialog.vue_vue_type_script_setup_true_lang-BksULYe2.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/AppModal.vue_vue_type_script_setup_true_lang-CQAAjiWf.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Checkbox.vue_vue_type_script_setup_true_lang-9UWwuIuk.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/FieldRoot-BsgdxpNn.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/VisuallyHidden-kp3u4KLO.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/recovery-mode",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/RovingFocusItem-qSbElsg7.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/nodes?limit=50",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/servers?limit=200",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/admin/nodes",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-Bljqs4uK.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-BQKdZcZK.css",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/inter-latin-wght-normal-Dx4kXJAl.woff2",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/auth/session",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/NodesView-CK1hDbqR.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/allPages-1gdQ79Jg.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/paged-DP_q3S4H.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/nodeDraft-QfhybWai.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/json-BgyK6ywS.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/toast-Da_-6DgY.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/LoadingBlock.vue_vue_type_script_setup_true_lang-BCsN3dRC.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-CBFxvP_3.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/DataTable.vue_vue_type_script_setup_true_lang-DR3Yc4NC.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/TableHeader.vue_vue_type_script_setup_true_lang-Bqz4PTLm.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/EmptyState.vue_vue_type_script_setup_true_lang-CEPU-MOC.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Card.vue_vue_type_script_setup_true_lang-CP6qfWY4.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/StatusBadge.vue_vue_type_script_setup_true_lang-CPyg0eMY.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/ConfirmDialog.vue_vue_type_script_setup_true_lang-BksULYe2.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/AppModal.vue_vue_type_script_setup_true_lang-CQAAjiWf.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Checkbox.vue_vue_type_script_setup_true_lang-9UWwuIuk.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/FieldRoot-BsgdxpNn.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/VisuallyHidden-kp3u4KLO.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/RovingFocusItem-qSbElsg7.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Label.vue_vue_type_script_setup_true_lang-BzB9k4az.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/recovery-mode",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/nodes?limit=50",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/servers?limit=200",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/auth/logout",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/LoginView-Dw4L1wgl.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Input.vue_vue_type_script_setup_true_lang-Hlqeu6ee.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/login",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-Bljqs4uK.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-BQKdZcZK.css",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/inter-latin-wght-normal-Dx4kXJAl.woff2",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/auth/session",
+              "status": 401
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/LoginView-Dw4L1wgl.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-CBFxvP_3.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Card.vue_vue_type_script_setup_true_lang-CP6qfWY4.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Input.vue_vue_type_script_setup_true_lang-Hlqeu6ee.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Label.vue_vue_type_script_setup_true_lang-BzB9k4az.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/auth/login",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/OverviewView-64uNh0HV.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/format-C0n3U-TB.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/LoadingBlock.vue_vue_type_script_setup_true_lang-BCsN3dRC.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/EmptyState.vue_vue_type_script_setup_true_lang-CEPU-MOC.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/StatusBadge.vue_vue_type_script_setup_true_lang-CPyg0eMY.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/CardContent.vue_vue_type_script_setup_true_lang-D1GN2aYN.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/CardTitle.vue_vue_type_script_setup_true_lang-DbG1z6JY.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/recovery-mode",
+              "status": 200
+            }
+          ],
+          "asset": {
+            "path": "/assets/index-Bljqs4uK.js",
+            "sha256": "c384127e1e2fe5a08e73b6eaee75d343bfdc517fdd0b9c6d3d42e775de267c19"
+          }
+        },
+        "fingerprints": "d04675002b8cd0c3b6b57802dde8273333a68dc9e4c31fa856a5a56cd38ee91d  panel\n59a00caf16d303c669781e83947f28ebf25d3acff12743cbba8bdd387ba50801  dist/assets/AppModal.vue_vue_type_script_setup_true_lang-CQAAjiWf.js\n8f1eb02f97db4e315fb087e53bd2b62b9454ebe1e3af54833b96acf79b05d0e6  dist/assets/AuditView-Br5sEsf8.js\nfaadc94fe297a78b0346b51d12237a864a2abee346db83745fa1900cce20e7a8  dist/assets/BatchDetailView-5EZ9G8Id.js\n656aa5d96de61dc9af70543fed026fcb964324a2c9731eeceb52c2f0cd2894c9  dist/assets/BatchListView-Bqsuh3o3.js\nfa1c59873cc9fb9b31bd4f54d88f12eb8a98021f66f577fb552176d79fc57a09  dist/assets/Card.vue_vue_type_script_setup_true_lang-CP6qfWY4.js\n82b530f97b6fbedfdbfa9e97b79b48b1f28e770e0434442d08c9c0e00ea0573c  dist/assets/CardContent.vue_vue_type_script_setup_true_lang-D1GN2aYN.js\n64b15d5c4edd91c5220854fda7aa1433cba8aeadb1804c10c50afaf37b36413e  dist/assets/CardTitle.vue_vue_type_script_setup_true_lang-DbG1z6JY.js\n911a04da49e9a0f3dccbcd36f1ec5e79d42925935281939bab63c547c94e82d2  dist/assets/Checkbox.vue_vue_type_script_setup_true_lang-9UWwuIuk.js\n92a72121b6a21fae2f2335f5053f0c0ea26c92ef093e01532e56f92f451c7827  dist/assets/CollapsibleTrigger.vue_vue_type_script_setup_true_lang-ew2qoAmf.js\n3f69a1f31129b5e7b1cea06eae4ee98530471478e9371144706feacb8ca62102  dist/assets/ConfirmDialog.vue_vue_type_script_setup_true_lang-BksULYe2.js\ne00cbf9d10d9851b862748983acbacf7ce9cd7f3d6ba876ab014cf08932c422b  dist/assets/CopyField.vue_vue_type_script_setup_true_lang-Clsnerra.js\n4979669e381d46568d981f6e59da9bbd6c401214e577025a1459d0b34992f031  dist/assets/DataTable.vue_vue_type_script_setup_true_lang-DR3Yc4NC.js\nbef71ccbd1fcde37bc5a21f8363ea030fadf997fa294d00b62502b0253538e1f  dist/assets/EmptyState.vue_vue_type_script_setup_true_lang-CEPU-MOC.js\n41e6bf865cd97b46146b8953d06505e53e844f1c32681ff5bd8d666c2312cc22  dist/assets/EventsView-gy3yt_Ym.js\n88a2efea7504255197f0b97f3262c11aa13bf158d63f3f601a19e4fa83a9df59  dist/assets/FieldRoot-BsgdxpNn.js\n6d2ce657516e194253b4fdd6ec637e2a3ccf0f1c83cf23a377413310d38b5a2c  dist/assets/ImpactPreviewDialog.vue_vue_type_script_setup_true_lang-DAf-qgiJ.js\n901823ddc3178ccd8176e0f38d2abfa42615d9f2e5d2ac5f184b2862b9be972f  dist/assets/Input.vue_vue_type_script_setup_true_lang-Hlqeu6ee.js\n395766fea10e80db179fb1af684645c2ef2596f201aafea52978be2cea152056  dist/assets/InvitationsView-3SUP_3c5.js\n2f31a7c93d6b9d05951d3e9534d91adbe0275bb1fc65369179c3201fd59326be  dist/assets/JsonEditor.vue_vue_type_script_setup_true_lang-DVvy8ewU.js\n88de09b44f5b1d6699cf62ba464d8df4890517b2b0250ab91ef7ce917678179a  dist/assets/Label.vue_vue_type_script_setup_true_lang-BzB9k4az.js\n21dd9f28cd189027b57109fbc3e90a58af1dbc35f1dec40f12403d83fd0d9e2f  dist/assets/LoadingBlock.vue_vue_type_script_setup_true_lang-BCsN3dRC.js\n927869b5a84f5b1660bedcdaf83a6c12df89513fd98eb69378ad499d605fe936  dist/assets/LoginView-Dw4L1wgl.js\n75564fda295001269cb2a06845332db5b9d21250a270ede39c9452a9cc6ce382  dist/assets/MeCredentialsView-DAtn5Gmb.js\n9cc3b9ac2b0237af201c37fa5cbe461a936a8b6fc6922210daabb3f8ace7fecf  dist/assets/MeSecurityView-DZdce9zx.js\nd245702469376133f010cffc3ac66fea43b47a631e1c78f899449c23c73a37a4  dist/assets/MeStatusView-BUyKwKJ6.js\n6c9999101daebc24d827b05991c022e0413174193007b70563b62b098b907886  dist/assets/MeSubscriptionView-DWQ6ja-M.js\na0c31bb488e2aa603a651a0d7568dd5d3d51e801fc356d5713c84c830350ecae  dist/assets/MeUsageView-CzFta6Ll.js\n4b29d9132d1b95ee68feaa5342471abf058c9f660aa53202f1322d40b5f007a3  dist/assets/MemberDetailView-u5OfSgnt.js\n201a927a7cb6cd5121d378fc320f878d9fc6dfde61282330ec54073db7a4f799  dist/assets/MembersView-wqKaYTG_.js\na8c515861554ddb22f4571026eca6ca1f8d2b0e7d0a4aed0b26e277be17cc863  dist/assets/NodeEditorView-CqTY6-Sq.js\n7238b40957481497ccc017d997af2e6e0c948fc3fd140c9753b76c994e821de3  dist/assets/NodeGroupsView-dn2dLh-6.js\nbbc1cfac4bc199615fd2abf0f07862295a89217d97ff484c6c5b8b2c6c62ae7f  dist/assets/NodesView-CK1hDbqR.js\n377f2755ac9de6d7133a2553d91591004779e2061d6415b2efaefc97b84854a2  dist/assets/NotFoundView-BSQPSj_L.js\n2233c9639ed8228dae7d6d3e73020a5ada6f1392d3e72f2ff8944eee074e45c5  dist/assets/OverviewView-64uNh0HV.js\nea4bde3668937b6a5d46b4bac7874391e022fd63a21459b155c58350c0af2253  dist/assets/QrPanel.vue_vue_type_script_setup_true_lang-D_fXaW_K.js\n8c60b99ceea6be4f9150b944a1d193334b19b63a080bbcb094bbf8ea0283edce  dist/assets/RadioGroupItem.vue_vue_type_script_setup_true_lang-DnPNfrG6.js\nf1d0e09a6a88c750f1903f4ff9c05ccef37e430ce79d540bfa0e1e39986749c4  dist/assets/RedeemView-s4q7K20U.js\nbe233cf3980d4b357b2af7087a7e0434142bf2ad221f26f93209128cc8208089  dist/assets/RovingFocusItem-qSbElsg7.js\n03e5a87fe32b57998a975346e10fbd76cdd72615b08b5e912db4d8d15f9953a9  dist/assets/RuntimeView-JSkQu2KS.js\n51a5856263878b4524b79f6901ffc717a131a7e3e3062b6ea392e1d1a5d89c3c  dist/assets/SelectValue.vue_vue_type_script_setup_true_lang-98MQYcZ9.js\nc3e1966f50939afee85005dbbe5a88e8141c75db0b593ac2c97dfc01b7c1613f  dist/assets/ServerRuntimeView-DJHh43qX.js\nf19da1d47c8e6649ebddd268a4029b394fb9a64ef57011205884a0417e962980  dist/assets/ServersView-LmTUgmDA.js\nd53a3599d8ee431d2723e9c7e9cc77cf57b790339b32558987b55fdc4ba5d445  dist/assets/SettingsView-aDvHqD1l.js\n885e350bde7ee04ae781ba97ac2f2c0e40070b665ee10d921507f3be9754ac8e  dist/assets/StatusBadge.vue_vue_type_script_setup_true_lang-CPyg0eMY.js\n7637db97d4711140a5183a98831e8fb6f7d45cd24ae6b683d155c67b14f9a56d  dist/assets/SubscriptionEditorView-Cei-FATh.js\nd23fd32870e02d108a97bad6a4508021dc2d72bf5de039cc73d4be7b3292370f  dist/assets/SubscriptionsView-BRaXiXx0.js\n24e3398afa84b3577ef66424e33f0bd094600dff150a6741fa53bd0222b8cdaa  dist/assets/TableHeader.vue_vue_type_script_setup_true_lang-Bqz4PTLm.js\n8a5a412183ee783653d6ddbeadc687084fa291354527f5b1f544c2a6a8d82d77  dist/assets/TabsTrigger.vue_vue_type_script_setup_true_lang-P4uDLXYP.js\ne5f8427577cd6e0716a9fc496ac814c799658c0e6e9adff600c730e25cd5cb92  dist/assets/TasksView-CF5Uix1J.js\nf2fd41bf07e5af8b35234782d945f3ca3a1176b75e879c401b23f89b5edb0666  dist/assets/TemplatesView-DNQr9HMI.js\n1307524b70f95c7ad6856a2ddd4a30b90b4eba85e6003e4ca5d32d45fb0fd4f5  dist/assets/Textarea.vue_vue_type_script_setup_true_lang-DsYRMQrJ.js\n370a46a4eff383f1c6109efb1a6e56f6736e134bd14491000ded1ef17dc68952  dist/assets/UsageView-DwbsxXTx.js\n7e13a3138b8181b2d9b4044f0937a33a70fad510128034b92fe11d4ad72c68a4  dist/assets/VisuallyHidden-kp3u4KLO.js\n4c1d08a8dfab320b1a768aa460eaa2aa6ad7725081165ecfcfd9d0a71b050852  dist/assets/accessReasons-BS_swUhJ.js\n1797484757abe0feeb34dfa444d8a6801fe8a11d515439d5e520c7c753a741e1  dist/assets/allPages-1gdQ79Jg.js\ne099c7591b1af5a44a5f7fe5f95164c31c6fd94ecf621bc42913761bcd12ef9c  dist/assets/batch-C6UOhhmx.js\n01af68d521f48453d780fbdbfcc4673af145e5da8986af9b09a433b469a535cf  dist/assets/format-C0n3U-TB.js\n10e9d2957a297a64125d8703b81e574695c2b4e5026d393619c27dba98c956fc  dist/assets/index-BQKdZcZK.css\nc384127e1e2fe5a08e73b6eaee75d343bfdc517fdd0b9c6d3d42e775de267c19  dist/assets/index-Bljqs4uK.js\nbbdb6a63433ea3c9dc0bd0398d631be8196f2d7df7d2b727c2da075ec84a666e  dist/assets/index-CBFxvP_3.js\nca157063339ac4ad418f214f3abfed119b0798ab4d377386ce5c9e5a7a435ebd  dist/assets/inter-cyrillic-ext-wght-normal-BOeWTOD4.woff2\n71d5ee93cc1e9f1d520a3a8b66456de18c7879d8df09d57fcd2eaff75fef0075  dist/assets/inter-cyrillic-wght-normal-DqGufNeO.woff2\n6e9e020a25f9b56d418f2c085b1d3c09725a4da23fe693a5b463064606732190  dist/assets/inter-greek-ext-wght-normal-DlzME5K_.woff2\n1be3448e292fbf05ffe176fe1e43f135013d50b1e7d324ad1a558f623d3bb6f6  dist/assets/inter-greek-wght-normal-CkhJZR-_.woff2\n34b9c504cab7a73e37b746343a449132e56cf7b5481af2cb81dc74dcff25c956  dist/assets/inter-latin-ext-wght-normal-DO1Apj_S.woff2\n3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62  dist/assets/inter-latin-wght-normal-Dx4kXJAl.woff2\n5c66f9e07e90c6d4ac4922cc68d60de26c17b1858e677fb5e603fce3952b3ff2  dist/assets/inter-vietnamese-wght-normal-CBcvBZtf.woff2\n2253e4fecd1603de3a3d239d14601afd1ba1bea87fc357af4585ce3e53c3514c  dist/assets/json-BgyK6ywS.js\n8e9ee5fca1684f588234570649b8a57814df3b6a37af4f1f68e4d2dbc244c156  dist/assets/memberDraft-LMjhAQI2.js\n5d168c3656e0e4c47b5ec0a02e57d450dac1793a74816e7cf4485af13374bf4e  dist/assets/memberService-CFHAVOWO.js\nb2b0804deffcf368415844c367bbcd38de3a7c9510f59e054ff1abca06553be2  dist/assets/nodeDraft-QfhybWai.js\nf984e2a2361df42fc0e8d9cf6e16b49a843196e2b9e05d4fc1b3ce6f15bdb6a8  dist/assets/paged-DP_q3S4H.js\n50a77caa0675b041fd541ee238c8ef08b793c16618e02931323f9233b503c497  dist/assets/toast-Da_-6DgY.js\n8a49e525c5aef0d9bbfceb7266bb978cfce8ddb87460c62da0164f8de4666712  dist/index.html\n7b66684c676c39865cabad585d8ffffeab273beb1eb61deb6f8a0f0dbb04d415  migrations/0001_init.sql\nd74662653a23db233317869ccd6a09b116447f1d95c4ac846b6734db4dbd8d79  migrations/0002_batch_preview.sql\n09896ad6350017f966c9e59f3cdcb007ba0b36d254fe5545c492df7b0b441e83  migrations/0003_maintenance.sql\n80b14b3d4e17da11c955d017c162be75dd4754b9e0f9fb2d798c9f584082e919  migrations/0004_node_external_port.sql\n3416e9bbdf73f5cfe83845914bd5a1d30df6440df6888769a0cfffa8877b6432  migrations/0005_period_and_owner_history.sql\n",
+        "ready": {
+          "data": {
+            "postgres": "ok",
+            "redis": "disabled",
+            "status": "ok"
+          },
+          "request_id": ""
+        }
+      },
+      "api-upgrade": {
+        "migrations": [
+          [
+            "0001_init.sql",
+            "7b66684c676c39865cabad585d8ffffeab273beb1eb61deb6f8a0f0dbb04d415",
+            "2026-10-24 03:32:48.19819+00"
+          ],
+          [
+            "0002_batch_preview.sql",
+            "d74662653a23db233317869ccd6a09b116447f1d95c4ac846b6734db4dbd8d79",
+            "2026-10-24 03:32:48.448736+00"
+          ],
+          [
+            "0003_maintenance.sql",
+            "09896ad6350017f966c9e59f3cdcb007ba0b36d254fe5545c492df7b0b441e83",
+            "2026-10-24 03:32:48.497656+00"
+          ],
+          [
+            "0004_node_external_port.sql",
+            "80b14b3d4e17da11c955d017c162be75dd4754b9e0f9fb2d798c9f584082e919",
+            "2026-10-24 03:32:48.537132+00"
+          ],
+          [
+            "0005_period_and_owner_history.sql",
+            "3416e9bbdf73f5cfe83845914bd5a1d30df6440df6888769a0cfffa8877b6432",
+            "2026-10-24 03:32:48.559183+00"
+          ],
+          [
+            "0006_batch_task_durability.sql",
+            "d08d5e0b5e95496ce80ab4bda89dfa48e911e999036828487517182a384884d2",
+            "2026-10-24 03:32:59.267642+00"
+          ]
+        ],
+        "browser": {
+          "phase": "upgrade",
+          "base": "https://127.0.0.1:34325",
+          "status": "passed",
+          "checks": [
+            "persisted session after candidate replacement and deep refresh",
+            "authenticated API and Secure HttpOnly cookie",
+            "missing asset/unknown API non-HTML 404; invalid subscription non-HTML 403",
+            "browser logout then protected API/session reject"
+          ],
+          "errors": [],
+          "responses": [
+            {
+              "url": "https://127.0.0.1:34325/admin/nodes",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-BQKdZcZK.css",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-Dy27MwwO.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/inter-latin-wght-normal-Dx4kXJAl.woff2",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/auth/session",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/NodesView-DYIfbWGT.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/allPages-1gdQ79Jg.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/paged-DOGT7hXL.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/nodeDraft-QfhybWai.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/json-BgyK6ywS.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/toast-DsqVZ_EB.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/LoadingBlock.vue_vue_type_script_setup_true_lang-D4g0bRkM.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-CmZ4lPJ5.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/DataTable.vue_vue_type_script_setup_true_lang-D6engIlJ.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/TableHeader.vue_vue_type_script_setup_true_lang-GGQ-fhD8.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/EmptyState.vue_vue_type_script_setup_true_lang-DXYSUoQO.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Card.vue_vue_type_script_setup_true_lang-BWD7MBth.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/recovery-mode",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/StatusBadge.vue_vue_type_script_setup_true_lang-BOo8qAYz.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/ConfirmDialog.vue_vue_type_script_setup_true_lang-BtIan0VM.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/AppModal.vue_vue_type_script_setup_true_lang-JWQBeDfU.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Checkbox.vue_vue_type_script_setup_true_lang-BvFcZT8Z.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/FieldRoot-CpxtHy3B.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/VisuallyHidden-Cp4CfAnz.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/RovingFocusItem-BkolsG1W.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Label.vue_vue_type_script_setup_true_lang-BuzyoBNj.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/nodes?limit=50",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/servers?limit=200",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/admin/nodes",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-Dy27MwwO.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-BQKdZcZK.css",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/inter-latin-wght-normal-Dx4kXJAl.woff2",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/auth/session",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/NodesView-DYIfbWGT.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/allPages-1gdQ79Jg.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/paged-DOGT7hXL.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/nodeDraft-QfhybWai.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/json-BgyK6ywS.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/toast-DsqVZ_EB.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/LoadingBlock.vue_vue_type_script_setup_true_lang-D4g0bRkM.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/index-CmZ4lPJ5.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/DataTable.vue_vue_type_script_setup_true_lang-D6engIlJ.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/TableHeader.vue_vue_type_script_setup_true_lang-GGQ-fhD8.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/EmptyState.vue_vue_type_script_setup_true_lang-DXYSUoQO.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Card.vue_vue_type_script_setup_true_lang-BWD7MBth.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/StatusBadge.vue_vue_type_script_setup_true_lang-BOo8qAYz.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/ConfirmDialog.vue_vue_type_script_setup_true_lang-BtIan0VM.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/AppModal.vue_vue_type_script_setup_true_lang-JWQBeDfU.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Checkbox.vue_vue_type_script_setup_true_lang-BvFcZT8Z.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/FieldRoot-CpxtHy3B.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/VisuallyHidden-Cp4CfAnz.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/RovingFocusItem-BkolsG1W.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Label.vue_vue_type_script_setup_true_lang-BuzyoBNj.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/recovery-mode",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/servers?limit=200",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/admin/nodes?limit=50",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/api/v1/auth/logout",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/LoginView-CAZJU7uH.js",
+              "status": 200
+            },
+            {
+              "url": "https://127.0.0.1:34325/assets/Input.vue_vue_type_script_setup_true_lang-Btr4WMzp.js",
+              "status": 200
+            }
+          ],
+          "asset": {
+            "path": "/assets/index-Dy27MwwO.js",
+            "sha256": "0d323358c9e2ae4cecd6a61ed733bb4fb217855c8e9f290b3864519d56893927"
+          }
+        },
+        "fingerprints": "f6f90e49b07d8226b34ebfe2f443a6ee255daa398f7263d494bc5ed8e87fcd46  panel\nf12e383ba4dc2ae8e0d3b9226f34351974e5e7871b39022c26bdc0a40e36e038  dist/assets/AppModal.vue_vue_type_script_setup_true_lang-JWQBeDfU.js\n9a34aa7a175f415405932511dd1d807a63c9a5f44f6561a9c0ed629e63df8728  dist/assets/AuditView-CIQTXPB7.js\na883ae89776169909b20c347c8a1e2675f3ebee7dd2726183d0b79afbcb2f814  dist/assets/BatchDetailView-QqmKEjCH.js\n1f60cb451adebfb510965750d6dbf9334dc0010d1a42ea30c554cd22be1e6700  dist/assets/BatchListView-sIVesxBo.js\ne8ff78882d2e86541fb7a5f70e57695e4db91c19d16ae1ebfd2dfa39e4f56e7e  dist/assets/Card.vue_vue_type_script_setup_true_lang-BWD7MBth.js\n1627fbe3894f2c3dc7597081c3ae034a61e26d859d10c6908fd2a96943cf6aa9  dist/assets/CardContent.vue_vue_type_script_setup_true_lang-s2HaPbxq.js\n7a25f7b5d82f23b66c4c37e8a4595563cea62eb020063114a85d5603f49baaa3  dist/assets/CardTitle.vue_vue_type_script_setup_true_lang-lrjEsEe3.js\n333b3bc4fa0fa0efa5c11060e082a828a4abbabc8fb71a362d491dc0e40490a5  dist/assets/Checkbox.vue_vue_type_script_setup_true_lang-BvFcZT8Z.js\n0712d93cd6d1b8d0af42ef41a325eae5e66bf737c3581f19b01989567870119f  dist/assets/CollapsibleTrigger.vue_vue_type_script_setup_true_lang-BDJoqlKA.js\n62649d660215ae55bb3053fb832be556e3ffeceb5aecc4afe8572a7f5811663d  dist/assets/ConfirmDialog.vue_vue_type_script_setup_true_lang-BtIan0VM.js\na7025cb5404235e40c13d8ca75762016ea296f635f3967753e4d0d044b1a0c19  dist/assets/CopyField.vue_vue_type_script_setup_true_lang-IZmttIVI.js\n61e653d7610a80eacd1031b5839a2fc5bf7a6172424b19db5edda45d90156a7a  dist/assets/DataTable.vue_vue_type_script_setup_true_lang-D6engIlJ.js\na49a613dcd6cf4d881490630940e8da96c1e55a6607cbbecf9f7bacb3a431456  dist/assets/EmptyState.vue_vue_type_script_setup_true_lang-DXYSUoQO.js\n762825c74b22701f2abcae50f25c4049ce10861ba5a95fba2c5d1bf41dc6489f  dist/assets/EventsView-Ci-ow1Xf.js\nea9f7840b708292968dcc1812a06fdac041478228eda5231cf700e71be1a84fd  dist/assets/FieldRoot-CpxtHy3B.js\n043638db3dab54f1b5eb10ac691211d6606e7e9a312fdd6477c4fb4cfc59128b  dist/assets/ImpactPreviewDialog.vue_vue_type_script_setup_true_lang-vEzHpO3T.js\ne61fe2456827a697bc674ec17c3893d3ba0759595f8270a96ed7a25d1b2158b7  dist/assets/Input.vue_vue_type_script_setup_true_lang-Btr4WMzp.js\nb4c67a43dc93de7d54ede17f539f74dd8a62ff8d1307cef0f8118e43b79b73dd  dist/assets/InvitationsView-CFaoGttX.js\n1154e9d9ff534eb1fb8d891c0ca7f375e205bea371a0e47fa9f120dd9d2d027f  dist/assets/JsonEditor.vue_vue_type_script_setup_true_lang-DGWbC2Dg.js\n39b77c2a71d68f79cbacfc845a28473761319f8be3b79b3f7434bd964679919e  dist/assets/Label.vue_vue_type_script_setup_true_lang-BuzyoBNj.js\n0e9081caf1909d791cce60f91583d267aa7849e0f1e776aa7947c1e77285c512  dist/assets/LoadingBlock.vue_vue_type_script_setup_true_lang-D4g0bRkM.js\n31b1a1ce3b37f97e21627f3c7de61e68a7e276d69a3ef3305a0855ffffb1afe7  dist/assets/LoginView-CAZJU7uH.js\n2a67b7f6352af4e09e5bfe2dfab771bee30e2e789463b8b0d6eb07f634fde570  dist/assets/MeCredentialsView-Bw3Xgo1b.js\n8704530392053a32a3433bb5fb961747f6992d2cefab03f39d4d161053b96356  dist/assets/MeSecurityView-C_bL1soT.js\n63bfac5e7a41aac402ceeae3c0a2e057a5ecd20143ae2c188f38da486578057d  dist/assets/MeStatusView-CJqK0eBk.js\nd568e94ae03fa86e4b5fc7438e9e5ae55946d65ea5e884d2326acbc395537118  dist/assets/MeSubscriptionView-DhjEcMJJ.js\nd237ce0e23274c1512e173306b11ec4b8b2814d0867bad4b1ba33ab806fe8ca3  dist/assets/MeUsageView-Cw_ISLVX.js\n54216fef03ddc79abded8f8732df453d07e27658c80033a023aa669b383f20a1  dist/assets/MemberDetailView-BJ74lL0g.js\nc88d2f304319eec6cb3626a591bfe5dae3781bfa62ed63b179c2fd3348d226a7  dist/assets/MembersView-Bo7DJd9g.js\n0e2f99ab57f816186b5a58968a4392f3be435b90b79a4cb92e883bc64eef4295  dist/assets/NodeEditorView-B6hbYDp-.js\n8fa34d1bb2bf80a6247a85df35e9e9c1bfe25689341b79087cee41ff9a808d84  dist/assets/NodeGroupsView-B6Yfb8l7.js\n9ee74b9a9c2de4dff1e2e00544f9228395174e7368dddbd835a7a76e66eb4702  dist/assets/NodesView-DYIfbWGT.js\n26626752b8b3ba966e0f6ebd708efd4ea51d97bfec7a920085766213c41a7901  dist/assets/NotFoundView-nKgQdnSx.js\nef89c0288d6dee0d22cc8862a15575f9fe2f69858457d1c15decce7a8ec311c0  dist/assets/OverviewView-7ohwgI0i.js\n35acd802348bc075787f72558131392dea28a27c2a3431511533f49ad076db4b  dist/assets/QrPanel.vue_vue_type_script_setup_true_lang-CzZZq9OD.js\nb5df77d0a2ebbef05ca76304098cef5b0758354864e3a04e75ee61a29dbca8fc  dist/assets/RadioGroupItem.vue_vue_type_script_setup_true_lang-D5Nu_8HR.js\n1856371695d5258ab434da84bd7d1a98f8c4efc1854c57db25c71f327f9a4a62  dist/assets/RedeemView-CZ2jEC8v.js\n1a441c97a5504bce5fdcefcd3a5a1a0df3b2ffca3cdb7c57e64d137148b916a3  dist/assets/RovingFocusItem-BkolsG1W.js\n57d370fcdbac25e92c30be323420bdc813cc12369d52111a3d136b11c79b398b  dist/assets/RuntimeView-CZen1EG5.js\n41b65da951959491dfa19beafe3f1bf66dd3bc6938d8a049432bf591b55e0c57  dist/assets/SelectValue.vue_vue_type_script_setup_true_lang-DJspZTkq.js\n6d837fa03a7ebff06830c8491abb71aba690621210bd72d58a61156155b38f90  dist/assets/ServerRuntimeView-DiigBib0.js\n0960ac932b22b01f79f85fb119055ca37cd11e582762aba804b277537b6e34b8  dist/assets/ServersView-Bsbo9gYl.js\ncafae84cafff862bb0cccd569a21c9a1ce1a18f00f20b953ebd3b62601876b94  dist/assets/SettingsView-BSe0T4gc.js\nac19e99423225c1ddc62fa1368bb890f365ff244a76f08b5311199d39e95fd3e  dist/assets/StatusBadge.vue_vue_type_script_setup_true_lang-BOo8qAYz.js\na792d8f68b7632f93407163fdcf133b0bf4dd42f7605d54ee54b9f87ac2a8228  dist/assets/SubscriptionEditorView-Dcfucm5q.js\n8a3d95ac4bd90bdaf6121259596729f8459214354559ddba90f0b1733ab0dc3f  dist/assets/SubscriptionsView-DVvuzyy3.js\n53b5620bc204a7b4be2f24dfddebe477330e7f183d45546332b41bac11a304b8  dist/assets/TableHeader.vue_vue_type_script_setup_true_lang-GGQ-fhD8.js\nbb0ce6e634a5640f646b50665ed0357135002f917a406d67fba2ac760475ec7a  dist/assets/TabsTrigger.vue_vue_type_script_setup_true_lang-BQkIGVEv.js\nc3a27cb4d04d91480298a81f7b90e6bcc223246f6858bc4c4b1741a1230d77f5  dist/assets/TasksView-E33jNrsC.js\n0aca89f7a6a74eba3ee103a9e06f62913b77c8b002dd8d6d738c627a182caded  dist/assets/TemplatesView-DqTqoBBQ.js\n0ed5e11bb4925fbb2429157c77fd858bde1d74d92c411596c9f2f2e0c89f3e2a  dist/assets/Textarea.vue_vue_type_script_setup_true_lang-SW_HleyU.js\n2e79ac15af1580661b67e24bd19888988d9ed3143b149889ad9be633ae22dfa9  dist/assets/UsageView-DJDr-Pib.js\n5357abca1908631e7f82604a719ba6c4c179c767f19e7f833ab528101d82cab6  dist/assets/VisuallyHidden-Cp4CfAnz.js\n4c1d08a8dfab320b1a768aa460eaa2aa6ad7725081165ecfcfd9d0a71b050852  dist/assets/accessReasons-BS_swUhJ.js\n1797484757abe0feeb34dfa444d8a6801fe8a11d515439d5e520c7c753a741e1  dist/assets/allPages-1gdQ79Jg.js\ne099c7591b1af5a44a5f7fe5f95164c31c6fd94ecf621bc42913761bcd12ef9c  dist/assets/batch-C6UOhhmx.js\n01af68d521f48453d780fbdbfcc4673af145e5da8986af9b09a433b469a535cf  dist/assets/format-C0n3U-TB.js\n10e9d2957a297a64125d8703b81e574695c2b4e5026d393619c27dba98c956fc  dist/assets/index-BQKdZcZK.css\n5fa00d1b4eeeedd1aecaf9b19e2666a9b9a57ae1bbf55bd07ccc517867062917  dist/assets/index-CmZ4lPJ5.js\n0d323358c9e2ae4cecd6a61ed733bb4fb217855c8e9f290b3864519d56893927  dist/assets/index-Dy27MwwO.js\nca157063339ac4ad418f214f3abfed119b0798ab4d377386ce5c9e5a7a435ebd  dist/assets/inter-cyrillic-ext-wght-normal-BOeWTOD4.woff2\n71d5ee93cc1e9f1d520a3a8b66456de18c7879d8df09d57fcd2eaff75fef0075  dist/assets/inter-cyrillic-wght-normal-DqGufNeO.woff2\n6e9e020a25f9b56d418f2c085b1d3c09725a4da23fe693a5b463064606732190  dist/assets/inter-greek-ext-wght-normal-DlzME5K_.woff2\n1be3448e292fbf05ffe176fe1e43f135013d50b1e7d324ad1a558f623d3bb6f6  dist/assets/inter-greek-wght-normal-CkhJZR-_.woff2\n34b9c504cab7a73e37b746343a449132e56cf7b5481af2cb81dc74dcff25c956  dist/assets/inter-latin-ext-wght-normal-DO1Apj_S.woff2\n3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62  dist/assets/inter-latin-wght-normal-Dx4kXJAl.woff2\n5c66f9e07e90c6d4ac4922cc68d60de26c17b1858e677fb5e603fce3952b3ff2  dist/assets/inter-vietnamese-wght-normal-CBcvBZtf.woff2\n2253e4fecd1603de3a3d239d14601afd1ba1bea87fc357af4585ce3e53c3514c  dist/assets/json-BgyK6ywS.js\n8e9ee5fca1684f588234570649b8a57814df3b6a37af4f1f68e4d2dbc244c156  dist/assets/memberDraft-LMjhAQI2.js\nc6d9625df24be3035bda9123d7c70e500777ed6f44080157ed12467b7b8362e8  dist/assets/memberService-RStd1sqM.js\nb2b0804deffcf368415844c367bbcd38de3a7c9510f59e054ff1abca06553be2  dist/assets/nodeDraft-QfhybWai.js\n32d0b5e9fe4f7afd4b97625bbe5e44ea30e7bff531c2f9603c9f645b61965934  dist/assets/paged-DOGT7hXL.js\ncf3d9feb31a7b7e50f5111541ca2328b60bcb6dcb54f53efb05adbced7024009  dist/assets/toast-DsqVZ_EB.js\nae60f9a3405ee02ceea18eadf7ebc2f6e8a44e02dc675d394043932d7a99d03c  dist/index.html\n7b66684c676c39865cabad585d8ffffeab273beb1eb61deb6f8a0f0dbb04d415  migrations/0001_init.sql\nd74662653a23db233317869ccd6a09b116447f1d95c4ac846b6734db4dbd8d79  migrations/0002_batch_preview.sql\n09896ad6350017f966c9e59f3cdcb007ba0b36d254fe5545c492df7b0b441e83  migrations/0003_maintenance.sql\n80b14b3d4e17da11c955d017c162be75dd4754b9e0f9fb2d798c9f584082e919  migrations/0004_node_external_port.sql\n3416e9bbdf73f5cfe83845914bd5a1d30df6440df6888769a0cfffa8877b6432  migrations/0005_period_and_owner_history.sql\nd08d5e0b5e95496ce80ab4bda89dfa48e911e999036828487517182a384884d2  migrations/0006_batch_task_durability.sql\n",
+        "ready": {
+          "data": {
+            "postgres": "ok",
+            "redis": "disabled",
+            "status": "ok"
+          },
+          "request_id": ""
+        }
+      },
+      "spa-prefix_equal": true,
+      "api-prefix_equal": true
+    },
+    "owned_after_cleanup_bytes": 0,
+    "exit_code": "0"
+  },
+  "panel_sha256": "f6f90e49b07d8226b34ebfe2f443a6ee255daa398f7263d494bc5ed8e87fcd46",
+  "data_plane": {
+    "fingerprint_mismatches": [],
+    "candidate": "6d1345c54b5fc5b3ea0033275338da8ff8362820",
+    "exit_code": 0,
+    "cleanup": true,
+    "original_cores_equal": true,
+    "xray_hash_unchanged": true
+  },
+  "source_findings": {
+    "template_delete_no_reference_guard": "internal/panel/store/resources.go:270-281",
+    "subscription_delete_no_retirement": "internal/panel/store/resources.go:1002-1053",
+    "stale_contract": "docs/design/implementation-contract.md:29-30,80",
+    "upgrade_script": "deploy/manage-linux.sh:38-44"
+  }
+}

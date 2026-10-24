@@ -38,7 +38,7 @@ def main():
     ap.add_argument('--evidence-dir', type=Path)
     args = ap.parse_args()
     os.umask(0o077)
-    run_id = time.strftime('%Y%m%dT%H%M%SZ')+'-'+uuid.uuid4().hex[:8]
+    run_id = time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())+'-'+uuid.uuid4().hex[:8]
     out = args.evidence_dir or MAIN/'.ai/evidence/backend-test/real-fault-r1'/run_id
     if not out.is_absolute():
         ap.error('evidence directory must be absolute')

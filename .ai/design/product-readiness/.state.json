@@ -1,0 +1,12 @@
+{
+  "status": "complete",
+  "applicable_stacks": [
+    "backend",
+    "frontend"
+  ],
+  "completed_stacks": [
+    "backend",
+    "frontend"
+  ],
+  "failed_stack": null
+}

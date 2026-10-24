@@ -26,7 +26,7 @@ case $action in
   [[ $# == 4 ]] || usage
   src=$(realpath "$3"); name=$4
   [[ $name =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] || usage
-  [[ -f $src/$component && -f $src/SHA256SUMS && -f $src/deploy/$service.service ]] || { echo 'Incomplete release.' >&2; exit 1; }
+  [[ -f $src/$component && -f $src/SHA256SUMS && -f $src/deploy/$service.service && -f $src/deploy/manage-linux.sh && -f $src/deploy/upgrade-panel.sh ]] || { echo 'Incomplete release.' >&2; exit 1; }
   (cd "$src" && sha256sum --check --strict SHA256SUMS)
   [[ ! -e $base/releases/$name ]] || { echo 'Release name already exists; use a new immutable name.' >&2; exit 1; }
   if [[ -e $base/current && ! -L $base/current ]]; then echo 'current is not a managed symlink.' >&2; exit 1; fi
