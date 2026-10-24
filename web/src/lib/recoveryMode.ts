@@ -27,12 +27,7 @@ const poll = usePolling(() => { if (!document.hidden) return reload() }, 30_000)
 export function clearRecoveryMode(): void {
   epoch++
   flight = null
-  // Shared async adds reset() at integration; retain baseline compatibility here.
-  if ('reset' in resource && typeof resource.reset === 'function') resource.reset()
-  resource.data.value = null
-  resource.error.value = null
-  resource.loaded.value = false
-  resource.loading.value = false
+  resource.reset()
 }
 watch(identity, () => {
   clearRecoveryMode()

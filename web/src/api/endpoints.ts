@@ -1,5 +1,5 @@
 /**
- * 端点封装。路径与语义严格对齐 docs/specs/implementation-contract.md。
+ * 端点封装。路径与语义严格对齐 docs/design/implementation-contract.md。
  * 所有列表返回 PageResult（items + next_cursor）。
  */
 import { api } from './http'
@@ -242,17 +242,17 @@ export const adminApi = {
   },
 
   events: {
-    list: (query?: PageQuery) => api.page<EventRecord>(`${ADMIN}/events`, { query: pageQuery(query) }),
+    list: (query?: PageQuery & { state?: string; q?: string }) => api.page<EventRecord>(`${ADMIN}/events`, { query: pageQuery(query) }),
     ack: (id: string) => api.post<EventRecord>(`${ADMIN}/events/${encodeURIComponent(id)}/ack`, {}),
   },
 
   tasks: {
-    list: (query?: PageQuery) => api.page<TaskRecord>(`${ADMIN}/tasks`, { query: pageQuery(query) }),
+    list: (query?: PageQuery & { state?: string; batch_id?: string; agent_id?: string }) => api.page<TaskRecord>(`${ADMIN}/tasks`, { query: pageQuery(query) }),
     retry: (id: string) => api.post<TaskRecord>(`${ADMIN}/tasks/${encodeURIComponent(id)}/retry`, {}),
   },
 
   auditLogs: {
-    list: (query?: PageQuery) => api.page<AuditRecord>(`${ADMIN}/audit-logs`, { query: pageQuery(query) }),
+    list: (query?: PageQuery & { action?: string; actor?: string }) => api.page<AuditRecord>(`${ADMIN}/audit-logs`, { query: pageQuery(query) }),
   },
 
   settings: {
@@ -278,7 +278,7 @@ export const adminApi = {
 
 export const meApi = {
   status: () => api.get<MeStatus>(`${ME}/status`),
-  nodes: () => api.page<MeNode>(`${ME}/nodes`),
+  nodes: (query?: PageQuery) => api.page<MeNode>(`${ME}/nodes`, { query: pageQuery(query) }),
   usage: loadMeUsage,
   subscription: () => api.get<MeSubscription>(`${ME}/subscription`),
   rotateSubscriptionToken: () => api.post<TokenRotationResult>(`${ME}/subscription/token/rotations`, {}),
@@ -289,6 +289,6 @@ export const meApi = {
       current_password: currentPassword,
       new_password: newPassword,
     }, { suppressAuthRedirect: true }),
-  sessions: () => api.page<SessionRecord>(`${ME}/sessions`),
+  sessions: (query?: PageQuery) => api.page<SessionRecord>(`${ME}/sessions`, { query: pageQuery(query) }),
   revokeSession: (id: string) => api.delete<void>(`${ME}/sessions/${encodeURIComponent(id)}`),
 }
