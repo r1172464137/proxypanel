@@ -14,6 +14,7 @@ const routerPush = vi.fn(async () => undefined)
 const routerBack = vi.fn()
 const state = vi.hoisted(() => ({
   fullPath: '/admin/templates',
+  user: { username: 'admin', role: 'admin' } as { username: string; role: string } | null,
 }))
 
 vi.mock('vue-router', () => ({
@@ -22,15 +23,17 @@ vi.mock('vue-router', () => ({
 }))
 
 vi.mock('@/stores/session', () => ({
-  sessionState: { user: { username: 'admin', role: 'admin' } },
+  sessionState: { get user() { return state.user } },
 }))
 
-const stubs = {
+// Register the component: a stub alone does not resolve the unregistered
+// <router-link> when vue-router is mocked (it rendered no anchor at all).
+const components = {
   RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
 }
 
 function mountView() {
-  return mount(NotFoundView, { global: { stubs } })
+  return mount(NotFoundView, { global: { components } })
 }
 
 function links(wrapper: ReturnType<typeof mount>): string[] {
@@ -43,6 +46,7 @@ function buttonByText(wrapper: ReturnType<typeof mount>, text: string) {
 
 describe('NotFoundView', () => {
   beforeEach(() => {
+    state.user = { username: 'admin', role: 'admin' }
     routerPush.mockClear()
     routerBack.mockClear()
     window.history.replaceState({ back: null }, '')
@@ -74,11 +78,21 @@ describe('NotFoundView', () => {
     wrapper.unmount()
   })
 
-  it('返回首页直接给目标路由而不是 /', () => {
-    state.fullPath = '/admin/templates'
+  it.each([
+    ['admin', '/admin/overview'],
+    ['member', '/me/subscription'],
+    [null, '/login'],
+  ] as const)('%s 返回首页链接和无历史回退使用真实角色首页 %s', async (role, target) => {
+    state.user = role ? { username: 'test', role } : null
+    state.fullPath = '/typo-path'
     const wrapper = mountView()
     const hrefs = links(wrapper)
-    expect(hrefs).toContain('/admin/overview')
+    const home = wrapper.findAll('a').find(link => link.text() === '返回首页')
+    expect(home?.attributes('href')).toBe(target)
+    expect(hrefs).toContain(target)
+    await buttonByText(wrapper, '返回上一页')!.trigger('click')
+    expect(routerPush).toHaveBeenCalledWith(target)
+    expect(routerBack).not.toHaveBeenCalled()
     // "/" 会再重定向一次，正是要避免的那个死循环观感
     expect(hrefs).not.toContain('/')
     wrapper.unmount()

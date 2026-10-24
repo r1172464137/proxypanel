@@ -14,13 +14,14 @@ if (!privateDir?.startsWith('/tmp/pr-browser.')) throw Error('Run owned environm
 const root = resolve(import.meta.dirname, '../..')
 const owner = JSON.parse(await readFile(join(privateDir, 'owner.json'), 'utf8'))
 const run = new Date().toISOString().replace(/[:.]/g, '-')
-const out = join(process.env.PR_MAIN_ROOT, '.ai/evidence/browser/product-readiness', run)
+const out = join(process.env.PR_EVIDENCE_ROOT ?? join(process.env.PR_MAIN_ROOT, '.ai/evidence/browser/product-readiness'), run)
 await mkdir(out, { recursive: true, mode: 0o700 })
 await writeFile(join(privateDir, 'evidence-path'), out, { mode: 0o600 })
 const secrets = [owner.PANEL_MASTER_KEY, owner.PANEL_ADMIN_PASSWORD]
 const redact = s => String(s).replace(/\/sub\/[^\s"'?]+/g, '/sub/[REDACTED]').replace(/pr_browser_[a-f0-9]{32}/g, '[owned-schema]').split('\n').map(l => secrets.reduce((v, secret) => secret ? v.split(secret).join('[REDACTED]') : v, l)).join('\n')
 const results = [], requests = [], fixtures = [], pageErrors = [], observations = []
 let panel, browser, browserVersion, base, admin, member, ap, mp, server, node, group, subscription, invitation, memberId, batchPath
+let noTokenMemberId, existingBefore, noTokenBefore, existingSubscription
 process.on('SIGTERM', () => { panel?.kill('SIGTERM'); void browser?.close() })
 process.on('SIGINT', () => { panel?.kill('SIGTERM'); void browser?.close() })
 const sql = statement => JSON.parse(execFileSync(join(privateDir, 'db'), ['sql', join(privateDir, 'owner.json')], { input: statement, encoding: 'utf8' }))
@@ -80,6 +81,11 @@ async function redeem(code, name, success = true) {
 async function subInfo() { const s = await api(member, '/me/subscription'); secrets.push(s.token); return s }
 function subscriptionUrl(s) { return s.url.replace('{token}', encodeURIComponent(s.token)) }
 function credentialIds() { return sql(`select id,state from credentials where member_id=${q(memberId)} order by id`) }
+// Compare every persisted field, without exporting token ciphertext or credentials.
+function authMaterial(id) {
+ return Object.fromEntries(['subscription_tokens', 'credentials'].map(table => [table,
+  sql(`select id,md5(row_to_json(t)::text) as fingerprint from ${table} t where member_id=${q(id)} order by id`)]))
+}
 
 try {
  const port = await new Promise((resolvePort, reject) => { const s = createServer(); s.once('error', reject); s.listen(0, '127.0.0.1', () => { const port = s.address().port; s.close(() => resolvePort(port)) }) })
@@ -231,6 +237,16 @@ try {
   return { visible: true, source: 'persisted synthetic core instance only' }
  })
  await test('maintenance blocks normal writes and persists unverified state', async () => {
+  // Real normal-mode API creation; never open this member's homepage before
+  // recovery (that would lazily create a token). No SQL token deletion.
+  const m = await api(admin, '/admin/members', 'POST', { username: 'pr_no_token', password: owner.PANEL_ADMIN_PASSWORD, role: 'member', active: true, proxy_enabled: true, subscription_id: subscription.id }, 201)
+  noTokenMemberId = m.id
+  noTokenBefore = authMaterial(noTokenMemberId)
+  assert.equal(noTokenBefore.subscription_tokens.length, 0)
+  existingSubscription = await subInfo()
+  existingBefore = authMaterial(memberId)
+  assert.ok(existingBefore.subscription_tokens.length > 0)
+  fixtures.push({ source: 'real admin API before recovery; no member page/token read before recovery', memberId: noTokenMemberId })
   await api(admin, '/admin/recovery-mode/enter', 'POST', {})
   assert.equal((await api(admin, '/admin/recovery-mode')).recovery_mode, true)
   await api(member, '/me/subscription/token/rotations', 'POST', {}, 409)
@@ -239,12 +255,57 @@ try {
   assert.equal((await api(admin, '/admin/recovery-mode')).recovery_mode, true)
   return { blockedWrites: true, unverifiedExitBlocked: true, maintenancePersisted: true }
  })
- await test('maintenance is actually visible to existing member, not success-shaped import', async () => {
+ // backend §6.3.1 / frontend §4.9: the former global-member-banner
+ // assertion contradicted read-only existing-token access. Preserve its failed
+ // evidence; do not treat an arbitrary HTTP response as successful retrieval.
+ await test('maintenance existing-token read and browser download remain 200 without authorization writes', async () => {
+  const s = await subInfo(); assert.equal(s.token, existingSubscription.token)
   await mp.goto(base + '/me/subscription'); await mp.reload()
-  await expect(mp.getByTestId('service-summary-card')).toBeVisible()
-  observations.push({ name: 'existing-member maintenance visibility', subscriptionHTTP: (await member.request.get(base + '/api/v1/me/subscription')).status(), downloadVisible: await mp.getByTestId('import-download-button').isVisible() })
-  await expect(mp.locator('body')).toContainText('恢复核对进行中')
-  return { visible: true }
+  await expect(mp.getByTestId('service-summary-card').locator('dd').first()).toHaveText('3.00 MiB')
+  await expect(mp.getByTestId('import-maintenance-message')).toHaveCount(0)
+  await expect(mp.getByTestId('recovery-mode-banner')).toHaveCount(0)
+  const checked = mp.waitForResponse(r => new URL(r.url()).pathname.startsWith('/sub/'))
+  await mp.getByTestId('import-check-button').click(); assert.equal((await checked).status(), 200)
+  await expect(mp.getByTestId('import-result-message')).toContainText('尚未验证真实连接')
+  const fetched = mp.waitForResponse(r => new URL(r.url()).pathname.startsWith('/sub/'))
+  const downloaded = mp.waitForEvent('download')
+  await mp.getByTestId('import-download-button').click()
+  assert.equal((await fetched).status(), 200)
+  const d = await downloaded; assert.equal(await d.failure(), null); await d.delete()
+  assert.equal((await subInfo()).token, existingSubscription.token)
+  assert.deepEqual(authMaterial(memberId), existingBefore)
+  return { subscriptionHTTP: 200, configHTTP: 200, downloadHTTP: 200, tokenUnchanged: true, allAuthorizationFieldsUnchanged: true }
+ })
+ await test('maintenance first token read is 409 with local import notice and preserved status/usage, no admin escalation', async () => {
+  const c = await context()
+  const adminRequests = []
+  c.on('request', r => { if (new URL(r.url()).pathname.startsWith('/api/v1/admin/')) adminRequests.push(new URL(r.url()).pathname) })
+  try {
+   // Login is permitted identity rescue; first homepage/token read occurs only now.
+   const firstRead = c.waitForEvent('response', { predicate: r => new URL(r.url()).pathname === '/api/v1/me/subscription' })
+   const p = await login(c, 'pr_no_token')
+   const response = await firstRead
+   assert.equal(response.status(), 409); assert.equal((await response.json()).error.code, 'RECOVERY_MODE')
+   await expect(p.getByTestId('client-import-card').getByTestId('import-maintenance-message')).toContainText('恢复核对进行中')
+   await expect(p.getByTestId('service-summary-card')).toContainText('服务可用')
+   await expect(p.getByTestId('service-summary-card').locator('dd').first()).toHaveText('0 B')
+   await expect(p.getByTestId('service-summary-card')).toContainText('1.00 GiB')
+   await expect(p.getByTestId('service-summary-card')).not.toContainText('恢复核对进行中')
+   await expect(p.getByTestId('recovery-mode-banner')).toHaveCount(0)
+   await expect(p.getByTestId('import-download-button')).toHaveCount(0)
+   const status = await api(c, '/me/status'); assert.equal(status.access.access, true); assert.equal(status.access.used_bytes, 0)
+   await p.getByTestId('import-retry-button').click()
+   await expect(p.getByTestId('import-maintenance-message')).toBeVisible()
+   await p.goto(base + '/me/usage'); await expect(p.locator('main')).toContainText('本页暂无用量记录')
+   await p.goto(base + '/me/status'); await expect(p.getByRole('heading', { level: 1 })).toBeVisible()
+   assert.deepEqual(adminRequests, [], 'member UI must never query administrator APIs')
+   // Explicit negative authorization checks are separate from UI requests.
+   await api(c, '/admin/recovery-mode', 'GET', undefined, 403)
+   await api(member, '/admin/recovery-mode', 'GET', undefined, 403)
+   assert.deepEqual(authMaterial(noTokenMemberId), noTokenBefore)
+   assert.deepEqual(authMaterial(memberId), existingBefore)
+   return { firstSubscriptionHTTP: 409, code: 'RECOVERY_MODE', localNotice: true, knownUsedBytes: 0, statusAndUsageVisible: true, uiAdminRequests: 0, recoveryAPI: 403, noAuthorizationWrites: true }
+  } finally { await c.close() }
  })
  await test('no unhandled browser runtime errors', async () => { assert.deepEqual(pageErrors, []); return { pageErrors: 0 } })
 } catch (e) {
