@@ -37,9 +37,14 @@
     ]
   },
   "evidence": {
-    "receipt.json": "status, lock, isolation identity snapshots (cores/postgres/listeners before+after), source/binary/fixture sha256",
-    "test.log": "full -test.v output with per-object batch/task facts",
+    "receipt.json": "status, canonical local-runtime lease (acquired/ownerPID/fd/times/released after own cleanup), identity snapshots (own scope + protected original Agent-lab/Xray/PG/Redis by pid+starttime+exe+cwd+args, TCP **and UDP** listeners before+after), source/binary/fixture sha256",
+    "test.log": "full -test.v output with per-object batch/task facts and classified refusal kinds",
     "dual-state.json": "panel-persisted state + process facts consumable by the UI chain owner"
+  },
+  "attack_surface_rules": {
+    "lease": "the wrapper takes the canonical local-runtime flock itself before any version probe/snapshot and releases it only after its own cleanup; a busy lease is waited max 90s then status=not_run (exit 2). No --skip flag, no env/UNDER_LOCK bypass; a busy lock is never treated as own.",
+    "refusal": "a negative authorization assertion only passes for a classified peer close/reset (EOF/reset/broken pipe/proxy 5xx) within 5s while the same client-core pid+starttime stays alive and its local SOCKS port still accepts. Timeout/dead client core/unreachable SOCKS/unclassified error = not_proven and fails.",
+    "identity": "own scope (any process/config under this run's temp root) must be empty after cleanup; every pre-existing protected original process must still match pid+starttime+exe+cwd+args and every pre-existing TCP/UDP listener must keep its inode. A vanished original is an ENV isolation violation requiring an explicit creator/lease receipt and a re-run; it is never silently ignored as host churn."
   },
   "exclusions": [
     "HTTPS public deployment",

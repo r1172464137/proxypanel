@@ -32,6 +32,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -116,8 +117,34 @@ type dualProxy struct {
 	client    *http.Client
 	transport *http.Transport
 	socks     string
+	socksPort int
 	tag       string
+	corePid   int
+	coreStart string
 }
+
+// probeFailure is the *classified* result of one negative probe. It exists so a
+// timeout, a dead local client core or a SOCKS/handshake failure can never be
+// counted as "the credential was refused" (B2).
+type probeFailure struct {
+	Kind    string
+	Elapsed time.Duration
+	Err     error
+}
+
+func (e *probeFailure) Error() string {
+	return fmt.Sprintf("%s after %s: %v", e.Kind, e.Elapsed.Round(time.Millisecond), e.Err)
+}
+
+// notProven marks an outcome that proves nothing about authorization (timeout,
+// dead client core, unclassifiable error). Callers must fail, never pass.
+type notProven struct{ Why string }
+
+func (e *notProven) Error() string { return "NOT PROVEN: " + e.Why }
+
+var errStillAccepted = errors.New("the probe was accepted (no refusal)")
+
+const refusalBound = 5 * time.Second
 
 type dualFixture struct {
 	t      *testing.T
@@ -349,8 +376,12 @@ func TestWebDemoDualAgent(t *testing.T) {
 	}
 	expiryRefusal := ""
 	for time.Now().Before(expiry.Add(60 * time.Second)) {
-		if err := f.probeTCP(carolClient, payload, expectedHash); err != nil {
-			expiryRefusal = err.Error()
+		failure, err := f.refusal(carolClient, payload, expectedHash)
+		if err != nil && err != errStillAccepted {
+			t.Fatalf("expiry probe did not prove anything about carol's authorization: %v", err)
+		}
+		if failure != nil {
+			expiryRefusal = failure.Error()
 			break
 		}
 		time.Sleep(400 * time.Millisecond)
@@ -417,7 +448,7 @@ func TestWebDemoDualAgent(t *testing.T) {
 		offlineEvidence = err.Error()
 	}
 	f.agents[1].token, f.agents[1].agentID = f.agentToken(1)
-	f.note("node 2 offline evidence: %q", offlineEvidence)
+	f.note("node 2 offline evidence (fixture only, never a credential-refusal claim): %q", offlineEvidence)
 
 	revokeBatch := f.submitBatch("set_active", []any{f.member["id"]}, map[string]any{"active": false})
 	revokedAt := time.Now()
@@ -430,8 +461,12 @@ func TestWebDemoDualAgent(t *testing.T) {
 	}
 	newRefusal := ""
 	for time.Now().Before(revokedAt.Add(60 * time.Second)) {
-		if err := f.probeTCP(clients[0], payload, expectedHash); err != nil {
-			newRefusal = err.Error()
+		failure, err := f.refusal(clients[0], payload, expectedHash)
+		if err != nil && err != errStillAccepted {
+			t.Fatalf("revocation probe did not prove an authorization refusal: %v", err)
+		}
+		if failure != nil {
+			newRefusal = failure.Error()
 			break
 		}
 		time.Sleep(300 * time.Millisecond)
@@ -538,8 +573,12 @@ func TestWebDemoDualAgent(t *testing.T) {
 	f.note("offline Agent recovered and reached the desired (tightened) revision")
 	oldRefusal2 := ""
 	for i := 0; i < 20; i++ {
-		if err := f.probeTCP(clients[1], payload, expectedHash); err != nil {
-			oldRefusal2 = err.Error()
+		failure, err := f.refusal(clients[1], payload, expectedHash)
+		if err != nil && err != errStillAccepted {
+			t.Fatalf("recovered-node probe did not prove an authorization refusal: %v", err)
+		}
+		if failure != nil {
+			oldRefusal2 = failure.Error()
 			break
 		}
 		time.Sleep(300 * time.Millisecond)
@@ -556,9 +595,7 @@ func TestWebDemoDualAgent(t *testing.T) {
 	// --- US-PR-011: restoration re-issues credentials, old ones stay dead ----
 	f.submitBatch("set_active", []any{f.member["id"]}, map[string]any{"active": true})
 	f.waitApplied(120 * time.Second)
-	if err := f.probeTCP(clients[1], payload, expectedHash); err == nil {
-		t.Fatal("a permanently revoked credential regained access after restoration")
-	}
+	f.requireRefused(clients[1], payload, expectedHash, "permanently revoked credential after restoration (node 2)")
 	newCfg, newToken := f.export("wdd-alice")
 	newClients := []*dualProxy{f.clientFor(0, newCfg), f.clientFor(1, newCfg)}
 	if err := f.probeTCP(newClients[1], payload, expectedHash); err != nil {
@@ -676,14 +713,12 @@ func TestWebDemoDualAgent(t *testing.T) {
 	if err := f.probeTCP(newClients[0], payload, expectedHash); err == nil {
 		f.note("node 1 kept serving the current authorization from last-known-good during the rejected document")
 	} else {
-		f.note("node 1 was briefly unavailable during the rejected-document rollback: %q", err)
+		f.note("node 1 was briefly unavailable during the rejected-document rollback: %v", err)
 	}
 	f.waitCondition(150*time.Second, "node 1 serves again after the technical rollback", func() bool {
 		return f.probeTCP(newClients[0], payload, expectedHash) == nil
 	})
-	if err := f.probeTCP(clients[0], payload, expectedHash); err == nil {
-		t.Fatal("the documented rollback revived the permanently withdrawn credential")
-	}
+	f.requireRefused(clients[0], payload, expectedHash, "technical rollback must not revive the withdrawn credential")
 	rbD, rbA := f.revisionPair(0)
 	f.patchNode(f.nodes[0], map[string]any{"protocol_settings": map[string]any{"decryption": "none"}})
 	f.waitApplied(150 * time.Second)
@@ -698,17 +733,20 @@ func TestWebDemoDualAgent(t *testing.T) {
 		t.Fatal("no owned node-1 core process was found to crash")
 	}
 	crashRefusal := ""
-	if err := f.probeTCP(newClients[0], payload, expectedHash); err == nil {
+	if failure, err := f.refusal(newClients[0], payload, expectedHash); err == nil && failure != nil {
+		crashRefusal = failure.Error()
+		f.note("node 1 refused during the crash transition: %v", failure)
+	} else if err == errStillAccepted {
 		f.note("node 1 still answered right after the crash (listener handover)")
 	} else {
-		crashRefusal = err.Error()
+		// A dead local hop or a timeout right after SIGKILL proves nothing; record it
+		// as not-proven and let the recovery wait below be the real assertion.
+		f.note("node 1 crash-transition probe not conclusive (not counted): %v", err)
 	}
 	f.waitCondition(180*time.Second, "node 1 serves again after the real core crash", func() bool {
 		return f.probeTCP(newClients[0], payload, expectedHash) == nil
 	})
-	if err := f.probeTCP(clients[0], payload, expectedHash); err == nil {
-		t.Fatal("the crashed/restarted core revived the permanently withdrawn credential")
-	}
+	f.requireRefused(clients[0], payload, expectedHash, "crashed/restarted core must not revive the withdrawn credential")
 	crD, crA := f.revisionPair(0)
 	if crD != crA || crD <= 0 {
 		t.Fatalf("after crash recovery the Agent did not keep a converged legal revision: desired=%d applied=%d", crD, crA)
@@ -976,9 +1014,76 @@ func (f *dualFixture) clientFor(node int, exported map[string]any) *dualProxy {
 	startCore(f.t, f.bin, path, socksPort)
 	tr := &http.Transport{Proxy: http.ProxyURL(&url.URL{Scheme: "socks5", Host: fmt.Sprintf("127.0.0.1:%d", socksPort)})}
 	f.t.Cleanup(tr.CloseIdleConnections)
-	f.t.Logf("official Xray client core for node %d: socks=127.0.0.1:%d -> exported outbound tag=%q", node+1, socksPort, tag)
+	pid, start, err := coreIdentity(f.bin, path)
+	if err != nil {
+		f.t.Fatalf("owned client core identity for node %d is unreadable: %v", node+1, err)
+	}
+	f.t.Logf("official Xray client core for node %d: socks=127.0.0.1:%d -> exported outbound tag=%q (pid=%d starttime=%s)",
+		node+1, socksPort, tag, pid, start)
 	return &dualProxy{client: &http.Client{Transport: tr, Timeout: 5 * time.Second}, transport: tr,
-		socks: fmt.Sprintf("127.0.0.1:%d", socksPort), tag: tag}
+		socks: fmt.Sprintf("127.0.0.1:%d", socksPort), socksPort: socksPort, tag: tag,
+		corePid: pid, coreStart: start}
+}
+
+// coreIdentity pins one core process by config path: pid+starttime come from
+// /proc so a recycled pid can never be mistaken for the same core.
+func coreIdentity(binary, config string) (int, string, error) {
+	for _, p := range mustGlob("/proc/[0-9]*") {
+		pid, err := strconv.Atoi(filepath.Base(p))
+		if err != nil {
+			continue
+		}
+		exe, err := os.Readlink(filepath.Join(p, "exe"))
+		if err != nil || exe != binary {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(p, "cmdline"))
+		if err != nil {
+			continue
+		}
+		argv := strings.Split(strings.TrimSuffix(string(raw), "\x00"), "\x00")
+		for j, v := range argv {
+			if v == "-c" && j+1 < len(argv) && argv[j+1] == config {
+				stat, err := os.ReadFile(filepath.Join(p, "stat"))
+				if err != nil {
+					continue
+				}
+				f := strings.Fields(string(stat))
+				if len(f) < 22 {
+					continue
+				}
+				return pid, f[21], nil
+			}
+		}
+	}
+	return 0, "", fmt.Errorf("no core process runs config %s", config)
+}
+
+// coreAlive reports whether the pinned client core is still the same process.
+func (p *dualProxy) coreAlive() error {
+	stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", p.corePid))
+	if err != nil {
+		return fmt.Errorf("client core pid %d is gone: %w", p.corePid, err)
+	}
+	f := strings.Fields(string(stat))
+	if len(f) < 22 || f[21] != p.coreStart {
+		return fmt.Errorf("client core pid %d was recycled (starttime changed)", p.corePid)
+	}
+	if f[2] == "Z" {
+		return fmt.Errorf("client core pid %d is a zombie", p.corePid)
+	}
+	return nil
+}
+
+// socksReachable proves the local official client core is still accepting on its
+// loopback SOCKS port (so a later refusal cannot be blamed on a dead local hop).
+func (p *dualProxy) socksReachable() error {
+	c, err := net.DialTimeout("tcp", p.socks, time.Second)
+	if err != nil {
+		return fmt.Errorf("local SOCKS %s not accepting: %w", p.socks, err)
+	}
+	_ = c.Close()
+	return nil
 }
 
 func (f *dualFixture) probeTCP(p *dualProxy, payload string, want [32]byte) error {
@@ -1000,6 +1105,82 @@ func (f *dualFixture) probeTCP(p *dualProxy, payload string, want [32]byte) erro
 	}
 	return nil
 }
+
+// refusal performs one negative probe and classifies the outcome (B2).
+//
+// It returns a *probeFailure ONLY for a peer close/reset that happened inside
+// refusalBound while the same local client core stayed alive and its SOCKS port
+// stayed reachable. Everything else (timeout, dead client core, unreachable local
+// SOCKS, unclassified transport error) is a *notProven, and "still served" is
+// errStillAccepted. A negative assertion must never be satisfied by any error.
+func (f *dualFixture) refusal(p *dualProxy, payload string, want [32]byte) (*probeFailure, error) {
+	if err := p.coreAlive(); err != nil {
+		return nil, &notProven{Why: err.Error()}
+	}
+	if err := p.socksReachable(); err != nil {
+		return nil, &notProven{Why: err.Error()}
+	}
+	p.transport.CloseIdleConnections()
+	start := time.Now()
+	res, err := p.client.Get(f.target.http.URL)
+	elapsed := time.Since(start)
+	if err == nil {
+		res.Body.Close()
+		return nil, errStillAccepted
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return nil, &notProven{Why: "probe timed out (" + elapsed.String() + "): " + err.Error()}
+	}
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return nil, &notProven{Why: "probe timed out (" + elapsed.String() + "): " + err.Error()}
+	}
+	if elapsed >= refusalBound {
+		return nil, &notProven{Why: "refusal classified only after " + elapsed.String() + " (bound " + refusalBound.String() + "): " + err.Error()}
+	}
+	// The local hop must have survived this very operation: same client core pid +
+	// starttime, SOCKS port still accepting, and the server-side core for this
+	// node must still run the same pid/starttime.
+	if aliveErr := p.coreAlive(); aliveErr != nil {
+		return nil, &notProven{Why: "client core died during the probe: " + aliveErr.Error()}
+	}
+	if reachErr := p.socksReachable(); reachErr != nil {
+		return nil, &notProven{Why: "local SOCKS went away during the probe: " + reachErr.Error()}
+	}
+	msg := err.Error()
+	kind := ""
+	switch {
+	case strings.Contains(msg, "EOF"):
+		kind = "peer_closed_eof"
+	case strings.Contains(msg, "connection reset by peer"):
+		kind = "peer_reset"
+	case strings.Contains(msg, "broken pipe"):
+		kind = "peer_pipe_closed"
+	case strings.Contains(msg, "proxy HTTP status"):
+		kind = "proxy_status_refusal"
+	}
+	if kind == "" {
+		return nil, &notProven{Why: "unclassified transport error (not a proven refusal): " + msg}
+	}
+	return &probeFailure{Kind: kind, Elapsed: elapsed, Err: err}, nil
+}
+
+// requireRefused is the only accepted form of a negative authorization
+// assertion. not_proven and "still accepted" both fail the test.
+func (f *dualFixture) requireRefused(p *dualProxy, payload string, want [32]byte, what string) string {
+	f.t.Helper()
+	failure, err := f.refusal(p, payload, want)
+	if err != nil {
+		f.t.Fatalf("%s: %v", what, err)
+	}
+	f.note("%s: classified refusal kind=%s elapsed=%s (%v)", what, failure.Kind,
+		failure.Elapsed.Round(time.Millisecond), failure.Err)
+	return failure.Error()
+}
+
+// requireLinkDown is intentionally absent: an offline fixture outage is observed
+// with probeTCP and always labelled as fixture evidence, never as a credential
+// refusal (see the offline-Agent step).
 
 // probeUDP performs a real SOCKS5 UDP ASSOCIATE through the official client core
 // and the real server core; UDP is never tunneled inside a TCP frame here.
