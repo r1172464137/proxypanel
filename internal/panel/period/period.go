@@ -153,14 +153,10 @@ func Containing(anchorDay int, loc *time.Location, t time.Time) Boundary {
 	at := t.UTC()
 	base := at.In(loc)
 	var start time.Time
-	for delta := 0; delta >= -2; delta-- {
-		month := base.Month() + time.Month(delta)
-		year := base.Year()
-		for month < time.January {
-			month += 12
-			year--
-		}
-		cand := AnchorInstant(anchorDay, loc, year, month)
+	// A rollback can return to the prior month after its next anchor occurred.
+	for delta := 1; delta >= -2; delta-- {
+		month := time.Date(base.Year(), base.Month()+time.Month(delta), 1, 0, 0, 0, 0, time.UTC)
+		cand := AnchorInstant(anchorDay, loc, month.Year(), month.Month())
 		if !cand.After(at) {
 			if start.IsZero() || cand.After(start) {
 				start = cand
@@ -180,14 +176,9 @@ func PrevBoundary(before time.Time, anchorDay int, loc *time.Location) time.Time
 	}
 	base := before.In(loc)
 	var best time.Time
-	for delta := 0; delta >= -3; delta-- {
-		month := base.Month() + time.Month(delta)
-		year := base.Year()
-		for month < time.January {
-			month += 12
-			year--
-		}
-		cand := AnchorInstant(anchorDay, loc, year, month)
+	for delta := 1; delta >= -3; delta-- {
+		month := time.Date(base.Year(), base.Month()+time.Month(delta), 1, 0, 0, 0, 0, time.UTC)
+		cand := AnchorInstant(anchorDay, loc, month.Year(), month.Month())
 		if !cand.Before(base) {
 			continue
 		}

@@ -244,6 +244,29 @@ func TestLoadTimezoneRejectsHostDependentLocal(t *testing.T) {
 	}
 }
 
+func TestMonthRollbackKeepsEarlierMidnightBoundary(t *testing.T) {
+	loc := mustLoc(t, "America/Goose_Bay")
+	for _, tc := range []struct {
+		name, at, start, end, previous string
+	}{
+		{"before-first-midnight", "2009-11-01T02:59:59Z", "2009-10-01T03:00:00Z", "2009-11-01T03:00:00Z", "2009-10-01T03:00:00Z"},
+		{"first-midnight", "2009-11-01T03:00:00Z", "2009-11-01T03:00:00Z", "2009-12-01T04:00:00Z", "2009-10-01T03:00:00Z"},
+		{"rolled-back-to-october", "2009-11-01T03:30:00Z", "2009-11-01T03:00:00Z", "2009-12-01T04:00:00Z", "2009-11-01T03:00:00Z"},
+		{"second-midnight", "2009-11-01T04:00:00Z", "2009-11-01T03:00:00Z", "2009-12-01T04:00:00Z", "2009-11-01T03:00:00Z"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			at := ts(t, tc.at)
+			got := Containing(1, loc, at)
+			if !got.Start.Equal(ts(t, tc.start)) || !got.End.Equal(ts(t, tc.end)) || at.Before(got.Start) || !at.Before(got.End) {
+				t.Fatalf("containing rollback window = %+v, want [%s,%s)", got, tc.start, tc.end)
+			}
+			if got := PrevBoundary(at, 1, loc); !got.Equal(ts(t, tc.previous)) {
+				t.Fatalf("previous rollback boundary = %s, want %s", got, tc.previous)
+			}
+		})
+	}
+}
+
 func TestPrevBoundaryAndCandidateWindows(t *testing.T) {
 	loc := mustLoc(t, "Asia/Shanghai")
 	now := ts(t, "2026-10-20T06:00:00Z") // cycle 2026-09-30T16:00Z .. 2026-10-31T16:00Z
