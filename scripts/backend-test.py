@@ -56,6 +56,12 @@ def load_selections(filters):
         unknown = set(entry["requires"]) - {"postgres", "redis", "xray", "docker", "unix"}
         if unknown:
             raise ValueError(f"{name}: unknown requirements: {sorted(unknown)}")
+        tags = entry.get("build_tags", [])
+        if (not isinstance(tags, list) or len(tags) != len(set(str(t) for t in tags))
+                or any(not isinstance(t, str) or not re.fullmatch(r"[A-Za-z0-9_.]+", t) for t in tags)):
+            raise ValueError(f"{name}: invalid build_tags")
+        if "xrayreal" in tags and "xray" not in entry["requires"]:
+            raise ValueError(f"{name}: xrayreal requires an explicit xray capability")
         timeout = entry.get("timeout_seconds", 120)
         if type(timeout) is not int or timeout < 1:
             raise ValueError(f"{name}: invalid timeout")
@@ -73,9 +79,10 @@ def load_selections(filters):
 
 
 def command(entry, discover=False):
+    tags = ["-tags=" + ",".join(entry["build_tags"])] if entry.get("build_tags") else []
     if discover:
-        return ["go", "test", "-list", ".*", *entry["packages"]]
-    return ["go", "test", "-json", "-count=1", "-p=1",
+        return ["go", "test", *tags, "-list", ".*", *entry["packages"]]
+    return ["go", "test", *tags, "-json", "-count=1", "-p=1",
             f"-timeout={entry.get('timeout_seconds', 120)}s", "-run", entry["run"], *entry["packages"]]
 
 

@@ -702,6 +702,7 @@
   },
   {
     "id": "integration/protocol-agent",
+    "build_tags": ["xrayreal"],
     "packages": [
       "./internal/agent/supervisor"
     ],
@@ -721,6 +722,7 @@
   },
   {
     "id": "agent-supervisor/real-lifecycle",
+    "build_tags": ["xrayreal"],
     "packages": [
       "./internal/agent/supervisor"
     ],
