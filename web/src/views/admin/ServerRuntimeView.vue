@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { adminApi } from '@/api/endpoints'
 import { allPages } from '@/lib/allPages'
 import type { AgentRecord, CoreInstanceRecord, RegistrationCode, ServerRecord } from '@/api/types'
-import { useResource } from '@/lib/async'
+import { useResource, usePolling } from '@/lib/async'
 import { errorText } from '@/lib/errors'
 import { formatDateTime, formatRelative, utcLabel } from '@/lib/format'
 import PageHeader from '@/components/PageHeader.vue'
@@ -32,7 +32,11 @@ const serverId = computed(() => String(route.params.id))
 
 // 分层判定需要“现在”，定时刷新让它不会停在页面打开那一刻。
 const now = ref(Date.now())
-let ticker: ReturnType<typeof setInterval> | null = null
+const poll = usePolling(async () => {
+  if (document.hidden) return
+  now.value = Date.now()
+  await Promise.all([agents.reload(), instances.reload()])
+}, 5_000)
 
 const server = useResource<ServerRecord>(() => adminApi.servers.get(serverId.value))
 const agents = useResource<AgentRecord[]>(async () => allPages(cursor => adminApi.agents.list({ limit: 200, cursor })))
@@ -42,14 +46,9 @@ onMounted(() => {
   void server.reload()
   void agents.reload()
   void instances.reload()
-  ticker = setInterval(() => {
-    now.value = Date.now()
-  }, 30_000)
+  poll.start()
 })
-
-onUnmounted(() => {
-  if (ticker) clearInterval(ticker)
-})
+onBeforeUnmount(poll.stop)
 
 const scopedAgents = computed(() => {
   const all = agents.data.value ?? []
@@ -153,13 +152,14 @@ const agentLayer = computed<LayerCard>(() => {
   if (!rows.length) {
     return {
       title: '① Agent 在线',
-      status: '未知',
+      status: '未接入',
       summary: '尚未接入管理程序',
       details: ['该服务器还没有 Agent 上报心跳'],
       tone: 'warn',
     }
   }
 
+  if (rows.every(row => !row.heartbeat)) return { title: '① 管理程序', status: '未接入', summary: '已注册但尚未上报心跳', details: ['等待管理程序首次上线；可重新生成注册码交给部署人员'], tone: 'warn' }
   const online = rows.filter((row) => row.online)
   const tone: LayerTone = online.length === rows.length ? 'ok' : online.length === 0 ? 'danger' : 'warn'
   // 离线时给出最近一次心跳，用于判断是刚掉线还是长期失联。
@@ -263,7 +263,9 @@ const portLayer = computed<LayerCard>(() => {
   }
 
   const applied = list.filter(
-    (instance) => stateOf(instance) === 'applied' && Boolean(instance.applied_at),
+    (instance) => stateOf(instance) === 'applied' && Boolean(instance.applied_at)
+      && typeof instance.applied_revision === 'number' && typeof instance.desired_revision === 'number'
+      && instance.applied_revision === instance.desired_revision,
   )
   const nodeText = list
     .filter((instance) => !applied.includes(instance))
@@ -279,7 +281,7 @@ const portLayer = computed<LayerCard>(() => {
     return {
       title: '③ 配置同步',
       status: '最近配置已应用 · 连接未验证',
-      summary: '已收到配置应用回执；请同时核对目标修订',
+      summary: '已收到与目标修订一致的配置回执；端口可达性未验证',
       details: [`生效时间：${formatDateTime(latest)}`, note],
       tone: 'ok',
     }
@@ -290,7 +292,7 @@ const portLayer = computed<LayerCard>(() => {
       title: '③ 配置同步',
       status: '未确认',
       summary: '未确认',
-      details: ['还没有 applied 且记录生效时间的实例', note],
+      details: ['应用回执、应用时间或目标修订尚未完全核对；回滚运行不算目标已应用', note],
       tone: 'warn',
     }
   }
@@ -302,7 +304,7 @@ const portLayer = computed<LayerCard>(() => {
   return {
     title: '③ 配置同步',
     status: '部分确认',
-    summary: `${applied.length}/${list.length} 已下发并生效`,
+    summary: `${applied.length}/${list.length} 目标配置已应用，连接未验证`,
     details: [`未确认：${nodeText}`, `最近生效时间：${formatDateTime(latest)}`, note],
     tone: 'warn',
   }
@@ -320,7 +322,8 @@ const layers = computed<LayerCard[]>(() => [agentLayer.value, instanceLayer.valu
       <Button as-child variant="outline">
         <router-link to="/admin/servers">返回服务器</router-link>
       </Button>
-      <Button @click="generateCode">生成注册码</Button>
+      <Button as-child variant="outline"><router-link to="/admin/runtime">返回运行总览</router-link></Button>
+      <Button data-testid="server-registration-code-button" @click="generateCode">生成接入注册码</Button>
     </PageHeader>
 
     <ErrorState v-if="server.error.value" :error="server.error.value" @retry="server.reload()" />
@@ -331,7 +334,7 @@ const layers = computed<LayerCard[]>(() => [agentLayer.value, instanceLayer.valu
         </CardHeader>
         <CardContent>
           <p class="mb-3 text-xs text-muted-foreground">
-            下面三层全部取自 agents / core-instances 接口的实际数据，每 30 秒重新判定一次；没有写死的结论。
+            最近读取：{{ formatDateTime(new Date(now).toISOString()) }}。管理程序、核心进程与目标配置分别核对；端口可达性及真实客户端连接未验证。
           </p>
           <ol class="grid gap-3 sm:grid-cols-3">
             <li
@@ -417,7 +420,7 @@ const layers = computed<LayerCard[]>(() => [agentLayer.value, instanceLayer.valu
                     <TableCell class="hidden font-mono md:table-cell">
                       {{ agent.version ?? '—' }}
                       <span class="mt-0.5 block text-xs text-muted-foreground">
-                        xray {{ agent.xray_version ?? '—' }} · 队列 {{ agent.queue_depth ?? 0 }}
+                        xray {{ agent.xray_version ?? '—' }} · 队列 {{ agent.queue_depth ?? '未知' }}
                       </span>
                     </TableCell>
                   </TableRow>
@@ -491,7 +494,7 @@ const layers = computed<LayerCard[]>(() => [agentLayer.value, instanceLayer.valu
           <AlertDescription class="break-all">{{ codeError }}</AlertDescription>
         </Alert>
         <template v-if="code">
-          <CopyField :value="code.code" label="注册码" warning="注册码等同于 Agent 身份凭据，仅可使用一次。" />
+          <CopyField data-testid="registration-code-value" :value="code.code" label="注册码" warning="仅显示一次，仅可使用一次。复制不等于接入成功，请等待管理程序心跳。" />
           <p class="text-xs text-muted-foreground">过期时间：{{ formatDateTime(code.expires_at) }}</p>
         </template>
       </div>

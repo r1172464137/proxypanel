@@ -14,6 +14,7 @@ vi.mock('@/api/endpoints', () => ({ adminApi: { recoveryMode: { get: vi.fn(async
 
 const MY_ACCOUNT_PATHS = [
   '/me/subscription',
+  '/me/connect',
   '/me/usage',
   '/me/credentials',
   '/me/status',

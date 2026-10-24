@@ -41,6 +41,19 @@ const isEmpty = computed(() => {
 
     <template v-else-if="data">
       <SetupChecklist :setup="data.setup" />
+      <section data-testid="workbench-pending-list" class="rounded border p-4 space-y-3" aria-labelledby="pending-title">
+        <h2 id="pending-title" class="font-semibold">需要处理</h2>
+        <p v-if="!data.setup">设置进度未知，请重新读取或前往首次设置核对。</p>
+        <p v-if="data.setup?.blocking_reason">{{ data.setup.blocking_reason }}</p>
+        <ul class="space-y-2">
+          <li v-if="data.pending_tasks > 0"><router-link class="inline-flex min-h-11 items-center underline" to="/admin/tasks">{{ data.pending_tasks }} 项任务待处理：核对同步与失败回执</router-link></li>
+          <li v-if="data.setup?.steps.some(step => step.key === 'servers' && step.state !== 'completed')"><router-link class="inline-flex min-h-11 items-center underline" to="/admin/servers">核对服务器档案与管理程序接入（有档案不代表在线）</router-link></li>
+          <li v-if="data.setup?.steps.some(step => step.key === 'traffic_observed' && step.state !== 'completed')"><router-link class="inline-flex min-h-11 items-center underline" to="/admin/usage">尚未观察到真实流量：请成员连接后核对用量</router-link></li>
+          <li><router-link class="inline-flex min-h-11 items-center underline" to="/admin/events">查看事件与告警，定位受影响对象</router-link></li>
+          <li><router-link class="inline-flex min-h-11 items-center underline" to="/admin/runtime">核对管理程序、核心实例和目标修订</router-link></li>
+        </ul>
+        <p class="text-sm text-muted-foreground">配置对象数量、同步回执与实际流量分别核对；没有待处理任务不代表连接已验证。</p>
+      </section>
       <!-- 主要计数：4 项；用量/在线/待办作为次要 3 项，信息层级分开但仍全部保留 -->
       <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
@@ -86,7 +99,7 @@ const isEmpty = computed(() => {
           <CardHeader class="flex-row items-center justify-between gap-2 space-y-0 pb-2">
             <CardTitle class="flex items-center gap-2 text-sm font-medium text-muted-foreground">
               <AppIcon name="subscription" :size="14" aria-hidden="true" />
-              订阅规则
+              服务方案
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -142,7 +155,7 @@ const isEmpty = computed(() => {
       <EmptyState
         v-if="isEmpty"
         title="尚未添加服务器"
-        description="先登记服务器并生成一次性注册码，再添加节点与订阅规则。"
+        description="先登记服务器并生成一次性注册码，再添加节点与服务方案。"
         icon="server"
       >
         <Button as-child>

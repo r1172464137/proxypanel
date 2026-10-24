@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onBeforeUnmount, reactive, ref } from 'vue'
 import { Loader2 } from 'lucide-vue-next'
 import { adminApi } from '@/api/endpoints'
 import { allPages } from '@/lib/allPages'
 import type { AgentRecord, RegistrationCode, ServerRecord } from '@/api/types'
+import { usePolling } from '@/lib/async'
 import { usePagedList } from '@/lib/paged'
 import { errorText, toApiError } from '@/lib/errors'
 import { formatDate, formatDateTime, formatRelative, fromLocalInput, toLocalInput } from '@/lib/format'
@@ -28,6 +29,10 @@ const list = usePagedList<ServerRecord>((cursor) => adminApi.servers.list({ limi
 // 这里只按 server_id 匹配并计算心跳差值，不把 online 字段当作唯一依据。
 const agents = ref<AgentRecord[]>([])
 const agentsError = ref(false)
+const agentsLoaded = ref(false)
+const savedMessage = ref('')
+const presencePoll = usePolling(async () => { if (!document.hidden) await loadAgents() }, 5_000)
+onBeforeUnmount(presencePoll.stop)
 
 // 浏览器时钟可能比服务器慢几秒（实测 WSL 比面板慢 1.3~2s）。
 // 心跳时间落在"未来"时 age 为负，但那是刚心跳，不能判离线。
@@ -38,6 +43,7 @@ async function loadAgents(): Promise<void> {
   try {
     agents.value = await allPages(cursor => adminApi.agents.list({ limit: 200, cursor }))
     agentsError.value = false
+    agentsLoaded.value = true
   } catch {
     agents.value = []
     agentsError.value = true
@@ -47,6 +53,7 @@ async function loadAgents(): Promise<void> {
 onMounted(async () => {
   void list.refresh()
   await loadAgents()
+  presencePoll.start()
 })
 
 async function refreshAll(): Promise<void> {
@@ -67,7 +74,7 @@ function agentForServer(serverId: string): AgentRecord | null {
   for (const agent of agents.value) {
     if (agent.server_id !== serverId) continue
     const heartbeat = heartbeatMs(agent) ?? -1
-    if (heartbeat > bestHeartbeat) {
+    if (!best || heartbeat > bestHeartbeat) {
       best = agent
       bestHeartbeat = heartbeat
     }
@@ -83,7 +90,7 @@ interface ServerPresence {
 }
 
 function presenceOf(server: ServerRecord): ServerPresence {
-  if (agentsError.value) {
+  if (agentsError.value || !agentsLoaded.value) {
     return { kind: 'unknown', badge: 'unknown', label: '状态未知', detail: '无法读取 Agent 列表' }
   }
   const agent = agentForServer(server.id)
@@ -92,7 +99,7 @@ function presenceOf(server: ServerRecord): ServerPresence {
   }
   const heartbeat = heartbeatMs(agent)
   if (heartbeat === null) {
-    return { kind: 'offline', badge: 'offline', label: '离线', detail: 'Agent 尚未上报心跳' }
+    return { kind: 'missing', badge: 'unknown', label: '未接入', detail: '已注册但尚无上线心跳，等待管理程序接入' }
   }
   const lastSeen = agent.last_heartbeat_at ?? agent.heartbeat_at ?? ''
   const age = Date.now() - heartbeat
@@ -191,6 +198,7 @@ async function save(): Promise<void> {
       await adminApi.servers.update(form.id, { ...payload, version: form.version })
     } else {
       await adminApi.servers.create(payload)
+      savedMessage.value = '已保存服务器。下一步：生成接入注册码，交给部署人员后等待管理程序心跳。'
     }
     formOpen.value = false
     await list.refresh()
@@ -364,9 +372,10 @@ const columns = [
 
 <template>
   <div class="space-y-6">
+    <p v-if="savedMessage" role="status" data-testid="server-save-result">{{ savedMessage }}</p>
     <PageHeader title="服务器" description="机器档案与 Agent 注册入口。注册码一次性、15 分钟内有效。">
       <Button variant="outline" :disabled="list.loading.value" @click="refreshAll">刷新</Button>
-      <Button @click="openCreate">新建服务器</Button>
+      <Button data-testid="server-create-button" @click="openCreate">新建服务器</Button>
     </PageHeader>
 
     <!-- 批量入口始终可见：没有数据时按钮禁用，但选择语义不变。 -->
@@ -423,7 +432,7 @@ const columns = [
           <template v-else>—</template>
         </template>
         <template v-else-if="columnIndex === 6">
-          <StatusBadge :status="presenceOf(item).badge" :label="presenceOf(item).label" />
+          <StatusBadge data-testid="server-agent-state" :status="presenceOf(item).badge" :label="presenceOf(item).label" />
           <span class="mt-0.5 block text-xs text-muted-foreground">{{ presenceOf(item).detail }}</span>
         </template>
         <template v-else>
@@ -520,7 +529,7 @@ const columns = [
           <AlertDescription class="break-all">{{ codeError }}</AlertDescription>
         </Alert>
         <template v-if="code">
-          <CopyField :value="code.code" label="注册码" warning="注册码等同于 Agent 身份凭据；交付后不要留存明文。" />
+          <CopyField data-testid="registration-code-value" :value="code.code" label="注册码" warning="仅显示一次，注册码仅可使用一次；复制不等于接入成功，请等待管理程序心跳。" />
           <p class="text-xs text-muted-foreground">过期时间：{{ formatDateTime(code.expires_at) }}</p>
         </template>
       </div>

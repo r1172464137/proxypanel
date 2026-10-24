@@ -1,5 +1,9 @@
 <script setup lang="ts">
-defineProps<{ setup?: { steps: { key: string; state: string; reason?: string }[]; completed_count: number; blocking_reason?: string } }>()
+import { computed } from 'vue'
+const props = defineProps<{ setup?: { steps: { key: string; state: string; reason?: string }[]; completed_count: number; blocking_reason?: string } }>()
+const known = computed(() => !!props.setup && steps.every(step => props.setup!.steps.some(s => s.key === step.key && ['completed', 'complete', 'done', 'blocked', 'pending', 'not_started'].includes(s.state))))
+const blocked = computed(() => !!props.setup?.blocking_reason || props.setup?.steps.some(step => step.state === 'blocked'))
+const complete = computed(() => known.value && !blocked.value && props.setup?.completed_count === 6)
 const steps = [
   { key: 'servers', title: '接入服务器', to: '/admin/servers', detail: '登记机器，生成注册码，再核对管理程序心跳。' },
   { key: 'nodes', title: '创建节点', to: '/admin/nodes/new', detail: '配置连接入口，保存后核对同步任务。' },
@@ -13,13 +17,15 @@ function label(state?: string): string {
 }
 </script>
 <template>
-  <section class="rounded-lg border p-5 space-y-4" aria-labelledby="setup-heading">
+  <section data-testid="workbench-setup-checklist" class="rounded-lg border p-5 space-y-4" aria-labelledby="setup-heading">
     <h2 id="setup-heading" class="text-lg font-semibold">服务交付路径</h2>
+    <p data-testid="setup-progress-label" role="status">{{ blocked ? '设置被阻断：请先处理下方原因' : known ? `${setup!.completed_count}/6 步已完成` : '进度未知：等待完整核对结果' }}</p>
+    <router-link to="/admin/setup" class="inline-flex min-h-11 items-center underline">{{ complete ? '设置已完成，查看或修改' : '继续完成设置' }}</router-link>
     <p v-if="!setup" role="status" class="text-sm text-muted-foreground">设置进度暂不可用。可按以下步骤继续，系统不会把未核对的步骤标为完成。</p>
     <p v-if="setup?.blocking_reason" role="alert">{{ setup.blocking_reason }}</p>
-    <ol class="grid gap-4 md:grid-cols-2">
-      <li v-for="(step, index) in steps" :key="step.key" class="min-w-0 rounded border p-3 space-y-2">
-        <div class="flex justify-between gap-2"><router-link :to="step.to" class="font-medium underline">{{ index + 1 }}. {{ step.title }}</router-link><span class="text-sm">{{ label(setup?.steps.find(s => s.key === step.key)?.state) }}</span></div>
+    <ol v-if="!complete" class="grid gap-4 md:grid-cols-2">
+      <li v-for="(step, index) in steps" :key="step.key" :data-testid="`setup-step-${step.key}`" class="min-w-0 rounded border p-3 space-y-2">
+        <div class="flex justify-between gap-2"><router-link :to="step.to" class="inline-flex min-h-11 items-center font-medium underline">{{ index + 1 }}. {{ step.title }}</router-link><span class="text-sm">{{ label(setup?.steps.find(s => s.key === step.key)?.state) }}</span></div>
         <p class="text-sm text-muted-foreground">{{ setup?.steps.find(s => s.key === step.key)?.reason || step.detail }}</p>
       </li>
     </ol>

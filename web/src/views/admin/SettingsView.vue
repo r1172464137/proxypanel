@@ -13,13 +13,12 @@ import ErrorState from '@/components/ErrorState.vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import AppModal from '@/components/AppModal.vue'
-import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import { useRecoveryMode } from '@/lib/recoveryMode'
 import JsonEditor from '@/components/JsonEditor.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -76,21 +75,14 @@ const templateSaving = ref(false)
 const templateSaveError = ref('')
 const templateJsonInvalid = ref('')
 
-const recoveryState = ref<{ recovery_mode: boolean; control_generation: number } | null>(null)
-const recoveryChecks = reactive({ agent_revisions_checked: false, ledger_checked: false })
-const recovery = reactive<{ open: boolean; mode: 'enter' | 'exit' | null; pending: boolean; error: string }>({
-  open: false,
-  mode: null,
-  pending: false,
-  error: '',
-})
+const sharedRecovery = useRecoveryMode()
+const recoveryState = sharedRecovery.data
 
 async function load(): Promise<void> {
   loading.value = true
   loadError.value = null
   try {
     const payload = await adminApi.settings.get()
-    recoveryState.value = await adminApi.recoveryMode.get()
     settings.value = payload
     form.timezone = typeof payload.timezone === 'string' ? payload.timezone : ''
     form.retention_days = typeof payload.retention_days === 'number' ? String(payload.retention_days) : ''
@@ -226,39 +218,6 @@ async function saveTemplate(): Promise<void> {
     templateSaveError.value = errorText(caught)
   } finally {
     templateSaving.value = false
-  }
-}
-
-function openRecovery(mode: 'enter' | 'exit'): void {
-  recovery.mode = mode
-  recoveryChecks.agent_revisions_checked = false
-  recoveryChecks.ledger_checked = false
-  recovery.error = ''
-  recovery.open = true
-}
-
-async function submitRecovery(): Promise<void> {
-  if (!recovery.mode) return
-  if (recovery.mode === 'exit' && (!recoveryChecks.agent_revisions_checked || !recoveryChecks.ledger_checked)) {
-    recovery.error = '请先完成并勾选两项核对，再退出恢复协调模式。'
-    return
-  }
-  recovery.pending = true
-  recovery.error = ''
-  try {
-    if (recovery.mode === 'enter') await adminApi.recoveryMode.enter()
-    else await adminApi.recoveryMode.exit({ ...recoveryChecks })
-    recoveryState.value = await adminApi.recoveryMode.get()
-    pushToast(
-      'success',
-      recovery.mode === 'enter' ? '已请求进入恢复协调模式' : '已请求退出恢复协调模式',
-      '已读取服务端当前状态。新控制代际仍需在各 Agent 本地显式协调接受。',
-    )
-    recovery.open = false
-  } catch (caught) {
-    recovery.error = errorText(caught)
-  } finally {
-    recovery.pending = false
   }
 }
 
@@ -474,11 +433,10 @@ const hasTemplateDefaults = computed(() => {
             <CardContent class="space-y-4">
               <p class="text-sm text-muted-foreground">
                 从旧备份恢复后必须进入恢复协调：暂停普通变更与旧权限推送，核对节点授权版本与账本后再显式退出。
-                当前状态：{{ recoveryState ? (recoveryState.recovery_mode ? '恢复协调中' : '正常运行') : '未读取' }}；控制代际：{{ recoveryState?.control_generation ?? '未知' }}。
+                当前状态：{{ recoveryState ? (recoveryState.recovery_mode ? '恢复核对中' : '未处于恢复核对模式') : '未读取' }}；控制代际：{{ recoveryState?.control_generation ?? '未知' }}。
               </p>
               <div class="flex flex-wrap items-center gap-2">
-                <Button variant="destructive" @click="openRecovery('enter')">进入恢复协调模式</Button>
-                <Button variant="outline" @click="openRecovery('exit')">退出恢复协调模式</Button>
+                <Button as-child variant="outline"><router-link to="/admin/runtime#recovery" data-testid="settings-recovery-link">前往运行页进行恢复核对</router-link></Button>
               </div>
             </CardContent>
           </Card>
@@ -527,42 +485,5 @@ const hasTemplateDefaults = computed(() => {
       </template>
     </AppModal>
 
-    <ConfirmDialog
-      :open="recovery.open"
-      :title="recovery.mode === 'enter' ? '进入恢复协调模式' : '退出恢复协调模式'"
-      :confirm-label="recovery.mode === 'enter' ? '确认进入' : '确认退出'"
-      danger
-      :pending="recovery.pending"
-      :error-text="recovery.error"
-      @cancel="recovery.open = false"
-      @confirm="submitRecovery"
-    >
-      <template v-if="recovery.mode === 'enter'">
-        <p>进入后：普通变更暂停、不再向节点推送旧权限，直到显式核对并退出。</p>
-        <ul class="list-disc pl-5 text-sm">
-          <li>成员/订阅/节点的普通变更可能被拒绝。</li>
-          <li>请先核对 Agent 已知授权版本、任务回执与账本。</li>
-        </ul>
-      </template>
-      <template v-else>
-        <p>退出前请确认：</p>
-        <ul class="list-disc pl-5 text-sm">
-          <li>节点授权版本与面板一致，账本无缺口。</li>
-          <li>旧备份中已撤销的成员不会被重新放行。</li>
-        </ul>
-        <div class="flex items-start gap-2">
-          <Checkbox id="recovery-agent-revisions" v-model="recoveryChecks.agent_revisions_checked" class="mt-0.5" />
-          <Label for="recovery-agent-revisions" class="font-normal leading-snug">
-            已核对 Agent 修订及已撤销权限，不会恢复旧授权
-          </Label>
-        </div>
-        <div class="flex items-start gap-2">
-          <Checkbox id="recovery-ledger" v-model="recoveryChecks.ledger_checked" class="mt-0.5" />
-          <Label for="recovery-ledger" class="font-normal leading-snug">
-            已核对用量账本与待补报队列
-          </Label>
-        </div>
-      </template>
-    </ConfirmDialog>
   </div>
 </template>

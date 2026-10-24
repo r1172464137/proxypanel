@@ -36,6 +36,7 @@ const menuButton = ref<HTMLButtonElement | null>(null)
 // 账户自身的 5 个视图：成员侧栏与管理员侧栏共用，避免两处各写一份后漂移。
 const myAccountLinks: NavSection['links'] = [
   { label: '我的服务', to: '/me/subscription', icon: 'subscription' },
+  { label: '客户端导入', to: '/me/connect', icon: 'subscription' },
   { label: '我的用量', to: '/me/usage', icon: 'usage' },
   { label: '连接信息', to: '/me/credentials', icon: 'key' },
   { label: '账户状态', to: '/me/status', icon: 'status' },
@@ -43,13 +44,14 @@ const myAccountLinks: NavSection['links'] = [
 ]
 
 const adminNav: NavSection[] = [
-  { title: '工作台', links: [{ label: '服务交付', to: '/admin/overview', icon: 'overview' }] },
+  { title: '工作台', links: [{ label: '工作台', to: '/admin/overview', icon: 'overview' }, { label: '首次设置', to: '/admin/setup', icon: 'settings' }] },
   {
     title: '资源',
     links: [
       { label: '服务器', to: '/admin/servers', icon: 'server' },
       { label: '节点', to: '/admin/nodes', icon: 'node' },
       { label: '节点组', to: '/admin/node-groups', icon: 'groups' },
+      { label: '客户端模板', to: '/admin/templates', icon: 'subscription' },
 
     ],
   },
@@ -85,12 +87,17 @@ const title = computed(() => (typeof route.meta.title === 'string' ? route.meta.
 const roleLabel = computed(() => (sessionState.user?.role === 'admin' ? '管理员' : '成员'))
 
 const navLinkClass =
-  'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring'
+  'flex min-h-11 items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring'
 const navLinkActiveClass = 'bg-sidebar-accent text-sidebar-accent-foreground'
 const sectionTitleClass =
   'px-2.5 pt-4 pb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground'
 
 /** 当前路径是否落在该入口下（含子路由，例如 /admin/servers/:id/runtime）。 */
+function navTestId(to: string): string {
+  const aliases: Record<string, string> = { '/admin/overview': 'workbench', '/me/subscription': 'me-service' }
+  return `nav-${aliases[to] ?? to.slice(1).replace(/\//g, '-').replace(/^admin-/, '')}`
+}
+
 function isActive(to: string): boolean {
   const path = route.path ?? route.fullPath.split(/[?#]/)[0] ?? ''
   return path === to || path.startsWith(`${to}/`)
@@ -162,6 +169,7 @@ async function signOut(): Promise<void> {
             v-for="link in section.links"
             :key="link.to"
             :to="link.to"
+            :data-testid="navTestId(link.to)"
             :aria-current="isActive(link.to) ? 'page' : undefined"
             :class="cn(navLinkClass, isActive(link.to) && navLinkActiveClass)"
           >
@@ -201,6 +209,7 @@ async function signOut(): Promise<void> {
               v-for="link in section.links"
               :key="link.to"
               :to="link.to"
+              :data-testid="`${navTestId(link.to)}-mobile`"
               :aria-current="isActive(link.to) ? 'page' : undefined"
               :class="cn(navLinkClass, isActive(link.to) && navLinkActiveClass)"
             >
@@ -223,7 +232,7 @@ async function signOut(): Promise<void> {
         <button
           ref="menuButton"
           type="button"
-          class="-ml-1 inline-flex size-9 items-center justify-center rounded-md text-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
+          class="-ml-1 inline-flex size-11 items-center justify-center rounded-md text-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
           aria-label="打开导航"
           aria-controls="app-sidebar"
           :aria-expanded="drawerOpen ? 'true' : 'false'"
