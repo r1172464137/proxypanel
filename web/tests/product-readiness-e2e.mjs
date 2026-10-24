@@ -1124,10 +1124,13 @@ try {
     while (Date.now() < pageDeadline) {
       await memberPage.open('/me/usage')
       pageUsed = await usageCardBytes(mp)
-      if (Number.isFinite(pageUsed) && pageUsed >= total - 1) break
+      // The UI renders KiB with two decimals; converting that text back to
+      // bytes can differ by at most 5.12 B. Allow only that display-rounding
+      // error, not a missing sample or stale ledger row.
+      if (Number.isFinite(pageUsed) && pageUsed >= total - 6) break
       await new Promise(r => setTimeout(r, 1000))
     }
-    assert.ok(Number.isFinite(pageUsed) && pageUsed >= total - 1, `usage page must show at least the real ledger total ${total} bytes, got ${pageUsed}`)
+    assert.ok(Number.isFinite(pageUsed) && pageUsed >= total - 6, `usage page must match the real ledger total ${total} bytes within two-decimal KiB display rounding, got ${pageUsed}`)
     const expected = fmtBytes(pageUsed)
     pauseStage = 'done'
     model.chain.pauseResume = { pausedExportStatus: 403, reasonText: redact(reasonText.slice(0, 160)), newConnectionDeniedMs: deniedAt, denialError: redact(denyError).slice(0, 160), denialAttempts: attempts, existingStream: persistentEnded, restored: { ...restored, socks: state.ports.restored_socks }, oldCredentialDenied: true, oldDenialError: redact(oldDenyError).slice(0, 160), ledgerTotalBytes: total, pageText: expected, newClientConfigSha: createHash('sha256').update(JSON.stringify(newClient.config)).digest('hex') }
