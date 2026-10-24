@@ -528,7 +528,13 @@ try {
     const noPlanPage = new RedeemPage(await noPlanCtx.newPage(), panelBase)
     await noPlanPage.redeem({ code: noPlanCode, username: 'wdemo_pending_service', password: state.admin_password })
     await noPlanPage.page.waitForURL('**/me/subscription?welcome=1')
-    const pendingCopy = await noPlanPage.page.getByTestId('redeem-result-message').innerText()
+    let pendingCopy = ''
+    const pendingDeadline = Date.now() + 15000
+    while (Date.now() < pendingDeadline) {
+      pendingCopy = await noPlanPage.page.getByTestId('redeem-result-message').innerText().catch(() => '')
+      if (/尚未分配服务方案|待开通/.test(pendingCopy)) break
+      await new Promise(r => setTimeout(r, 200))
+    }
     assert.match(pendingCopy, /尚未分配服务方案|待开通/)
     const pendingMember = await api(noPlanCtx, '/me/status')
     assert.equal(pendingMember.member.subscription_id, null)
@@ -774,6 +780,7 @@ try {
   await record('us', 'US-PR-005', async () => {
     await ap.goto(panelBase + `/admin/subscriptions/${subscription.id}`)
     await ap.getByTestId('subscription-form').waitFor({ state: 'visible' })
+    await ap.locator('#sub-name').waitFor({ state: 'visible' })
     const body = await ap.locator('main').innerText()
     assert.match(body, /节点组：wdemo group/)
     assert.match(body, /每人额度：1 GiB/)
