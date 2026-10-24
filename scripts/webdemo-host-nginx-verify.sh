@@ -866,7 +866,7 @@ browser_mode() {
   ensure_node_modules
   local code=0
   ( cd "$ROOT" && env "${env_extra[@]}" \
-      PANEL_BASE="https://localhost:$HTTPS_PORT" \
+      PANEL_BASE="https://localhost:$HTTPS_PORT" PANEL_SMOKE_SELF_SIGNED=0 \
       PANEL_ADMIN_USER=admin PANEL_ADMIN_PASSWORD="$PANEL_ADMIN_PASSWORD" \
       PANEL_BROWSER_EVIDENCE="$browser_out" \
       PANEL_SMOKE_MODE="$mode" PANEL_SMOKE_PORT="$HTTPS_PORT" \
