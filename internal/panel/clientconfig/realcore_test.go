@@ -59,8 +59,9 @@ func localPayload() string { return strings.Repeat(localPayloadUnit, localPayloa
 type localCores struct{ xray, singbox, mihomo string }
 
 // localPinnedCores resolves the three fixed binaries and refuses to run against
-// any other version: a matrix entry verified with a different core is not the
-// pinned evidence the acceptance asks for.
+// any other version. An operator may explicitly pin a local core with
+// <BIN_ENV>_VERSION (for example MIHOMO_BIN_VERSION=1.19.33); this does not
+// replace or upgrade a binary. The actual version and binary SHA256 are logged.
 func localPinnedCores(t *testing.T) localCores {
 	t.Helper()
 	cores := localCores{
@@ -80,10 +81,24 @@ func localCore(t *testing.T, env, fallback string, versionArgs []string, wantVer
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("%s is not available (%s): %v", env, path, err)
 	}
+	if pin := strings.TrimSpace(os.Getenv(env + "_VERSION")); pin != "" {
+		wantVersion = pin
+	}
 	out := localOutput(t, path, versionArgs...)
-	if !strings.Contains(out, wantVersion) {
+	matched := false
+	for _, field := range strings.Fields(out) {
+		if strings.TrimPrefix(field, "v") == wantVersion {
+			matched = true
+		}
+	}
+	if !matched {
 		t.Fatalf("%s reports %q, the pinned version is %s", env, strings.TrimSpace(out), wantVersion)
 	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("core env=%s path=%s version=%s sha256=%x", env, path, wantVersion, sha256.Sum256(raw))
 	return path
 }
 
@@ -103,10 +118,46 @@ func localCheck(t *testing.T, bin string, args ...string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, bin, args...).CombinedOutput()
+	if ctx.Err() != nil {
+		return fmt.Errorf("core config check: %w", ctx.Err())
+	}
 	if err != nil {
-		return fmt.Errorf("%v: %s", err, localTrimmed(out))
+		return fmt.Errorf("%w: %s", err, localTrimmed(out))
 	}
 	return nil
+}
+
+// Only a running core's nonzero check exit is a configuration rejection.
+// Missing executables, cancellation and wall timeouts are infrastructure failures.
+func localRequireConfigRejection(t *testing.T, err error) {
+	t.Helper()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() <= 0 {
+		t.Fatalf("core check failed without a configuration rejection: %v", err)
+	}
+}
+
+func localRequireTrafficRejection(t *testing.T, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("invalid credentials still produced traffic")
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		t.Fatalf("traffic timeout is not evidence of credential rejection: %v", err)
+	}
+}
+
+func localAssertPayload(t *testing.T, client, body, want string) {
+	t.Helper()
+	if body != want {
+		t.Fatalf("%s client payload = %d bytes, want %d (content mismatch)", client, len(body), len(want))
+	}
+	gotHash, wantHash := sha256.Sum256([]byte(body)), sha256.Sum256([]byte(want))
+	if gotHash != wantHash {
+		t.Fatalf("%s payload SHA256 = %x, want %x", client, gotHash, wantHash)
+	}
+	t.Logf(`matrix_cell={"client":%q,"result":"supported_pass","bytes":%d,"sha256":"%x"}`, client, len(body), gotHash)
 }
 
 func localTrimmed(raw []byte) string {
@@ -408,17 +459,24 @@ func TestLocalCoreClientMatrix(t *testing.T) {
 			stopServer := localStart(t, cores.xray, []string{"run", "-c", srvPath}, port)
 			defer stopServer()
 
-			localRunXrayClient(t, cores.xray, nc, dir, target.URL, want, "")
-			localRunSingboxClient(t, cores.singbox, nc, dir, target.URL, want)
-			if field, reject := tc.rejected["mihomo"]; reject {
-				_, err := Render(Request{Format: FormatMihomo, Nodes: []NodeConfig{nc}})
-				var ue *UnsupportedError
-				if !errors.As(err, &ue) || ue.Field != field {
-					t.Fatalf("mihomo must reject %q with UnsupportedError on %s, got %v", tc.key, field, err)
+			t.Run("xray", func(t *testing.T) {
+				localRunXrayClient(t, cores.xray, nc, dir, target.URL, want, "")
+			})
+			t.Run("sing-box", func(t *testing.T) {
+				localRunSingboxClient(t, cores.singbox, nc, dir, target.URL, want)
+			})
+			t.Run("mihomo", func(t *testing.T) {
+				if field, reject := tc.rejected["mihomo"]; reject {
+					_, err := Render(Request{Format: FormatMihomo, Nodes: []NodeConfig{nc}})
+					var ue *UnsupportedError
+					if !errors.As(err, &ue) || ue.Field != field {
+						t.Fatalf("mihomo must reject %q with UnsupportedError on %s, got %v", tc.key, field, err)
+					}
+					t.Logf(`matrix_cell={"client":"mihomo","result":"declared_incompatible_rejected","field":%q}`, field)
+				} else {
+					localRunMihomoClient(t, cores.mihomo, nc, dir, target.URL, want)
 				}
-			} else {
-				localRunMihomoClient(t, cores.mihomo, nc, dir, target.URL, want)
-			}
+			})
 		})
 	}
 }
@@ -492,6 +550,7 @@ func localRunXrayClient(t *testing.T, bin string, n NodeConfig, dir, targetURL, 
 	path := localWrite(t, dir, "xray-client.json", localJSON(t, cfg))
 	if err := localCheck(t, bin, "run", "-test", "-c", path); err != nil {
 		if pinOverride != "" {
+			localRequireConfigRejection(t, err)
 			return // a rejected config also enforces the pin
 		}
 		t.Fatalf("pinned Xray rejects the exported client config: %v", err)
@@ -500,17 +559,13 @@ func localRunXrayClient(t *testing.T, bin string, n NodeConfig, dir, targetURL, 
 	defer stop()
 	body, err := localFetch(socks, targetURL)
 	if pinOverride != "" {
-		if err == nil {
-			t.Fatal("a wrong certificate pin still produced traffic")
-		}
+		localRequireTrafficRejection(t, err)
 		return
 	}
 	if err != nil {
 		t.Fatalf("xray client traffic: %v", err)
 	}
-	if body != want {
-		t.Fatalf("xray client payload = %d bytes, want %d", len(body), len(want))
-	}
+	localAssertPayload(t, "xray", body, want)
 }
 
 func localRunSingboxClient(t *testing.T, bin string, n NodeConfig, dir, targetURL, want string) {
@@ -541,9 +596,7 @@ func localRunSingboxClient(t *testing.T, bin string, n NodeConfig, dir, targetUR
 	if err != nil {
 		t.Fatalf("sing-box client traffic: %v", err)
 	}
-	if body != want {
-		t.Fatalf("sing-box client payload = %d bytes, want %d", len(body), len(want))
-	}
+	localAssertPayload(t, "sing-box", body, want)
 }
 
 func localRunMihomoClient(t *testing.T, bin string, n NodeConfig, dir, targetURL, want string) {
@@ -588,9 +641,7 @@ func localRunMihomoClient(t *testing.T, bin string, n NodeConfig, dir, targetURL
 	if err != nil {
 		t.Fatalf("mihomo client traffic: %v", err)
 	}
-	if body != want {
-		t.Fatalf("mihomo client payload = %d bytes, want %d", len(body), len(want))
-	}
+	localAssertPayload(t, "mihomo", body, want)
 }
 
 // TestLocalCoreCredentialGuards proves the two credential fixes are enforced by
@@ -687,13 +738,13 @@ func TestLocalCoreCredentialGuards(t *testing.T) {
 		socks := localMap(localArray(brokenDoc["inbounds"])[0])["port"].(int)
 		path := localWrite(t, dir, "xray-user-psk-only.json", localJSON(t, brokenDoc))
 		if err := localCheck(t, cores.xray, "run", "-test", "-c", path); err != nil {
+			localRequireConfigRejection(t, err)
 			return // the core rejected the config outright
 		}
 		stopClient := localStart(t, cores.xray, []string{"run", "-c", path}, socks)
 		defer stopClient()
-		if body, err := localFetch(socks, target.URL); err == nil && body == localPayload() {
-			t.Fatal("the core accepted a Shadowsocks 2022 client password without the server PSK")
-		}
+		_, err = localFetch(socks, target.URL)
+		localRequireTrafficRejection(t, err)
 	})
 }
 

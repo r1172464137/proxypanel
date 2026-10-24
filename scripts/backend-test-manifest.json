@@ -1037,5 +1037,44 @@
     "run": "^TestStateDirPermissions$",
     "expected_tests": ["TestStateDirPermissions"],
     "stories": ["US-PR-003"], "requires": ["unix"]
+  },
+  {
+    "id": "matrix/local-core-clients",
+    "packages": ["./internal/panel/clientconfig"],
+    "build_tags": ["corematrix"],
+    "run": "^TestLocalCoreClientMatrix$",
+    "expected_tests": ["TestLocalCoreClientMatrix"],
+    "stories": ["US-PR-004", "US-PR-011"],
+    "requires": ["xray"],
+    "timeout_seconds": 300
+  },
+  {
+    "id": "matrix/local-core-credential-guards",
+    "packages": ["./internal/panel/clientconfig"],
+    "build_tags": ["corematrix"],
+    "run": "^TestLocalCoreCredentialGuards$",
+    "expected_tests": ["TestLocalCoreCredentialGuards"],
+    "stories": ["US-PR-004", "US-PR-011"],
+    "requires": ["xray"],
+    "timeout_seconds": 120
+  },
+  {
+    "id": "matrix/reserved-tags",
+    "packages": ["./internal/panel/clientconfig"],
+    "run": "^TestReviewReservedTags$",
+    "expected_tests": ["TestReviewReservedTags"],
+    "stories": ["US-PR-004"],
+    "requires": ["xray"],
+    "timeout_seconds": 120
+  },
+  {
+    "id": "matrix/agent-real-xray",
+    "packages": ["./internal/agent/xray"],
+    "build_tags": ["xrayreal"],
+    "run": "^TestRealXray(EmptyClients|InjectedConfig|PerUserUsage)$",
+    "expected_tests": ["TestRealXrayEmptyClients", "TestRealXrayInjectedConfig", "TestRealXrayPerUserUsage"],
+    "stories": ["US-PR-011", "US-PR-013"],
+    "requires": ["xray"],
+    "timeout_seconds": 120
   }
 ]
