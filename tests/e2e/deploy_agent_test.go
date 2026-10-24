@@ -210,22 +210,47 @@ main
 	}
 }
 
-// `bash < deploy-agent.sh` (no file argument) must not abort on set -u before
-// reaching usage; BASH_SOURCE is unset in that mode.
+// Stdin execution must reach the real entry guard without BASH_SOURCE.
+// Stub only its installation dispatch so this test cannot modify the host.
 func TestStandaloneAgentRunsWithoutBashSource(t *testing.T) {
 	script := deploymentLibrary(t)
-	f, err := os.Open(script)
+	raw, err := os.ReadFile(script)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
-	cmd := exec.Command("/bin/bash", "-s", "--", "--help")
-	cmd.Stdin = f
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("stdin invocation failed: %v: %s", err, out)
+	const entry = "\n  main \"$@\"\n"
+	const guard = "${BASH_SOURCE[0]:-$0}"
+	text := string(raw)
+	if strings.Count(text, entry) != 1 || strings.Count(text, guard) != 1 {
+		t.Fatal("expected one real guarded installation dispatch")
 	}
-	if !strings.Contains(string(out), "用法") {
-		t.Fatalf("usage not printed:\n%s", out)
+	const marker = "STDIN_ENTRY_REACHED"
+	text = strings.Replace(text, entry, "\n  printf '%s\\n' '"+marker+"'\n", 1)
+	for _, tc := range []struct {
+		name        string
+		brokenGuard bool
+	}{
+		{"production-guard", false},
+		{"missing-fallback-control", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := text
+			if tc.brokenGuard {
+				input = strings.Replace(input, guard, "${BASH_SOURCE[0]}", 1)
+			}
+			cmd := exec.Command("/bin/bash", "-s", "--")
+			cmd.Stdin = strings.NewReader(input)
+			out, err := cmd.CombinedOutput()
+			if tc.brokenGuard {
+				exit, ok := err.(*exec.ExitError)
+				if !ok || exit.ExitCode() != 1 || !strings.Contains(string(out), "BASH_SOURCE") || strings.Contains(string(out), marker) {
+					t.Fatalf("missing guard fallback was not detected: err=%v output=%s", err, out)
+				}
+				return
+			}
+			if err != nil || !strings.Contains(string(out), marker) {
+				t.Fatalf("stdin did not reach guarded entry: err=%v output=%s", err, out)
+			}
+		})
 	}
 }
