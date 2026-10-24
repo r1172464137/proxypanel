@@ -1124,5 +1124,62 @@
       "unix"
     ],
     "timeout_seconds": 180
+  },
+  {
+    "id": "e2e/real-fault-postgres",
+    "packages": [
+      "./tests/e2e"
+    ],
+    "run": "^TestRealFaultPostgresOutage$",
+    "expected_tests": [
+      "TestRealFaultPostgresOutage"
+    ],
+    "stories": [
+      "US-PR-013",
+      "US-PR-016"
+    ],
+    "requires": [
+      "unix",
+      "owned-fault"
+    ],
+    "timeout_seconds": 100
+  },
+  {
+    "id": "e2e/real-fault-redis",
+    "packages": [
+      "./tests/e2e"
+    ],
+    "run": "^TestRealFaultRedisOutage$",
+    "expected_tests": [
+      "TestRealFaultRedisOutage"
+    ],
+    "stories": [
+      "US-PR-001",
+      "US-PR-017"
+    ],
+    "requires": [
+      "unix",
+      "owned-fault"
+    ],
+    "timeout_seconds": 100
+  },
+  {
+    "id": "e2e/real-fault-enospc",
+    "packages": [
+      "./tests/e2e"
+    ],
+    "run": "^TestRealFaultENOSPC$",
+    "expected_tests": [
+      "TestRealFaultENOSPC"
+    ],
+    "stories": [
+      "US-PR-011",
+      "US-PR-013"
+    ],
+    "requires": [
+      "unix",
+      "owned-fault"
+    ],
+    "timeout_seconds": 100
   }
 ]

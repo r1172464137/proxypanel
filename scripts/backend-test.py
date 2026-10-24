@@ -53,7 +53,7 @@ def load_selections(filters):
             raise ValueError(f"{name}: invalid Go package scope")
         if not isinstance(entry.get("run"), str) or not entry["run"]:
             raise ValueError(f"{name}: empty test expression")
-        unknown = set(entry["requires"]) - {"postgres", "redis", "xray", "docker", "unix"}
+        unknown = set(entry["requires"]) - {"postgres", "redis", "xray", "docker", "unix", "owned-fault"}
         if unknown:
             raise ValueError(f"{name}: unknown requirements: {sorted(unknown)}")
         tags = entry.get("build_tags", [])
@@ -107,7 +107,9 @@ def input_fingerprint():
 def environment_missing(entry, allow_docker):
     missing = []
     for requirement in entry["requires"]:
-        if requirement == "unix" and os.name != "posix":
+        if requirement == "owned-fault" and not os.environ.get("PP_FAULT_OWNER"):
+            missing.append("owned physical-fault fixture: python3 tests/e2e/run_real_fault.py")
+        elif requirement == "unix" and os.name != "posix":
             missing.append("Unix test environment")
         elif requirement == "postgres":
             if not os.environ.get("PANEL_TEST_DATABASE_URL") or os.environ.get("PANEL_TEST_DB_ISOLATED") != "1":
