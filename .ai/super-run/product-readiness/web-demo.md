@@ -93,6 +93,12 @@ F：真实部署/两托管TLS/安装systemd能力与安全隔离验证，专用w
 - 09:07 UTC只读查明锁持有者为A的owned `webdemo-env.sh`（flock1632636、private `/tmp/wdemo.RlAhYXKF`、fixture1633882及Node1633912），至少持续20min；该run进度08:47:42停止，已落盘21条14PASS/7FAIL但并非最终报告。向A要求5min有界收尾，各组交阶段资产，不让全宿主队列等全18一次绿。
 - 09:15:42核对私有dir owner、fixture exe/cwd/starttime后，只向其已有`done`取消接口写入标记（未发送进程信号、未动其它环境），收据`A/main-budget-cancellation.json`。等待精确owned launcher退出及清理，不把取消算PASS。A必须补Node端到端timeout和异常时不丢fixture_pid；原注释声称launcher有wallclock但实际只有Go fixture35min预算。
 
+### 当前增量验收与恢复门禁诊断
+
+- 认证首页增量验证已实际通过：source00ed、302/302/0skip、typecheck/build0、输入SHA稳定。正式frontend R1只读验收`01a16d54-4ddc-75a9-8640-ad78549fbcea`已启动；旧3P2与web-demo承接不自动抹掉，状态accept仍in_progress。
+- H恢复任务923d644返回：真实Go API-only显式空根、Go直接404/API对照、同DB/key/binary旧session重启保持、Ubuntu GPG InRelease→Packages→deb摘要、严格curl60/Node诊断、私NSS无bypass浏览器均有新实证。主审过差异后合并6个独立资产commit至0541344；另以032f31c/4cb0e0e补真实端到端watchdog（不能只结束后断言elapsed）、网络时限、不可改canonical lease、失败时未定义PG_PORT清理、fresh私有dist强制构建、不继承cert-bypass标志，并使lost-listener测试实际入精确manifest。准备以当前root-route生产源做一次统一host两模式补验，返回前不计新主资产PASS。
+- C原2461596交付blocked而非绿：C/final真实dump/restore、流量/入账/ACK删除/备份后撤权与停Agent已执行8项，恢复store.Open在AGENT_EVIDENCE_MISSING unknown1处拒绝。主不先将其定为放宽门禁的bug；新只读`01a16d5c-25d8-75a9-8640-ad7a7dc4312c`对照规范/CLI/文档区分材料遗漏、操作缺口与迁移门禁误用；未提供证据不能猜远端空，也不得绕checksum/unknown或复活旧凭据。恢复后链路仍blocked，backend若需代码/规范变化再按影响重开。
+
 ## 完成/停止
 
 每US001..018在最终矩阵列出成功、关键异常、证据与未验证，不以17技术probe代替18完整故事。上游旧11Docker套件逐个实际运行或逐断言等价关系；触碰旧fixture的helper不执行并说明真正目标如何覆盖。发现缺设备/权限等外部条件先明确解除条件，不能无限空转。只在正式accept放行且全部active phase与必要验收证据闭合后宣称整个feature完成；否则列实际未验证和责任。
