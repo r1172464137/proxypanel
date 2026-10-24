@@ -2,7 +2,11 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { ensureSession, homeRoute, sessionState } from '@/stores/session'
 
 const routes: RouteRecordRaw[] = [
-  { path: '/', redirect: () => homeRoute() },
+  // US-PR-001: an anonymous root visit must not pre-select the *member*
+  // destination. Redirecting anonymous visitors to /login (no `next`) lets the
+  // post-login default be role-based: admin → workbench, member → 我的服务.
+  // Explicit deep links keep their own `next` through the route guard.
+  { path: '/', redirect: () => (sessionState.user ? homeRoute() : '/login') },
   { path: '/me', redirect: '/me/subscription' },
   { path: '/admin/setup', name: 'admin-setup', component: () => import('@/views/admin/SetupView.vue'), meta: { role: 'admin', title: '首次设置' } },
   { path: '/me/connect', name: 'me-connect', component: () => import('@/views/me/MeConnectView.vue'), meta: { title: '客户端导入与订阅链接' } },

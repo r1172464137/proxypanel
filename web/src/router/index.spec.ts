@@ -46,6 +46,30 @@ describe('approved navigation and role boundaries', () => {
     expect(router.currentRoute.value.path).toBe('/me/subscription')
     expect(router.currentRoute.value.query.denied).toBe('/admin/invitations')
   })
+  it('US-PR-001: anonymous root visit lands the admin on the workbench, not the member page', async () => {
+    session.status = 'anonymous'
+    session.user = null
+    await router.push('/')
+    expect(router.currentRoute.value.path).toBe('/login')
+    expect(router.currentRoute.value.query.next).toBeUndefined()
+    // After login the guard applies the role default (no `next` pending).
+    session.status = 'ready'
+    session.user = { id: 'admin_test', username: 'admin', role: 'admin' }
+    await router.push('/admin/members')
+    await router.push('/login')
+    expect(router.currentRoute.value.path).toBe('/admin/overview')
+  })
+  it('US-PR-001: anonymous root visit lands a member on 我的服务', async () => {
+    session.status = 'anonymous'
+    session.user = null
+    await router.push('/')
+    expect(router.currentRoute.value.path).toBe('/login')
+    session.status = 'ready'
+    session.user = { id: 'member_test', username: 'member', role: 'member' }
+    await router.push('/redeem')
+    await router.push('/login')
+    expect(router.currentRoute.value.path).toBe('/me/subscription')
+  })
   it('retains the actual private destination for an anonymous login', async () => {
     session.status = 'anonymous'
     session.user = null

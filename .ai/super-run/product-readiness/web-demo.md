@@ -96,3 +96,11 @@ F：真实部署/两托管TLS/安装systemd能力与安全隔离验证，专用w
 ## 完成/停止
 
 每US001..018在最终矩阵列出成功、关键异常、证据与未验证，不以17技术probe代替18完整故事。上游旧11Docker套件逐个实际运行或逐断言等价关系；触碰旧fixture的helper不执行并说明真正目标如何覆盖。发现缺设备/权限等外部条件先明确解除条件，不能无限空转。只在正式accept放行且全部active phase与必要验收证据闭合后宣称整个feature完成；否则列实际未验证和责任。
+
+## 收口进展：有效证据与未通过项分开
+
+- F主复验monitor62通过：`.ai/evidence/web-demo/F/main-dd40fac-retry-20261024T093138Z-a8941e/main-verification.json`，source44f35aa；3预期case/0skip，实际Agent两PID同exe/hash、心跳恢复、真实持锁、AF_UNIX合法+AF_INET具体EAFNOSUPPORT、installer精确exit/message/tripwire、自有fixture移除与unit inactive。不是完整system unit安装/核心数据面，F整体仍partial。
+- A原e41fce0已交；主先只消费已审2个router文件修复匿名根入口默认成员落点；其余4个测试资产暂不合并。因生产frontend输入改变，frontend受影响test/accept重新pending、revision1，旧300/17与R0报告保留适用部分但不冒充已验新根路由。当前继续的请求phase仍web-demo，新root行为须增量验证并由独立frontend accept核对后恢复上游放行。
+- A旧run14PASS/7红不是18/18；source/main-budget-cancellation与clean-event证明自有场景退出无遗留，取消不当产品失败。新定向01a16d44-806d-75a9-8640-ad74f45f3d91补首页导入（生产ClientImportGuide检查按钮两页都存在，不能移页绕首页状态）、原进程身份保护、脚本自身持锁/短deadline及最小主链。
+- host nginx初报1dd2fd3正向：真实host ELF/严格私CA链/NSS浏览器两前端归属、browser asset SHA均与manifest相同。主发现Go API-only开关尚未清空、HTTP下载无来源校验、证书负例任意失败、旧listener消失未断言及本机PG却误用remote锁，尚不合并/不计完整PASS；原01a16d1b-d579-75a9-8640-ad71e140ad53继续同两文件定向修。
+- E原de2c058：3Vision完整载荷+stats+停止拒绝/恢复、21本地格有效正向记录。主发现lock_is_held只证明有人持锁而非本family、只凭任一PASS未按case/cells核对、Go日志buffer并发与失败cleanup不严格，暂不合并。新01a16d3d-b186-75a9-8640-ad7281011b7e定向修；54历史口径不复述，实际40行历史(30真实+10GUI notrun)待统一矩阵明确。

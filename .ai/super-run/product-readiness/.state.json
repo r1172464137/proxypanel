@@ -107,9 +107,9 @@
       "validation_revision": 2
     },
     "frontend": {
-      "status": "completed",
+      "status": "in_progress",
       "plan": ".ai/super-run/product-readiness/frontend.md",
-      "validation_revision": 0,
+      "validation_revision": 1,
       "tasks": {
         "dev": {
           "status": "completed",
@@ -138,7 +138,7 @@
           ]
         },
         "test": {
-          "status": "completed",
+          "status": "pending",
           "agent_spec": "/home/compile/code/t-tools/agents/frontend-test.md",
           "references": [
             ".ai/design/product-readiness.md",
@@ -160,7 +160,7 @@
           ]
         },
         "accept": {
-          "status": "completed",
+          "status": "pending",
           "agent_spec": "/home/compile/code/t-tools/agents/frontend-accept.md",
           "references": [
             ".ai/design/product-readiness.md",
