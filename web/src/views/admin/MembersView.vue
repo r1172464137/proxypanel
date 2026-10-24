@@ -325,6 +325,7 @@ async function confirmDelete(): Promise<void> {
 }
 
 /* ---------- 批量 ---------- */
+const recoveryOpen = ref(false)
 const batchOpen = ref(false)
 const batchOperation = ref<BatchOperation>('assign_subscription')
 const batchValues = reactive<{ subscription_id: string; active: string; expires_at_local: string }>({
@@ -423,6 +424,7 @@ const columns = [
       <Button variant="outline" :disabled="!selected.size || list.loading.value || !!list.error.value || filter.trim() !== query" @click="openBatch">
         批量操作（已选 {{ selected.size }}）
       </Button>
+      <Button variant="outline" @click="recoveryOpen = true">核对未确认批量提交</Button>
       <Button v-if="selected.size" variant="ghost" @click="selected.clear()">清空选择</Button>
     </div>
 
@@ -809,6 +811,16 @@ const columns = [
         <Button :disabled="!selected.size" @click="startBatchImpact">生成预览</Button>
       </template>
     </AppModal>
+
+    <ImpactPreviewDialog
+      :open="recoveryOpen"
+      recover-pending
+      operation="assign_subscription"
+      :member-ids="[]"
+      :values="{}"
+      title="核对未确认批量提交"
+      @close="recoveryOpen = false"
+    />
 
     <ImpactPreviewDialog
       :open="impact.open"

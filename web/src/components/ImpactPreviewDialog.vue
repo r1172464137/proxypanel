@@ -6,6 +6,8 @@ import { adminApi } from '@/api/endpoints'
 import type { BatchOperation, BatchPreview } from '@/api/types'
 import { batchOperationMeta, newIdempotencyKey, previewSummary, submitRequest } from '@/lib/batch'
 import { toApiError } from '@/lib/errors'
+import { sessionState } from '@/stores/session'
+import { clearPending, readPending, savePending, scopeDigest, type PendingBatch } from '@/lib/batchPending'
 import { formatDateTime, prettyJson } from '@/lib/format'
 import { pushToast } from '@/lib/toast'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -30,6 +32,7 @@ const props = withDefaults(
     operation: BatchOperation
     memberIds: string[]
     values: Record<string, unknown>
+    recoverPending?: boolean
     title?: string
     description?: string
   }>(),
@@ -54,9 +57,56 @@ const scope = computed(() => JSON.stringify([props.operation, [...props.memberId
 const scopeChanged = computed(() => previewScope.value !== scope.value)
 
 const meta = computed(() => batchOperationMeta(props.operation))
+const accountId = computed(() => sessionState.status === 'ready' ? sessionState.user?.id ?? '' : '')
+const pending = ref<PendingBatch | null>(null)
+const recoverable = ref<PendingBatch[]>([])
+const storageFailure = ref('')
+const resultId = ref('')
+const replayed = ref(false)
+let generation = 0
+const pendingScope = computed(() => `${props.operation}:${scopeDigest([props.operation, [...props.memberIds].sort(), props.values])}`)
+
+function restore(record: PendingBatch): void {
+  if (record.accountId !== accountId.value) return
+  pending.value = record
+  idempotencyKey.value = record.key
+  uncertain.value = true
+  confirmed.value = false
+}
+
+async function openDialog(): Promise<void> {
+  generation++
+  pending.value = null
+  preview.value = null
+  uncertain.value = false
+  stale.value = false
+  submitting.value = false
+  loading.value = false
+  confirmed.value = false
+  reason.value = ''
+  submitError.value = null
+  error.value = null
+  storageFailure.value = ''
+  recoverable.value = []
+  resultId.value = ''
+  if (!accountId.value) {
+    storageFailure.value = '当前账号未确认，无法安全恢复或提交。'
+    return
+  }
+  try {
+    recoverable.value = readPending(accountId.value)
+    const existing = recoverable.value.find((r) => r.scope === pendingScope.value)
+    if (props.recoverPending) return
+    if (existing) restore(existing)
+    else await runPreview()
+  } catch (caught) {
+    storageFailure.value = (caught as Error).message
+  }
+}
 
 async function runPreview(): Promise<void> {
-  if (uncertain.value || submitting.value) return
+  if (loading.value || uncertain.value || submitting.value || storageFailure.value || !accountId.value) return
+  const currentGeneration = generation
   idempotencyKey.value = newIdempotencyKey()
   stale.value = false
   previewScope.value = scope.value
@@ -66,52 +116,84 @@ async function runPreview(): Promise<void> {
   preview.value = null
   confirmed.value = false
   try {
-    preview.value = await adminApi.batches.preview({
+    const result = await adminApi.batches.preview({
       operation: props.operation,
       member_ids: [...props.memberIds],
       values: { ...props.values },
       ...(reason.value ? { reason: reason.value } : {}),
     })
+    if (currentGeneration === generation) preview.value = result
   } catch (caught) {
-    error.value = caught
+    if (currentGeneration === generation) error.value = caught
   } finally {
-    loading.value = false
+    if (currentGeneration === generation) loading.value = false
   }
 }
 
 watch(
-  () => props.open,
-  (open) => {
-    if (open) void runPreview()
+  () => [props.open, accountId.value],
+  () => {
+    if (props.open) void openDialog()
+    else generation++
   },
+  { immediate: true },
 )
 
 async function submit(): Promise<void> {
-  if (!preview.value || !confirmed.value || stale.value || scopeChanged.value) return
-  if (!uncertain.value && new Date(preview.value.expires_at).getTime() <= Date.now()) {
-    stale.value = true
+  if (submitting.value || storageFailure.value || !accountId.value || resultId.value) return
+  if (!pending.value) {
+    if (!preview.value || !confirmed.value || stale.value || scopeChanged.value) return
+    if (!(new Date(preview.value.expires_at).getTime() > Date.now())) {
+      stale.value = true
+      return
+    }
+    pending.value = {
+      accountId: accountId.value, operation: props.operation, scope: pendingScope.value,
+      targetDigest: scopeDigest([...props.memberIds].sort()), targetCount: props.memberIds.length,
+      key: idempotencyKey.value, request: submitRequest(preview.value),
+    }
+  }
+  const record = pending.value
+  if (record.accountId !== accountId.value) return
+  // 必须先写入且回读成功，再发送；不确定结果始终复用这份请求与 key。
+  try {
+    savePending(record)
+  } catch (caught) {
+    storageFailure.value = (caught as Error).message
     return
   }
+  const currentGeneration = generation
   submitting.value = true
   submitError.value = null
+  uncertain.value = true
   try {
-    const result = await adminApi.batches.submit(submitRequest(preview.value), idempotencyKey.value)
+    const result = await adminApi.batches.submit(record.request, record.key)
+    if (currentGeneration !== generation || record.accountId !== accountId.value) return
+    if (!result.id) throw new Error('提交响应缺少变更记录编号，结果仍未确认')
+    resultId.value = result.id
+    replayed.value = result.idempotent_replay === true
     uncertain.value = false
-    pushToast(
-      'success',
-      '批量变更已提交',
-      '已保存，正在同步。请在变更记录中核对逐对象结果。',
-    )
+    try { clearPending(record) } catch (caught) { storageFailure.value = (caught as Error).message }
+    pending.value = null
+    pushToast('success', replayed.value ? '这是之前那次提交的结果' : '批量变更已提交', '请在变更记录中核对逐对象结果。')
     emit('submitted', result.id)
-    emit('close')
-    await router.push(`/admin/batches/${encodeURIComponent(result.id)}`)
   } catch (caught) {
+    if (currentGeneration !== generation || record.accountId !== accountId.value) return
     const failure = toApiError(caught)
     submitError.value = failure
-    stale.value = ['PREVIEW_STALE', 'PREVIEW_CONCLUSION_CHANGED', 'CONFLICT', 'IDEMPOTENCY_KEY_REUSED'].includes(failure.code)
-    uncertain.value = !stale.value && (failure.status === 0 || failure.status >= 500)
+    // 认证、限流及服务端错误不能证明原提交未发生，保留记录供原账号核对。
+    const definitive = failure.status >= 400 && failure.status < 500 && ![401, 403, 408, 429].includes(failure.status)
+    if (definitive) {
+      uncertain.value = false
+      stale.value = true
+      try {
+        clearPending(record)
+        pending.value = null
+        recoverable.value = recoverable.value.filter((r) => r.key !== record.key)
+      } catch (caught) { storageFailure.value = (caught as Error).message }
+    }
   } finally {
-    submitting.value = false
+    if (currentGeneration === generation) submitting.value = false
   }
 }
 
@@ -170,19 +252,28 @@ const metricRows = computed(() => {
 </script>
 
 <template>
-  <AppModal :open="open" :title="title" size="lg" @close="!submitting && !uncertain && emit('close')">
+  <AppModal :open="open" :title="title" size="lg" @close="!submitting && emit('close')">
     <div class="flex flex-col gap-4">
       <p class="text-sm text-muted-foreground">{{ description || meta.description }}</p>
-      <Label>变更原因<input v-model="reason" :disabled="submitting || uncertain" class="mt-1 block w-full rounded border p-2" aria-label="变更原因" /></Label>
-      <p v-if="uncertain" role="status">结果未确认。请核对同一次提交；不要重新创建变更。关闭前请先完成核对。</p>
-      <p v-if="stale || scopeChanged" role="alert">影响或目标范围已变化，请重新预览。</p>
+      <p v-if="storageFailure" role="alert">{{ storageFailure }}</p>
+      <section v-if="recoverPending && !pending && !resultId" class="space-y-2">
+        <p>当前账号未确认提交（{{ recoverable.length }} 项）。核对沿用原预览与幂等键，不创建新变更。</p>
+        <Button v-for="record in recoverable" :key="record.key" variant="outline" @click="restore(record)">
+          核对 {{ batchOperationMeta(record.operation).label }} · {{ record.targetCount }} 名 · {{ record.targetDigest }}
+        </Button>
+      </section>
+      <p v-if="pending" role="status">原提交预览 {{ pending.request.preview_id }} · 本次目标 {{ pending.targetCount }} 名 · 摘要 {{ pending.targetDigest }}</p>
+      <p v-if="resultId" role="status">{{ replayed ? '这是之前那次提交的结果' : '批量变更已提交' }}。<a :href="`/admin/batches/${encodeURIComponent(resultId)}`" @click.prevent="router.push(`/admin/batches/${encodeURIComponent(resultId)}`)">查看本次变更记录</a></p>
+      <Label v-if="!recoverPending && !pending && !resultId">变更原因<input v-model="reason" :disabled="submitting || uncertain" class="mt-1 block w-full rounded border p-2" aria-label="变更原因" /></Label>
+      <p v-if="uncertain" role="status">结果未确认。请核对同一次提交；不要重新创建变更。记录已保存，刷新或返回成员页后可从“核对未确认批量提交”继续。</p>
+      <p v-if="!pending && !recoverPending && (stale || scopeChanged)" role="alert">影响或目标范围已变化，请重新预览。</p>
 
       <LoadingBlock v-if="loading" :rows="3" label="正在请求影响预览" />
       <ErrorState v-else-if="error" :error="error" retry-label="重新预览" @retry="runPreview" />
 
       <template v-else-if="preview">
         <Alert>
-          <AlertTitle>预览结果（未提交）</AlertTitle>
+          <AlertTitle>{{ resultId ? '原提交预览（已取得变更记录）' : pending ? '原提交预览（结果核对中）' : '预览结果（未提交）' }}</AlertTitle>
           <AlertDescription class="flex flex-col gap-1">
             <span>{{ previewSummary(preview) }}</span>
             <span class="text-xs">
@@ -286,19 +377,18 @@ const metricRows = computed(() => {
           >{{ prettyJson(preview) }}</pre>
         </details>
 
-        <Label class="flex items-start gap-2 text-sm font-normal">
+        <Label v-if="!pending && !resultId" class="flex items-start gap-2 text-sm font-normal">
           <input v-model="confirmed" type="checkbox" class="mt-1 size-4 accent-primary" />
           <span>我已确认以上影响范围（规则提交后立即生效，节点异步分发，可能中断连接）</span>
         </Label>
-
-        <ErrorState v-if="submitError" :error="submitError" :show-retry="false" />
       </template>
+      <ErrorState v-if="submitError" :error="submitError" :show-retry="false" />
     </div>
 
     <template #footer>
-      <Button variant="outline" :disabled="submitting || uncertain" @click="emit('close')">取消</Button>
-      <Button variant="outline" :disabled="loading || submitting || uncertain" @click="runPreview">重新预览</Button>
-      <Button :disabled="!preview || !confirmed || submitting || stale || scopeChanged" @click="submit">
+      <Button variant="outline" :disabled="submitting" @click="emit('close')">{{ resultId ? '关闭' : '取消' }}</Button>
+      <Button v-if="!recoverPending && !resultId" variant="outline" :disabled="loading || submitting || uncertain || !!storageFailure" @click="runPreview">重新预览</Button>
+      <Button v-if="!resultId && (!recoverPending || pending)" :disabled="!!storageFailure || submitting || (!pending && (!preview || !confirmed || stale || scopeChanged))" @click="submit">
         <Loader2 v-if="submitting" class="animate-spin" aria-hidden="true" />
         {{ submitting ? '正在核对…' : uncertain ? '核对同一次提交' : '确认提交' }}
       </Button>

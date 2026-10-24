@@ -29,7 +29,7 @@
 | 007 | 成员服务首页、客户端说明、复制/二维码/下载、配置取回检查不冒充真实连接 | 实际客户端平台兼容和真实连接未运行 |
 | 008 | 已知用量/额度/期限分开，不完整数据不一律清零；真实用量信封与重试 | 历史周期与真实流量对应需 B 域和真实环境验收 |
 | 009 | 密码错误不误踢会话、失效确认后跳登录、真实撤销数；两种重置分开，单节点默认、全量确认 | 网络丢响应后的凭据轮换核对仍需人工刷新/联系管理员，无法证明已轮换时不显示成功；会话列表范围见契约冲突 |
-| 010 | 逐对象预览、同 key 重试、TTL/范围保护、state 结果和轮询 | 未确认提交若离开/刷新页面，key 未持久化；尚缺跨刷新核对入口，不应声称故事完整关闭 |
+| 010 | 逐对象预览、同 key 重试、TTL/范围保护、state 结果和轮询；追加当前账号/操作范围 pending 持久化与刷新后核对入口 | 本轮仅关闭未确认提交的前端持久恢复缺口；真实后端响应丢失/回放及浏览器旅程未实测，不宣称故事完整验收 |
 | 011 | 暂停/恢复操作保留，同步任务持续追踪，不假称实际断连；共享节点风险说明 | 60 秒窗口、已有/新连接撤权与恢复未运行，依赖后端/Agent |
 | 012 | 工作台异常入口、任务持续反馈、运行页诊断、回滚目标失败明确 | 真实坏节点/旧回执/积压故障链未运行 |
 | 013 | 用量真实解包、修正和边界标记、周期展示与导出；查询范围保护 | 账本守恒、补报归属由 B 域验证，本轮未修改/证明后端 |
@@ -41,13 +41,23 @@
 
 ## 契约与剩余风险
 
-唯一来源为主工作区 `.ai/design/product-readiness/backend.md` §4.6。发现内部冲突：§4.6 中 listMeNodes/getMeUsage/listMeSessions 的 request_fields=[]，但 §4.2 描述这些列表的 cursor 分页；既有成员用量实现已经发送 cursor。未另立 schema 或新增端点；需主协调修订唯一契约，再统一成员节点与会话分页。当前不会将加载页数/本页计数冒充服务端全部总数。
+唯一来源为主工作区 `.ai/design/product-readiness/backend.md`。成员三端点分页现已由主明确为 limit/cursor，后端由主另行实现；本轮不争改 api/types，也未修改分页实现。不会将加载页数/本页计数冒充服务端全部总数。
 
 `setup`、`upgrade-readiness`、新周期和邀请事务字段需与 A/B/C 后端统一候选联调。字段缺失/端点失败显示未知或错误，不算后端完成。
 
-批量未确认 key 目前仅弹窗生命周期保留；刷新后的结果核对尚未闭合。成员凭据轮换端点没有幂等契约，未伪造安全自动重试。真实连通性、停止确认、用量账本完整性不能由 Vue 单元测试证明。
+批量未确认 key 的前端持久恢复见下节。成员凭据轮换端点没有幂等契约，未伪造安全自动重试。真实连通性、停止确认、用量账本完整性不能由 Vue 单元测试证明。
 
-## 局部验证与观察方式
+## 追加交付：刷新后的未确认批量提交核对
+
+- 隔离 worktree、独立分支 `fix/e-pending-recovery`；按顺序采用 `5f0be4c`、`d9fd467`、`49181bc`、`958b487`（本分支对应 `faea432`、`eb7ff96`、`73d29ae`、`f03cc25`）。新增提交仅含 ImpactPreviewDialog/helper/spec、成员批量入口与本 handoff，无需主代写。
+- `lib/batchPending.ts`：localStorage 按当前账号 ID 隔离；记录再按操作与规范化范围摘要隔离。仅存账号 ID、操作、范围摘要、目标摘要/数量、幂等键以及提交必需的 preview_id/rules_version/member_set_digest/confirm。不存原始表单、成员对象、reason、CSRF、token 或密码。UI 摘要不是授权校验，后端 preview/conclusion 校验保持原样。
+- 请求前写入并回读确认。响应丢失、5xx、认证/限流等不能证明原提交失败时保留原请求与 key，不生成新 key、不自动无限重试。刷新后可在成员页“核对未确认批量提交”选择原记录并手动核对；原范围再次打开预览也会直接恢复 pending，不重做旅程。恢复不要求重新选择原成员。
+- 恢复只向后端回放原 key/preview 请求，即使预览已过期也不生成替代预览、不放宽后端过期/变更结论校验。后端成功或明确业务拒绝后才清理。成功保留记录链接，并区分 idempotent_replay；明确拒绝后必须重新预览、重新确认。
+- 切换账号/退出时失效当前弹窗请求代次，不显示旧账号的 pending 或在途成功响应；旧账号记录保留供原账号登录后核对。存储读写失败、损坏、静默丢写均停止提交并明确无法安全恢复，不宣称成功。
+- 本次实际验证：`npm run typecheck` 通过；`npx vitest run src/components/ImpactPreviewDialog.spec.ts src/lib/batchPending.spec.ts src/lib/batch.spec.ts src/views/admin/MembersView.spec.ts`，4 文件、23 测试通过，失败 0、跳过 0。未跑全前端构建、浏览器 E2E、真实后端故障注入、部署。
+- 剩余边界：localStorage 被浏览器/用户主动清空或跨设备不可恢复；存储不可用时按提示人工核对变更记录，不提供无凭据猜测重试。多标签并发写入没有跨标签事务保证；本轮不宣称浏览器存储具备后端事务级保证。其余故事与原交接未验事项不因本次局部测试自动通过。
+
+## 候选链原有局部验证与观察方式
 
 - `npm run typecheck` 最终通过。
 - 定向 Vitest：`AppShell.spec.ts`、`SetupChecklist.spec.ts`、`journey.spec.ts`、`MeSecurityView.spec.ts`、`ImpactPreviewDialog.spec.ts`、`nodeDraft.spec.ts`、`ConfirmDialog.spec.ts`、`endpoints.spec.ts`、`MembersView.spec.ts`、`MeUsageView.spec.ts`、`subscriptionDraft.spec.ts`、`TemplatesView.spec.ts`、`batch.spec.ts`、`StatusBadge.spec.ts`：14 文件，81 通过，失败 0，跳过 0。
