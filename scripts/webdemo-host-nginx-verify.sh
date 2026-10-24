@@ -746,6 +746,8 @@ main() {
   fi
   nginx_stop
   stop_panel
+  # Chromium creates caches under the temporary HOME; re-assert owner-only modes.
+  chmod -R go-rwx "$HOME_ISO" "$WORK/nginx" "$WORK/nss" "$WORK/pg" "$WORK/pki" 2>/dev/null || true
   leftover_check
   snapshot_host_identity "$EVIDENCE/host-after.json"
   compare_host_identity
