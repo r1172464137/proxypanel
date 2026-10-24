@@ -792,5 +792,24 @@
       "postgres",
       "unix"
     ]
+  },
+  {
+    "id": "api/me-pagination",
+    "packages": [
+      "./internal/panel/api"
+    ],
+    "run": "^TestMePaginationPostgres$",
+    "expected_tests": [
+      "TestMePaginationPostgres"
+    ],
+    "stories": [
+      "US-PR-008",
+      "US-PR-009",
+      "US-PR-018"
+    ],
+    "requires": [
+      "postgres"
+    ],
+    "timeout_seconds": 120
   }
 ]
