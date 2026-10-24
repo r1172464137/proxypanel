@@ -20,7 +20,6 @@ import (
 	"proxypanel/internal/panel/ids"
 	"proxypanel/internal/panel/protocol"
 	"proxypanel/internal/panel/secrets"
-	"proxypanel/internal/panel/store"
 )
 
 const sessionCookieName = "pp_session"
@@ -275,12 +274,26 @@ func (s *Server) handleMeStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMeNodes(w http.ResponseWriter, r *http.Request) {
-	res, err := s.Store.EvaluateAccess(r.Context(), memberFrom(r.Context()).ID)
+	member := memberFrom(r.Context()).ID
+	limit, after, err := s.mePage(r, "nodes", member)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
 	}
-	nodes := s.Store.AllowedNodes(r.Context(), res)
+	res, err := s.Store.EvaluateAccess(r.Context(), member)
+	if err != nil {
+		s.writeError(w, r, err)
+		return
+	}
+	nodes, more := meNodePage(s.Store.AllowedNodes(r.Context(), res), limit, after)
+	var next *string
+	if more {
+		next, err = s.meNext("nodes", member, meNodeKeys(nodes[len(nodes)-1]))
+		if err != nil {
+			s.writeError(w, r, err)
+			return
+		}
+	}
 	items := make([]map[string]any, 0, len(nodes))
 	for _, n := range nodes {
 		ep, _ := protocol.EndpointFor(n)
@@ -289,22 +302,41 @@ func (s *Server) handleMeNodes(w http.ResponseWriter, r *http.Request) {
 			"network": ep.Network, "security": ep.Security, "flow": ep.Flow,
 		})
 	}
-	s.writeList(w, items, nil)
+	s.writeList(w, items, next)
 }
 
 func (s *Server) handleMeUsage(w http.ResponseWriter, r *http.Request) {
 	m := memberFrom(r.Context())
-	rows, err := s.Store.ListUsage(r.Context(), store.UsageFilter{MemberID: m.ID, Limit: 200})
+	limit, after, err := s.mePage(r, "usage", m.ID)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
 	}
-	adj, err := s.Store.ListQuotaAdjustments(r.Context(), m.ID, 100)
+	rows, err := s.Store.ListMeUsagePage(r.Context(), m.ID, limit, after)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
 	}
-	s.writeList(w, map[string]any{"usage": rows, "adjustments": adj}, nil)
+	var next *string
+	if len(rows) > limit {
+		rows = rows[:limit]
+		last := rows[len(rows)-1]
+		next, err = s.meNext("usage", m.ID, []string{meTime(last.PeriodStart), last.NodeID, meTime(last.PeriodEnd)})
+		if err != nil {
+			s.writeError(w, r, err)
+			return
+		}
+	}
+	adj := make([]domain.QuotaAdjustment, 0)
+	if after == nil {
+		adj, err = s.Store.ListMeAdjustments(r.Context(), m.ID)
+		if err != nil {
+			s.writeError(w, r, err)
+			return
+		}
+	}
+	// These are paged detail aggregates; the whole-cycle summary remains in me/status.
+	s.writeList(w, map[string]any{"usage": rows, "adjustments": adj}, next)
 }
 
 func (s *Server) currentToken(r *http.Request, memberID string) (string, string, error) {
@@ -387,12 +419,27 @@ func (s *Server) handleMePassword(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMeSessions(w http.ResponseWriter, r *http.Request) {
 	m := memberFrom(r.Context())
 	sess := sessionFrom(r.Context())
-	items, err := s.Store.ListSessions(r.Context(), m.ID, sess.ID)
+	limit, after, err := s.mePage(r, "sessions", m.ID)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
 	}
-	s.writeList(w, items, nil)
+	items, err := s.Store.ListMeSessionsPage(r.Context(), m.ID, sess.ID, limit, after)
+	if err != nil {
+		s.writeError(w, r, err)
+		return
+	}
+	var next *string
+	if len(items) > limit {
+		items = items[:limit]
+		last := items[len(items)-1]
+		next, err = s.meNext("sessions", m.ID, []string{meTime(last.CreatedAt), last.ID})
+		if err != nil {
+			s.writeError(w, r, err)
+			return
+		}
+	}
+	s.writeList(w, items, next)
 }
 
 func (s *Server) handleMeSessionDelete(w http.ResponseWriter, r *http.Request) {
