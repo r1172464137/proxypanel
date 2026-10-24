@@ -1,0 +1,290 @@
+{
+ "feature": "product-readiness",
+ "phase": "backend",
+ "validation_revision": "r3-revalidation",
+ "document_candidate": "fea31871586534927f6bee2cb32754587e141ba8",
+ "candidate_under_test": "3709328113115a7a65c2e0a8fc390102715b6683",
+ "main_root": "/home/compile/Work/proxypanel",
+ "p1_closure": {
+  "file": "internal/panel/api/abc_readiness_test.go",
+  "before_sha256": "7fb82fb9e8f421d4ffa20a9d766cc7d166f2dfdca953eb1dbe399847a696a67b",
+  "after_sha256": "b7683f84b0920b4e4c89d9d4162165269de8e7c18c706eae14f285fb9f2baa64",
+  "diff": "assertSource(\"unknown\") -> assertSource(\"ready\") + explanatory comment after registerAgent",
+  "retained_controls": [
+   "checksum corruption still assertSource(\"blocked\")",
+   "recovery-mode/enter then assertSource(\"blocked\")",
+   "auth 401/403, same-snapshot, private-material leak checks unchanged"
+  ],
+  "matches_dec018_scope": "internal/panel/store/readiness.go:381 requireExternalEvidence = len(Pending)!=0 || baseline!=\"\""
+ },
+ "production_bytes_unchanged": {
+  "readiness.go": "68b13c3179600e929fc806358bd032b4bcf5bcd3a0f811aeb49a6c2c430d2e1e",
+  "scripts/backend-test-manifest.json": "9a368482fa5aec380f4df913b325ef36b4e9fd83ba3b4461e6fc2a619b0e2148",
+  "design_backend.md": "8e5606ff196bf4edb58cecca5f7707619913c1e8d3d92b1fd52f260b9f3f4930",
+  "backup-recovery.md": "ba106fe8028b3843d6e32b5877aa8bbd79d5d487ec2002187cca810c192752dd",
+  "main_changed_files_since_3709328_excluding_ai_and_webdemo_tests": [],
+  "note": "git diff 3709328..HEAD for store/cmd/migrations/scripts/docs/design was empty; only .ai/ and web-demo test assets changed"
+ },
+ "new_authoritative_run": {
+  "path": ".ai/evidence/backend-test/20261024T122047Z-8d27c817",
+  "status": "passed",
+  "inputs_stable": true,
+  "input_count": 252,
+  "input_mismatch": [],
+  "input_missing": [],
+  "selections": [
+   {
+    "id": "api/abc-readiness",
+    "status": "passed",
+    "expected": 2,
+    "ran": 2,
+    "failed": [],
+    "skipped": [],
+    "missing": [],
+    "exit": 0,
+    "command": [
+     "go",
+     "test",
+     "-json",
+     "-count=1",
+     "-p=1",
+     "-timeout=120s",
+     "-run",
+     "^(TestABCReadinessMountedDuringRecovery|TestUpgradeReadinessUsesConfiguredStoreNotRequestPath)$",
+     "./internal/panel/api"
+    ],
+    "started": "2026-10-24T12:20:47.915059+00:00",
+    "ended": "2026-10-24T12:20:49.184032+00:00"
+   }
+  ],
+  "jsonl": {
+   "actions": {
+    "start": 1,
+    "run": 2,
+    "output": 6,
+    "pass": 3
+   },
+   "failTests": [],
+   "skips": [],
+   "runTests": [
+    "TestUpgradeReadinessUsesConfiguredStoreNotRequestPath",
+    "TestABCReadinessMountedDuringRecovery"
+   ]
+  },
+  "abc_test_sha_in_inputs": "b7683f84b0920b4e4c89d9d4162165269de8e7c18c706eae14f285fb9f2baa64"
+ },
+ "reused_store_delivery_evidence": {
+  "path": ".ai/evidence/backend-test/20261024T113542Z-7676d17a",
+  "status": "passed",
+  "inputs_stable": true,
+  "input_count": 248,
+  "input_mismatch": [
+   "internal/panel/api/abc_readiness_test.go"
+  ],
+  "input_missing": [],
+  "mismatch_scope": "only internal/panel/api/abc_readiness_test.go, which is outside this run's ./internal/panel/store and ./cmd/panel selections",
+  "jsonl0": {
+   "actions": {
+    "start": 1,
+    "run": 61,
+    "output": 149,
+    "pass": 62
+   },
+   "failTests": [],
+   "skips": [],
+   "runTests": [
+    "TestReadinessPublicContractSameSnapshot",
+    "TestReadinessPublicContractUnverifiedSchema",
+    "TestUpgradeReadinessEmptyReadOnlyAndMigrate",
+    "TestUpgradeReadinessLegacyAndUnknown",
+    "TestUpgradeReadinessPendingAgentRequiresEvidence",
+    "TestUpgradeReadinessACKLostAndHashMismatch",
+    "TestUpgradeReadinessSchemaOneCannotClaimIntents",
+    "TestUpgradeReadinessDurableExecutionPending",
+    "TestUpgradeReadinessImportRollback",
+    "TestUpgradeReadinessDatabaseFingerprintChange",
+    "TestUpgradeDeliveryHelper",
+    "TestLoadUpgradeEvidenceValidAndUnchanged",
+    "TestLoadUpgradeEvidenceEmptyAndMissing",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials/bad-export-hash",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials/bad-stopped-hash",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials/bad-period-hash",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials/bad-owner-hash",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials/malformed-hash",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials/escape",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials/internal-dotdot",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials/absolute",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials/symlink",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials/directory-symlink",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials/directory",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials/fifo",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials/missing-reference",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials/agent-ID",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials/agent-format",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials/manifest-format",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials/version-required",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials/period-range",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials/anchor-zero",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials/anchor-32",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials/local-timezone",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials/empty-timezone",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials/unknown-timezone",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials/owner-range",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials/owner-server-required",
+    "TestLoadUpgradeEvidenceRejectsBadMaterials/negative-revision",
+    "TestLoadUpgradeEvidenceStrictJSONAndLimit",
+    "TestLoadUpgradeEvidenceStrictJSONAndLimit/manifest-unknown",
+    "TestLoadUpgradeEvidenceStrictJSONAndLimit/manifest-duplicate",
+    "TestLoadUpgradeEvidenceStrictJSONAndLimit/manifest-case-alias",
+    "TestLoadUpgradeEvidenceStrictJSONAndLimit/manifest-trailing",
+    "TestLoadUpgradeEvidenceStrictJSONAndLimit/manifest-garbage",
+    "TestLoadUpgradeEvidenceStrictJSONAndLimit/manifest-limit",
+    "TestLoadUpgradeEvidenceStrictJSONAndLimit/agent-unknown",
+    "TestLoadUpgradeEvidenceStrictJSONAndLimit/agent-trailing",
+    "TestLoadUpgradeEvidenceStrictJSONAndLimit/sample-unknown",
+    "TestUpgradeEvidenceFingerprintAndManifestSymlink",
+    "TestUpgradeOpenFinalProofRecheck",
+    "TestUpgradeOpenFinalProofRecheck/unchanged",
+    "TestUpgradeOpenFinalProofRecheck/business-write",
+    "TestUpgradeOpenFinalProofRecheck/materials",
+    "TestUpgradeOpenFinalProofRecheck/expired-fence",
+    "TestUpgradeOpenPostMigrationSemantics",
+    "TestUpgradeOpenControlledMigration",
+    "TestUpgradeOpenControlledMigration/5",
+    "TestUpgradeOpenControlledMigration/2",
+    "TestUpgradeOpenSchemaCurrentAgentWithoutTransitionEvidence"
+   ]
+  },
+  "jsonl1": {
+   "actions": {
+    "start": 2,
+    "run": 39,
+    "output": 108,
+    "pass": 41
+   },
+   "failTests": [],
+   "skips": [],
+   "runTests": [
+    "TestUpgradeDeliveryHelper",
+    "TestAdministratorStopReadyImport",
+    "TestAdministratorStopRejects",
+    "TestAdministratorStopRejects/capture-before-stop",
+    "TestAdministratorStopRejects/sample-after-stop",
+    "TestAdministratorStopRejects/changed-record",
+    "TestAdministratorStopRejects/wrong-database",
+    "TestAdministratorStopRejects/no-fence",
+    "TestAdministratorStopRejects/unacknowledged-reports",
+    "TestAdministratorStopRejects/wrong-state-hash",
+    "TestAdministratorStopRejects/pid-reused-as-core",
+    "TestAdministratorStopRejects/no-process-start-identity",
+    "TestAdministratorStopRejects/not-stopped",
+    "TestAdministratorStopRejects/wrong-generation",
+    "TestAdministratorStopRejects/wrong-pg-generation",
+    "TestAdministratorStopRejects/wrong-hash",
+    "TestAdministratorStopRejects/expired-fence",
+    "TestAdministratorStopRejects/wrong-agent-version",
+    "TestAdministratorStopRejects/missing-instance",
+    "TestAdministratorStopRejects/incomplete-inventory",
+    "TestAdministratorStopRejects/sampling-failed",
+    "TestAdministratorStopRejects/wrong-window",
+    "TestAdministratorStopRejects/no-admin-review",
+    "TestAdministratorStopRejects/pending-report",
+    "TestAdministratorStopRejects/wrong-server",
+    "TestAdministratorStopRejects/no-execution-reconciliation",
+    "TestAdministratorStopRejects/wrong-revision",
+    "TestAdministratorStopImportRollback",
+    "TestUpgradeOpenFinalProofRecheck",
+    "TestUpgradeOpenFinalProofRecheck/unchanged",
+    "TestUpgradeOpenFinalProofRecheck/business-write",
+    "TestUpgradeOpenFinalProofRecheck/materials",
+    "TestUpgradeOpenFinalProofRecheck/expired-fence",
+    "TestUpgradeOpenPostMigrationSemantics",
+    "TestUpgradeOpenControlledMigration",
+    "TestUpgradeOpenControlledMigration/5",
+    "TestUpgradeOpenControlledMigration/2",
+    "TestUpgradeOpenSchemaCurrentAgentWithoutTransitionEvidence",
+    "TestCheckPreflightWithoutMasterKeyOrMigrations"
+   ]
+  },
+  "selections": [
+   {
+    "id": "store/upgrade-preflight",
+    "status": "passed",
+    "ran": 61,
+    "failed": [],
+    "skipped": []
+   },
+   {
+    "id": "upgrade/delivery",
+    "status": "passed",
+    "ran": 39,
+    "failed": [],
+    "skipped": []
+   }
+  ]
+ },
+ "c_recovery_evidence": {
+  "path": ".ai/evidence/web-demo/C/r3-final-green-20261024T115143Z-b7506f",
+  "runner_status": "pass",
+  "assertions": {
+   "assertion_count": 20,
+   "assertions_passed": 20,
+   "assertions_blocked": 0,
+   "assertions_failed": 0
+  },
+  "receipt_status": "pass",
+  "temporary_directory_removed": true,
+  "production_changes": false,
+  "base_commit": "a76909b4802654e6a0c1c3f7d713c5a663e82737",
+  "test_log": "--- PASS: TestWebDemoRestoreBackupRecovery",
+  "runner_receipt_sha256": "7803fcc51fd97324fe9ad4d2846d1b78c177a6e0ad8cfb2906803668e371bb1e",
+  "receipt_sha256": "41bcd9b4b11f9b4bc5538af562912af5510313066c97baa7585d045e789badd4",
+  "e2e_assets": {
+   "tests/e2e/webdemo_restore_test.go": "1ccec20f9c21c4eaeda00bac686256368e438f37976e8e33dd292aa844b411af",
+   "tests/e2e/run_webdemo_restore.py": "3736a65f4141edebeaffe2f5a13c66145d38044e3c6ba261b4c15f1f313c2be5",
+   "tests/e2e/webdemo_restore_manifest.json": "50bd12d580d93669314ba4953008b56600a5809587377aac0a35e99f9533f5f1"
+  },
+  "host_identity_unchanged": false,
+  "host_identity_attribution": "ENV: external AgentLab PID625047's xray child changed identity by itself; runner produced no signal; not a product failure and not a host-clean claim"
+ },
+ "carried_p2": [
+  {
+   "severity": "P2",
+   "location": "tests/e2e/webdemo_restore_test.go:710-716,748",
+   "issue": "restore-evidence.json remains the start-of-test placeholder status=fail",
+   "recheck": "main file still reports status=fail; receipt/runner-receipt/test.log are the authoritative pass records"
+  },
+  {
+   "severity": "P2",
+   "location": "internal/panel/store/upgrade_open_test.go:204-216",
+   "issue": "no explicit regression for recycled evidence plus a genuinely new migration file",
+   "recheck": "still only wrong-hash and in-run materials/fence negatives"
+  },
+  {
+   "severity": "P2",
+   "location": "docs/operations/backup-recovery.md:19-21",
+   "issue": "isolation window before recovery enter relies on operator process",
+   "recheck": "unchanged"
+  }
+ ],
+ "notes": {
+  "private_pg_role_lifecycle": "new run has no role-lifecycle record in result.json; evidence dir has no credential text; only input drift was the corrected test file, so no observed shared-environment contamination. Recorded as a limitation, not a P1.",
+  "scope": "read-only; no reruns, no source/test/design/state edits, no deploy, no subagents, no 15432/203/Agentlab/8443/8445 mutation"
+ },
+ "acceptance_result": "ACCEPTED_WITH_IMPROVEMENTS",
+ "task_status": "success",
+ "report_path": ".ai/quality/backend-accept-product-readiness-backend-r3-20261024-122207-3fedab77.md",
+ "write_scope": {
+  "created": [
+   ".ai/quality/backend-accept-product-readiness-backend-r3-20261024-122207-3fedab77.md",
+   ".ai/quality/backend-accept-product-readiness-backend-r3-20261024-122207-3fedab77-audit.json"
+  ],
+  "preserved": [
+   ".ai/quality/backend-accept-product-readiness-backend-r3-20261024-121422-a60074df.md",
+   ".ai/quality/backend-accept-product-readiness-backend-r3-20261024-121422-a60074df-audit.json"
+  ],
+  "modified": [],
+  "state_file_touched": false
+ }
+}

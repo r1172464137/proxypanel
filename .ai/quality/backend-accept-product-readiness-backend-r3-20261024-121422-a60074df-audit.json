@@ -1,0 +1,306 @@
+{
+ "feature": "product-readiness",
+ "phase": "backend",
+ "validation_revision": 3,
+ "document_candidate": "3709328113115a7a65c2e0a8fc390102715b6683",
+ "main_root": "/home/compile/Work/proxypanel",
+ "worktree": "/home/compile/Work/proxypanel-worktrees/pi-web-agent-976ab1df-ea71-4385-aaac-ac7448e721c4",
+ "production_change": {
+  "file": "internal/panel/store/readiness.go",
+  "sha256": "68b13c3179600e929fc806358bd032b4bcf5bcd3a0f811aeb49a6c2c430d2e1e",
+  "docs": {
+   "design_backend.md": "8e5606ff196bf4edb58cecca5f7707619913c1e8d3d92b1fd52f260b9f3f4930",
+   "decision_log": "4f049c46f5ad5e6ba0f3cc9981c9585e94418b6a4416244de06d9b82ae377cc2",
+   "backup_recovery.md": "ba106fe8028b3843d6e32b5877aa8bbd79d5d487ec2002187cca810c192752dd"
+  },
+  "decision": "DEC-product-readiness-018"
+ },
+ "independent_checks": {
+  "authoritative_store_inputs": {
+   "count": 248,
+   "mismatch": [],
+   "missing": [],
+   "inputs_stable": true
+  },
+  "authoritative_store_jsonl": {
+   "0": {
+    "run": 61,
+    "pass": 62,
+    "failTestEvents": 0,
+    "skips": 0,
+    "unique": 61
+   },
+   "1": {
+    "run": 39,
+    "pass": 41,
+    "failTestEvents": 0,
+    "skips": 0,
+    "unique": 39
+   },
+   "selections": [
+    {
+     "id": "store/upgrade-preflight",
+     "status": "passed",
+     "expected": 19,
+     "ran": 61,
+     "failed": [],
+     "skipped": [],
+     "missing_expected": []
+    },
+    {
+     "id": "upgrade/delivery",
+     "status": "passed",
+     "expected": 9,
+     "ran": 39,
+     "failed": [],
+     "skipped": [],
+     "missing_expected": []
+    }
+   ]
+  },
+  "c_assets": {
+   "tests/e2e/webdemo_restore_test.go": {
+    "sha256": "1ccec20f9c21c4eaeda00bac686256368e438f37976e8e33dd292aa844b411af",
+    "matched": true
+   },
+   "tests/e2e/run_webdemo_restore.py": {
+    "sha256": "3736a65f4141edebeaffe2f5a13c66145d38044e3c6ba261b4c15f1f313c2be5",
+    "matched": true
+   },
+   "tests/e2e/webdemo_restore_manifest.json": {
+    "sha256": "50bd12d580d93669314ba4953008b56600a5809587377aac0a35e99f9533f5f1",
+    "matched": true
+   },
+   "go.mod": {
+    "sha256": "7308275fe78a7199b1120f4adb66dddef2758ba95f73b60445a35384fe817727",
+    "matched": true
+   },
+   "go.sum": {
+    "sha256": "d4390324f6a9cda162f9e75754a82d77484e2b0807a041b8246f5e9b834b3b81",
+    "matched": true
+   },
+   "migrations/0001_init.sql": {
+    "sha256": "7b66684c676c39865cabad585d8ffffeab273beb1eb61deb6f8a0f0dbb04d415",
+    "matched": true
+   },
+   "migrations/0002_batch_preview.sql": {
+    "sha256": "d74662653a23db233317869ccd6a09b116447f1d95c4ac846b6734db4dbd8d79",
+    "matched": true
+   },
+   "migrations/0003_maintenance.sql": {
+    "sha256": "09896ad6350017f966c9e59f3cdcb007ba0b36d254fe5545c492df7b0b441e83",
+    "matched": true
+   },
+   "migrations/0004_node_external_port.sql": {
+    "sha256": "80b14b3d4e17da11c955d017c162be75dd4754b9e0f9fb2d798c9f584082e919",
+    "matched": true
+   },
+   "migrations/0005_period_and_owner_history.sql": {
+    "sha256": "3416e9bbdf73f5cfe83845914bd5a1d30df6440df6888769a0cfffa8877b6432",
+    "matched": true
+   },
+   "migrations/0006_batch_task_durability.sql": {
+    "sha256": "d08d5e0b5e95496ce80ab4bda89dfa48e911e999036828487517182a384884d2",
+    "matched": true
+   }
+  },
+  "c_tools": {
+   "/home/compile/sdk/go1.27.3/go/bin/go": {
+    "sha256": "5f5eb6d0b2fb6aa0bb5d5f8c5f1c944e0de955c925f0111af92a9d8f79680b5b",
+    "matched": true
+   },
+   "/home/compile/sdk/pkg/usr/lib/postgresql/17/bin/postgres": {
+    "sha256": "a8de97eb871cee1fdb84cad48ec4e2c481ac826c3801d9e8bb35adec971f7e43",
+    "matched": true
+   },
+   "/home/compile/sdk/pkg/usr/lib/postgresql/17/bin/pg_dump": {
+    "sha256": "a656502909efe19336fc411e89abba2a32b5bfaecdb959a7acb4b4523ed5a15d",
+    "matched": true
+   },
+   "/home/compile/sdk/pkg/usr/lib/postgresql/17/bin/pg_restore": {
+    "sha256": "84657281fa67ecd868c7193dd9dc71f2932b95fb78bc9bd606ab663a4b98bef3",
+    "matched": true
+   },
+   "/home/compile/Work/bin/xray": {
+    "sha256": "8255dd939c34cf966cc91517b6324dd3c8d0bcf49ffac8beca049a38c46845ed",
+    "matched": true
+   }
+  },
+  "c_receipt": {
+   "status": "pass",
+   "assertions": {
+    "assertion_count": 20,
+    "assertions_passed": 20,
+    "assertions_failed": 0,
+    "assertions_blocked": 0
+   },
+   "generations": {
+    "agent_copy": "1",
+    "backup": 1,
+    "restored": 3360207166945290,
+    "source_now": 1
+   },
+   "post_exit_generation": 3360207166945290,
+   "post_exit_expected_users": 1,
+   "ack_deleted_gap": {
+    "batches": 1,
+    "bytes": 49546,
+    "disposition": "unrecoverable from the Agent queue: it was ACKed and deleted before the dump; deliberately never re-imported from the surviving source"
+   },
+   "source_revocation": {
+    "active_credentials_after": 0,
+    "audit_id": "aud_4ngkouribf6ultxehm3otvfkxq",
+    "credentials_revoked": 1,
+    "revoked_at": "2026-10-24T19:52:00.732629+08:00"
+   },
+   "source_and_target_are_distinct": true,
+   "test_failed": false
+  },
+  "c_main_verification": {
+   "status": "verified",
+   "runner": "pass",
+   "assertion_count": 20,
+   "passed": 20,
+   "failed": 0,
+   "blocked": 0,
+   "host_identity_unchanged": false,
+   "temporary_directory_removed": true,
+   "evidence": ".ai/evidence/web-demo/C/r3-final-green-20261024T115143Z-b7506f"
+  },
+  "c_runner_isolation": {
+   "status": "pass",
+   "temporary_directory_removed": true,
+   "skipped": false,
+   "existing_objects_unchanged": false,
+   "existing_object_delta": {
+    "preexisting_missing": [
+     "1732329"
+    ],
+    "preexisting_changed": [],
+    "new_external": [
+     "1733099"
+    ],
+    "own_children_finished": [],
+    "preexisting_unchanged": false
+   },
+   "isolation_diagnosis": {
+    "code": "ENV_UNATTRIBUTED_EXTERNAL_PROCESS_CHANGE",
+    "missing_pids": [
+     "1732329"
+    ],
+    "changed_pids": [],
+    "note": "not caused by this runner: it only stops its own owned child PIDs (pidfd/terminate) and never signals another owner process",
+    "why_not_silently_ignored": "the pre-existing identity snapshot exists to detect exactly this; it is reported rather than relaxed"
+   },
+   "timeout_recovered_owned_core_pids": []
+  },
+  "c_restore_evidence_placeholder": {
+   "status": "fail",
+   "keys": [
+    "scope",
+    "source_and_target_are_distinct",
+    "source_cluster",
+    "status",
+    "target_cluster"
+   ],
+   "note": "written as a start-of-test placeholder and never rewritten; receipt.json/runner-receipt.json/test.log are authoritative"
+  },
+  "host_identity_readonly_recheck": {
+   "shared_pg_pids_present": [
+    "1547858",
+    "1547864",
+    "1547865",
+    "1547867",
+    "1547868",
+    "1547869"
+   ],
+   "agent_lab_parent_present": "625047",
+   "xray_child_1733099_present": false,
+   "note": "read-only ps; no signals, no PG/Agent/Xray interaction"
+  },
+  "sensitive_material_scan": {
+   "files_with_Bearer_in_c_evidence": [],
+   "note": "grep only; no token/key/rawstate read or reproduced"
+  }
+ },
+ "static_review": {
+  "requireExternalEvidence": {
+   "location": "internal/panel/store/readiness.go:381",
+   "value": "len(r.Pending)!=0 || baseline!=\"\"",
+   "computed_after": "checkUpgradeMigrations in the same snapshot (readiness.go:369-381)"
+  },
+  "empty_db_explicit_invalid_material": {
+   "location": "internal/panel/store/readiness.go:382-393",
+   "behavior": "len(data)==0 with pending still loads configured evidence; broken manifest -> EVIDENCE_INVALID blocked before the len(data)==0 early return",
+   "covered_by_execution": [
+    "TestLoadUpgradeEvidenceRejectsBadMaterials (load layer)",
+    "cmd/panel/check_test.go missing configured material -> blocked exit 2"
+   ]
+  },
+  "current_agent_no_proof_positive": {
+   "test": "TestUpgradeReadinessLegacyAndUnknown / TestUpgradeOpenSchemaCurrentAgentWithoutTransitionEvidence"
+  },
+  "current_agent_internal_risk_negative": {
+   "test": "upgrade_open_test.go TASK_ORPHAN -> domain.CodeReadinessBlocked typed"
+  },
+  "pending_agent_missing_proof": {
+   "test": "TestUpgradeReadinessPendingAgentRequiresEvidence -> unknown/AGENT_EVIDENCE_MISSING"
+  },
+  "old_proof_not_reused": {
+   "mechanism": "upgrade_evidence_stop.go:88 PostgreSQLSHA256 vs r.DatabaseSHA256; baseline only from the same run (store.go:288-292)",
+   "executed_negative": "upgrade_delivery_test.go wrong PostgreSQLSHA256 -> AGENT_STOP_REVIEW_INVALID",
+   "gap": "no executed case with a genuinely new pending migration + recycled evidence (P2-2)"
+  },
+  "api_projection": "internal/panel/api/readiness.go -> Store.CheckUpgradeReadiness; MarshalJSON projects internal checks only",
+  "upgrade_open_flow": {
+   "store.go:200-211": "preflight ready gate",
+   "store.go:290-299": "postflight receipt only when applied"
+  }
+ },
+ "findings": [
+  {
+   "severity": "P1",
+   "location": "internal/panel/api/abc_readiness_test.go:49-57; scripts/backend-test-manifest.json:797-813",
+   "type": "stale assertion after DEC018 scope change",
+   "reasoning": [
+    "newEnv -> store.Open with migrationsDir ../../../migrations => all 6 applied, Pending empty",
+    "no PANEL_UPGRADE_EVIDENCE_FILE in env => evidence file path empty",
+    "registerAgent creates one agents row (ops.go:110-162)",
+    "readiness.go:381 requireExternalEvidence=false => no AGENT_EVIDENCE_MISSING",
+    "assertSource(\"unknown\") compares wire status => actual \"ready\" => t.Fatalf"
+   ],
+   "after_change_execution_evidence": "none: authoritative run selects only store/upgrade-preflight and upgrade/delivery; r1-integrated-targeted api execution log points to 20261024T043929Z (pre-change)"
+  },
+  {
+   "severity": "P2",
+   "location": "tests/e2e/webdemo_restore_test.go:710-716,748",
+   "type": "placeholder evidence status=fail"
+  },
+  {
+   "severity": "P2",
+   "location": "internal/panel/store/upgrade_open_test.go:204-216",
+   "type": "missing regression for recycled evidence on a new migration"
+  },
+  {
+   "severity": "P2",
+   "location": "docs/operations/backup-recovery.md:19-21",
+   "type": "isolation window before recovery enter relies on operator process"
+  }
+ ],
+ "gates_summary": {
+  "passed": 15,
+  "failed": 1,
+  "not_applicable": 1
+ },
+ "acceptance_result": "REJECTED",
+ "report_path": ".ai/quality/backend-accept-product-readiness-backend-r3-20261024-121422-a60074df.md",
+ "write_scope": {
+  "created": [
+   ".ai/quality/backend-accept-product-readiness-backend-r3-20261024-121422-a60074df.md",
+   ".ai/quality/backend-accept-product-readiness-backend-r3-20261024-121422-a60074df-audit.json"
+  ],
+  "modified": [],
+  "other_writes": false,
+  "state_file_touched": false
+ }
+}
