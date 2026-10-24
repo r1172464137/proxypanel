@@ -226,6 +226,9 @@ obtain_nginx() {
     fi
     dpkg-deb -e "$deb" "$dir/control"
     dpkg-deb -x "$deb" "$dir/rootfs"
+    # Package payloads carry world-readable modes; keep the whole private prefix
+    # owner-only as required for this evidence tree.
+    chmod -R go-rwx "$dir/control" "$dir/rootfs"
     cp "$dir/rootfs/usr/sbin/nginx" "$dir/nginx"
     echo "deb=$deb" >>"$dir/provenance.txt"
     echo "deb_sha256=$(sha256 "$deb")" >>"$dir/provenance.txt"
@@ -352,6 +355,7 @@ install_nss_trust() {
     local url="$APT_BASE/main/n/nss/libnss3-tools_3.98-1ubuntu0.3_amd64.deb"
     if curl -fsS --max-time 120 -o "$deb" "$url"; then
       dpkg-deb -x "$deb" "$dir/rootfs"
+      chmod -R go-rwx "$dir/rootfs"
       certutil="$dir/rootfs/usr/bin/certutil"
       echo "certutil_url=$url" >"$dir/provenance.txt"
       echo "certutil_deb_sha256=$(sha256 "$deb")" >>"$dir/provenance.txt"
