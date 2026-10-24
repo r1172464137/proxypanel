@@ -65,17 +65,9 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 	if dir == "" {
 		dir = "migrations"
 	}
-	if err := s.Migrate(ctx, dir); err != nil {
+	if err := s.migrate(ctx, dir, true); err != nil {
 		s.Close()
 		return nil, err
-	}
-	readiness, err := s.CheckUpgradeReadiness(ctx, false)
-	if err != nil || readiness.Status != "ready" {
-		s.Close()
-		if err != nil {
-			return nil, fmt.Errorf("post-migration readiness unavailable: %w", err)
-		}
-		return nil, fmt.Errorf("post-migration readiness %s: %v", readiness.Status, readiness.Checks)
 	}
 	return s, nil
 }
@@ -164,6 +156,12 @@ func (s *Store) now() time.Time {
 // The lock makes concurrent panel starts safe; a checksum mismatch aborts
 // instead of silently re-applying a changed migration.
 func (s *Store) Migrate(ctx context.Context, dir string) error {
+	return s.migrate(ctx, dir, false)
+}
+
+// Open keeps its final verification in the same controlled migration run and
+// under the same advisory lock. No baseline survives this call.
+func (s *Store) migrate(ctx context.Context, dir string, postflight bool) error {
 	if s.readOnly {
 		return ErrReadOnly
 	}
@@ -212,6 +210,7 @@ func (s *Store) Migrate(ctx context.Context, dir string) error {
 		return fmt.Errorf("upgrade preflight %s: %v", proof.Status, proof.Checks)
 	}
 	expected := proof.DatabaseSHA256
+	applied := false
 
 	for _, name := range files {
 		body, err := os.ReadFile(filepath.Join(dir, name))
@@ -244,7 +243,7 @@ func (s *Store) Migrate(ctx context.Context, dir string) error {
 		}
 		// Freeze old facts for recheck + DDL + evidence import. No business
 		// writer can alter the proof after it has been validated in this tx.
-		if err := lockUpgradeTables(ctx, tx); err != nil {
+		if err := lockUpgradeReadinessTx(ctx, tx); err != nil {
 			_ = tx.Rollback()
 			return err
 		}
@@ -283,6 +282,14 @@ func (s *Store) Migrate(ctx context.Context, dir string) error {
 		if err := tx.Commit(); err != nil {
 			return err
 		}
+		applied = true
+	}
+	if postflight {
+		var receipt *migrationReadinessReceipt
+		if applied {
+			receipt = &migrationReadinessReceipt{baseline: proof.DatabaseSHA256, expected: expected, evidence: proof.EvidenceSHA256}
+		}
+		return s.checkPostMigrationReadiness(ctx, conn, receipt)
 	}
 	return nil
 }

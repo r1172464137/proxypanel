@@ -67,6 +67,15 @@ func stopFixture(t *testing.T, st *Store) (*UpgradeEvidence, *UpgradeStopReview,
 	t.Helper()
 	upgradeSeedAgent(t, st)
 	upgradeSeedMember(t, st)
+	// Newer prefixes require persisted current-period history too. Seed the
+	// same legitimate current interval before capturing the stop fingerprint.
+	var history bool
+	if err := st.DB.QueryRow(`SELECT to_regclass('member_periods') IS NOT NULL`).Scan(&history); err != nil {
+		t.Fatal(err)
+	}
+	if history {
+		upgradeExec(t, st, `INSERT INTO member_periods(member_id,period_start,period_end,timezone,anchor_day,source) SELECT id,period_start,period_end,period_timezone,period_anchor_day,'proven_current' FROM members WHERE id='m'`)
+	}
 	upgradeExec(t, st, `INSERT INTO nodes(id,server_id,name,protocol,host,port) VALUES ('n','s','node','vless','127.0.0.1',12345)`)
 	upgradeExec(t, st, `INSERT INTO core_instances(id,server_id,agent_id,node_id,generation,config_revision,state) VALUES ('c','s','a','n',7,0,'running')`)
 	fingerprint := upgradeReady(t, st).DatabaseSHA256

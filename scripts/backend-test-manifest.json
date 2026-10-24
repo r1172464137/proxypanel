@@ -821,7 +821,10 @@
       "TestLoadUpgradeEvidenceRejectsBadMaterials",
       "TestLoadUpgradeEvidenceStrictJSONAndLimit",
       "TestUpgradeEvidenceFingerprintAndManifestSymlink",
-      "TestUpgradeReadinessDurableExecutionPending"
+      "TestUpgradeReadinessDurableExecutionPending",
+      "TestUpgradeOpenControlledMigration",
+      "TestUpgradeOpenFinalProofRecheck",
+      "TestUpgradeOpenPostMigrationSemantics"
     ],
     "stories": [
       "US-PR-013",

@@ -64,6 +64,63 @@ func (s *Store) CheckUpgradeReadiness(ctx context.Context, preflight bool) (*Upg
 	return r, tx.Commit()
 }
 
+// migrationReadinessReceipt is stack-local to one migration run. It is created
+// only after at least one file committed, never persisted or retained by Store.
+// The baseline applies only to stop-review binding; all other checks use current
+// facts, whose full digest must equal the last file's expected post-state.
+type migrationReadinessReceipt struct {
+	baseline string
+	expected string
+	evidence string
+}
+
+// Lock the control row before other tables, matching business-writer lock
+// order. Table locks also freeze writers that do not use the control gate.
+func lockUpgradeReadinessTx(ctx context.Context, tx *sql.Tx) error {
+	var control bool
+	if err := tx.QueryRowContext(ctx, `SELECT to_regclass('control_state') IS NOT NULL`).Scan(&control); err != nil {
+		return err
+	}
+	if control {
+		if _, err := tx.ExecContext(ctx, `SELECT id FROM control_state WHERE id=1 FOR UPDATE`); err != nil {
+			return err
+		}
+	}
+	return lockUpgradeTables(ctx, tx)
+}
+
+// The caller still owns the migration advisory lock. READ COMMITTED is
+// intentional: after waiting for fact-freezing locks, read the latest committed
+// state, not a snapshot taken before a concurrent writer finished.
+func (s *Store) checkPostMigrationReadiness(ctx context.Context, conn *sql.Conn, receipt *migrationReadinessReceipt) error {
+	tx, err := conn.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		return fmt.Errorf("post-migration readiness unavailable: %w", err)
+	}
+	defer tx.Rollback()
+	if err := lockUpgradeReadinessTx(ctx, tx); err != nil {
+		return fmt.Errorf("post-migration readiness unavailable: %w", err)
+	}
+	baseline := ""
+	if receipt != nil {
+		baseline = receipt.baseline
+	}
+	r, err := s.checkUpgradeReadinessWithBaselineQ(ctx, tx, false, baseline)
+	if err != nil {
+		return fmt.Errorf("post-migration readiness unavailable: %w", err)
+	}
+	if receipt != nil && (r.DatabaseSHA256 != receipt.expected || r.EvidenceSHA256 != receipt.evidence) {
+		return fmt.Errorf("post-migration upgrade evidence or database changed; rerun preflight")
+	}
+	if r.Status != "ready" {
+		return fmt.Errorf("post-migration readiness %s: %v", r.Status, r.Checks)
+	}
+	if len(r.Pending) != 0 {
+		return fmt.Errorf("post-migration readiness incomplete: %v", r.Pending)
+	}
+	return tx.Commit()
+}
+
 type upgradeSnapshot map[string][]json.RawMessage
 
 func readUpgradeSnapshot(ctx context.Context, q querier) (upgradeSnapshot, string, error) {
@@ -177,10 +234,10 @@ func (s *Store) checkUpgradeReadinessQ(ctx context.Context, q querier, preflight
 	return s.checkUpgradeReadinessWithBaselineQ(ctx, q, preflight, "")
 }
 
-// Only Migrate supplies a baseline, after validating its initial ready proof.
-// A stop review binds that original snapshot, not the DDL/imports performed by
-// preceding files. Migrate still compares the CURRENT snapshot with the exact
-// expected post-file digest, and requires unchanged evidence on every file.
+// Only the controlled migration run supplies a baseline, after validating its
+// initial ready proof. A stop review binds that original snapshot, not its own
+// DDL/imports. Every file AND Open's final verification compare the CURRENT
+// snapshot with the exact expected digest and require unchanged evidence.
 func (s *Store) checkUpgradeReadinessWithBaselineQ(ctx context.Context, q querier, preflight bool, baseline string) (*UpgradeReadiness, error) {
 	r := &UpgradeReadiness{Status: "ready", Phase: "post-migrate", Checks: []ReadinessCheck{}, Applied: []string{}, Pending: []string{}}
 	if preflight {
