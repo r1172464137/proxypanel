@@ -67,9 +67,9 @@ func loadAgentInstaller(publicURL string) (*api.AgentInstallerConfig, error) {
 		return nil, nil
 	}
 	if !strings.HasPrefix(strings.TrimSpace(publicURL), "https://") {
-		if explicit {
-			return nil, errors.New("one-click Agent install requires an HTTPS PANEL_PUBLIC_URL")
-		}
+		// A non-HTTPS public URL only disables the one-click installer (the
+		// command would download over cleartext). Failing here would take the
+		// whole panel down for a feature the operator simply cannot use yet.
 		return nil, nil
 	}
 	return api.LoadAgentInstaller(scriptPath, publicURL, "26.3.27", artifacts)
