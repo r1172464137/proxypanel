@@ -87,6 +87,12 @@ F：真实部署/两托管TLS/安装systemd能力与安全隔离验证，专用w
 
 外部环境缺口保留：系统级Agent安装/完整硬化须独立有权限PID1环境；实际host nginx/public DNS/CA不由selfsigned preview或容器网关证明。主对照源确认US001/PRD要求域名证书/受保护HTTPS与两托管，未自行写“必须公有CA/公开DNS”或特定Orca/NVDA承诺；额外公有PKI/读屏器检查不能只因先前验收承接表提到就扩大为新业务规则，但仍如实not_run，不冒通过。实际host nginx是明确架构责任，另派私有用户态host进程补验证；masked截图用其新空fixture，不捕获preview。最终必要性由需求/设计/证据判定，不自动N/A，也不以当前内部IP预览授权更改正式支持范围。其余5路继续。
 
+### 主复验与运行队列检查点
+
+- monitor59仅默认sh不支持pipefail，任何测试都未启动；改显式bash后monitor60实际执行。`F/main-dd40fac-20261024T090139Z-2625af`：unit合同+合法/非法core识别通过；systemd在取得运行锁之前等待300s后明确ENV lease timeout，Agent尚未启动，不解释成应用重启失败或业务拒绝。保留raw JSON/exit/log，不放宽锁。
+- 09:07 UTC只读查明锁持有者为A的owned `webdemo-env.sh`（flock1632636、private `/tmp/wdemo.RlAhYXKF`、fixture1633882及Node1633912），至少持续20min；该run进度08:47:42停止，已落盘21条14PASS/7FAIL但并非最终报告。向A要求5min有界收尾，各组交阶段资产，不让全宿主队列等全18一次绿。
+- 09:15:42核对私有dir owner、fixture exe/cwd/starttime后，只向其已有`done`取消接口写入标记（未发送进程信号、未动其它环境），收据`A/main-budget-cancellation.json`。等待精确owned launcher退出及清理，不把取消算PASS。A必须补Node端到端timeout和异常时不丢fixture_pid；原注释声称launcher有wallclock但实际只有Go fixture35min预算。
+
 ## 完成/停止
 
 每US001..018在最终矩阵列出成功、关键异常、证据与未验证，不以17技术probe代替18完整故事。上游旧11Docker套件逐个实际运行或逐断言等价关系；触碰旧fixture的helper不执行并说明真正目标如何覆盖。发现缺设备/权限等外部条件先明确解除条件，不能无限空转。只在正式accept放行且全部active phase与必要验收证据闭合后宣称整个feature完成；否则列实际未验证和责任。
