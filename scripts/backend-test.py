@@ -88,7 +88,7 @@ def input_fingerprint():
     for name in sorted(names):
         if not name or name.startswith((".ai/", ".memory/", "web/")):
             continue
-        if not (name.endswith((".go", ".sql", ".sh")) or name in
+        if not (name.endswith((".go", ".sql", ".sh", ".service")) or name in
                 {"go.mod", "go.sum", "scripts/backend-test.py", "scripts/backend-test-manifest.json"}):
             continue
         path = ROOT / name
