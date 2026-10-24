@@ -33,6 +33,7 @@ const props = withDefaults(
     memberIds: string[]
     values: Record<string, unknown>
     recoverPending?: boolean
+    selectionScope?: string
     title?: string
     description?: string
   }>(),
@@ -53,7 +54,7 @@ const uncertain = ref(false)
 const stale = ref(false)
 const reason = ref('')
 const previewScope = ref('')
-const scope = computed(() => JSON.stringify([props.operation, [...props.memberIds].sort(), props.values]))
+const scope = computed(() => JSON.stringify([props.operation, [...props.memberIds].sort(), props.values, props.selectionScope, reason.value]))
 const scopeChanged = computed(() => previewScope.value !== scope.value)
 
 const meta = computed(() => batchOperationMeta(props.operation))
@@ -130,6 +131,16 @@ async function runPreview(): Promise<void> {
   }
 }
 
+// A → B → A is still a new selection source. Never admit A's late response.
+watch(scope, () => {
+  if (!props.open || pending.value || resultId.value) return
+  generation++
+  loading.value = false
+  preview.value = null
+  stale.value = true
+  confirmed.value = false
+}, { flush: 'sync' })
+
 watch(
   () => [props.open, accountId.value],
   () => {
@@ -182,7 +193,7 @@ async function submit(): Promise<void> {
     const failure = toApiError(caught)
     submitError.value = failure
     // 认证、限流及服务端错误不能证明原提交未发生，保留记录供原账号核对。
-    const definitive = failure.status >= 400 && failure.status < 500 && ![401, 403, 408, 429].includes(failure.status)
+    const definitive = ['PREVIEW_STALE', 'PREVIEW_CONCLUSION_CHANGED'].includes(failure.code)
     if (definitive) {
       uncertain.value = false
       stale.value = true
@@ -258,12 +269,13 @@ const metricRows = computed(() => {
       <p v-if="storageFailure" role="alert">{{ storageFailure }}</p>
       <section v-if="recoverPending && !pending && !resultId" class="space-y-2">
         <p>当前账号未确认提交（{{ recoverable.length }} 项）。核对沿用原预览与幂等键，不创建新变更。</p>
-        <Button v-for="record in recoverable" :key="record.key" variant="outline" @click="restore(record)">
+        <Button v-for="record in recoverable" :key="record.key" :data-testid="`batch-recover-${record.request.preview_id}`" variant="outline" @click="restore(record)">
           核对 {{ batchOperationMeta(record.operation).label }} · {{ record.targetCount }} 名 · {{ record.targetDigest }}
         </Button>
       </section>
+      <p v-if="preview && !pending" data-testid="batch-target-scope" role="status">本次目标：{{ memberIds.length }} 名明确已选成员 · 成员集合摘要 {{ preview.member_set_digest ?? '未提供' }} · 管理程序 {{ preview.affected_agents ?? '未提供' }}</p>
       <p v-if="pending" role="status">原提交预览 {{ pending.request.preview_id }} · 本次目标 {{ pending.targetCount }} 名 · 摘要 {{ pending.targetDigest }}</p>
-      <p v-if="resultId" role="status">{{ replayed ? '这是之前那次提交的结果' : '批量变更已提交' }}。<a :href="`/admin/batches/${encodeURIComponent(resultId)}`" @click.prevent="router.push(`/admin/batches/${encodeURIComponent(resultId)}`)">查看本次变更记录</a></p>
+      <p v-if="resultId" data-testid="batch-result-panel" role="status">{{ replayed ? '这是之前那次提交的结果' : '批量变更已提交' }}。<a :href="`/admin/batches/${encodeURIComponent(resultId)}`" @click.prevent="router.push(`/admin/batches/${encodeURIComponent(resultId)}`)">查看本次变更记录</a></p>
       <Label v-if="!recoverPending && !pending && !resultId">变更原因<input v-model="reason" :disabled="submitting || uncertain" class="mt-1 block w-full rounded border p-2" aria-label="变更原因" /></Label>
       <p v-if="uncertain" role="status">结果未确认。请核对同一次提交；不要重新创建变更。记录已保存，刷新或返回成员页后可从“核对未确认批量提交”继续。</p>
       <p v-if="!pending && !recoverPending && (stale || scopeChanged)" role="alert">影响或目标范围已变化，请重新预览。</p>
@@ -378,7 +390,7 @@ const metricRows = computed(() => {
         </details>
 
         <Label v-if="!pending && !resultId" class="flex items-start gap-2 text-sm font-normal">
-          <input v-model="confirmed" type="checkbox" class="mt-1 size-4 accent-primary" />
+          <input v-model="confirmed" data-testid="batch-confirm-input" aria-label="确认影响范围" type="checkbox" class="mt-1 size-4 accent-primary" />
           <span>我已确认以上影响范围（规则提交后立即生效，节点异步分发，可能中断连接）</span>
         </Label>
       </template>
@@ -386,9 +398,9 @@ const metricRows = computed(() => {
     </div>
 
     <template #footer>
-      <Button variant="outline" :disabled="submitting" @click="emit('close')">{{ resultId ? '关闭' : '取消' }}</Button>
-      <Button v-if="!recoverPending && !resultId" variant="outline" :disabled="loading || submitting || uncertain || !!storageFailure" @click="runPreview">重新预览</Button>
-      <Button v-if="!resultId && (!recoverPending || pending)" :disabled="!!storageFailure || submitting || (!pending && (!preview || !confirmed || stale || scopeChanged))" @click="submit">
+      <Button data-testid="batch-close-button" variant="outline" :disabled="submitting" @click="emit('close')">{{ resultId ? '关闭' : '取消' }}</Button>
+      <Button v-if="!recoverPending && !resultId" data-testid="batch-preview-button" variant="outline" :disabled="loading || submitting || uncertain || !!storageFailure" @click="runPreview">重新预览</Button>
+      <Button v-if="!resultId && (!recoverPending || pending)" data-testid="batch-submit-button" :disabled="!!storageFailure || submitting || (!pending && (!preview || !confirmed || stale || scopeChanged))" @click="submit">
         <Loader2 v-if="submitting" class="animate-spin" aria-hidden="true" />
         {{ submitting ? '正在核对…' : uncertain ? '核对同一次提交' : '确认提交' }}
       </Button>

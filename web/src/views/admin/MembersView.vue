@@ -6,6 +6,7 @@ import { adminApi } from '@/api/endpoints'
 import { allPages } from '@/lib/allPages'
 import type { BatchOperation, MemberRecord, NodeRecord, SubscriptionRecord, TokenRotationResult } from '@/api/types'
 import { usePagedList } from '@/lib/paged'
+import { otherPageCount, selectionScopeDigest } from '@/lib/selectionScope'
 import { errorText, fieldErrorsOf } from '@/lib/errors'
 import { formatBytes, formatDateTime, formatQuota, fromLocalInput, utcLabel } from '@/lib/format'
 import { buildMemberWrite, draftFromMember, emptyMemberDraft, quotaSource, type MemberDraft } from '@/lib/memberDraft'
@@ -31,13 +32,18 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 
 const filter = ref('')
 const query = ref('')
-const list = usePagedList<MemberRecord>((cursor) => adminApi.members.list({ limit: 50, cursor, q: query.value }))
+const subscriptionFilter = ref('')
+const includeArchived = ref(false)
+const list = usePagedList<MemberRecord>((cursor) => adminApi.members.list({ limit: 50, cursor, q: query.value, ...(subscriptionFilter.value ? { subscription_id: subscriptionFilter.value } : {}), ...(includeArchived.value ? { include_archived: true } : {}) }))
 function search(): void {
   query.value = filter.value.trim()
   selected.clear()
   void list.refresh()
 }
 watch(list.error, (error) => { if (error) selected.clear() })
+watch([subscriptionFilter, includeArchived], search, { flush: 'sync' })
+// refresh invalidates visited scope; page navigation retains selected IDs.
+watch(list.visitedCursors, (visited) => { if (!visited.length) selected.clear() }, { flush: 'sync' })
 const subscriptions = ref<SubscriptionRecord[]>([])
 // 可被选作绑定目标的订阅（排除已归档）。
 const bindableSubscriptions = ref<SubscriptionRecord[]>([])
@@ -71,7 +77,10 @@ const subscriptionNames = computed(() => {
 const visibleMembers = computed(() => list.items.value)
 
 const selectedMembers = computed(() => list.items.value.filter((member) => selected.has(member.id)))
-const selectedOnOtherPages = computed(() => Math.max(0, selected.size - selectedMembers.value.length))
+const selectedOnOtherPages = computed(() => otherPageCount(selected, list.items.value.map(member => member.id)))
+const selectionScope = computed(() => selectionScopeDigest({ q: query.value, subscription_id: subscriptionFilter.value, include_archived: includeArchived.value }, list.visitedCursors.value, selected, list.revision.value))
+// Editing search text immediately retires a preview, even before Search is pressed.
+watch(filter, () => list.invalidate(), { flush: 'sync' })
 
 function toggleSelect(id: string): void {
   if (selected.has(id)) selected.delete(id)
@@ -91,15 +100,13 @@ const allVisibleSelected = computed(
   () => visibleMembers.value.length > 0 && visibleMembers.value.every((member) => selected.has(member.id)),
 )
 
-// DataTable 只负责呈现，数据仍来自后端游标分页；过滤只裁剪当前页的行，
-// 因此把同一个 PagedList 的 items 换成过滤后的 shallowRef，其余（分页/错误/加载）沿用原对象。
+// DataTable receives the real server page; no local search pretends to cover all members.
 const filteredItems = shallowRef<MemberRecord[]>([])
 watch(visibleMembers, (value) => (filteredItems.value = value), { immediate: true })
 const filteredList = { ...list, items: filteredItems }
 
 const countLabel = computed(() => {
   const base = `本页 ${visibleMembers.value.length} 名`
-  if (!selectedOnOtherPages.value) return base
   return `${base} · 已选择 ${selected.size} 名（含其它页 ${selectedOnOtherPages.value} 名）`
 })
 
@@ -327,7 +334,7 @@ async function confirmDelete(): Promise<void> {
 /* ---------- 批量 ---------- */
 const recoveryOpen = ref(false)
 const batchOpen = ref(false)
-const batchOperation = ref<BatchOperation>('assign_subscription')
+const batchOperation = ref<BatchOperation | ''>('')
 const batchValues = reactive<{ subscription_id: string; active: string; expires_at_local: string }>({
   subscription_id: '',
   active: 'false',
@@ -342,6 +349,7 @@ const impact = reactive<{ open: boolean; operation: BatchOperation; values: Reco
 
 function openBatch(): void {
   batchError.value = ''
+  batchOperation.value = ''
   batchValues.subscription_id = ''
   batchValues.active = 'false'
   batchValues.expires_at_local = ''
@@ -350,6 +358,7 @@ function openBatch(): void {
 
 function startBatchImpact(): void {
   batchError.value = ''
+  if (!batchOperation.value) { batchError.value = '请明确选择本次操作'; return }
   const values: Record<string, unknown> = {}
   if (batchOperation.value === 'assign_subscription') {
     if (!batchValues.subscription_id) {
@@ -394,7 +403,7 @@ const columns = [
 <template>
   <div class="space-y-6">
     <PageHeader title="成员" description="成员能不能登录、能不能用代理、有多少流量，是三件独立的事。批量改之前会先让你看一遍影响。">
-      <Button variant="outline" :disabled="list.loading.value" @click="list.refresh()">刷新</Button>
+      <Button data-testid="member-refresh-button" variant="outline" :disabled="list.loading.value" @click="list.refresh()">刷新</Button>
       <Button @click="openCreate">新建成员</Button>
     </PageHeader>
 
@@ -405,15 +414,23 @@ const columns = [
       <Input
         v-model="filter"
         class="max-w-[280px]"
-        placeholder="按用户名或 ID 过滤当前页"
+        data-testid="member-q-input"
+        placeholder="搜索全部成员的用户名"
         aria-label="搜索成员"
       />
-      <Button variant="outline" :disabled="list.loading.value" @click="search">搜索全部成员</Button>
+      <Button data-testid="member-search-button" variant="outline" @click="search">搜索全部成员</Button>
+      <select v-model="subscriptionFilter" aria-label="按服务方案筛选" data-testid="member-subscription-select" class="rounded border p-2">
+        <option value="">全部服务方案</option>
+        <option v-for="sub in subscriptions" :key="sub.id" :value="sub.id">{{ sub.name }}</option>
+      </select>
+      <label><input v-model="includeArchived" data-testid="member-include-archived-checkbox" type="checkbox" /> 含归档成员</label>
+      <span data-testid="member-selection-scope" role="status">已选 {{ selected.size }} 名（含其它页 {{ selectedOnOtherPages }} 名）</span>
       <span class="text-xs text-muted-foreground">仅对明确勾选的成员操作，不包含未选择的搜索结果。更换搜索条件会清空选择。</span>
       <div class="flex-1" />
       <div class="flex items-center gap-2">
         <Checkbox
           id="members-select-all"
+          data-testid="member-select-all-checkbox"
           :model-value="allVisibleSelected"
           :disabled="!visibleMembers.length"
           aria-label="选择当前页全部成员"
@@ -424,7 +441,7 @@ const columns = [
       <Button variant="outline" :disabled="!selected.size || list.loading.value || !!list.error.value || filter.trim() !== query" @click="openBatch">
         批量操作（已选 {{ selected.size }}）
       </Button>
-      <Button variant="outline" @click="recoveryOpen = true">核对未确认批量提交</Button>
+      <Button data-testid="batch-recovery-button" variant="outline" @click="recoveryOpen = true">核对未确认批量提交</Button>
       <Button v-if="selected.size" variant="ghost" @click="selected.clear()">清空选择</Button>
     </div>
 
@@ -438,6 +455,7 @@ const columns = [
     </EmptyState>
 
     <DataTable
+      data-testid="member-table"
       v-else
       :list="filteredList"
       :columns="columns"
@@ -450,6 +468,7 @@ const columns = [
         <template v-if="columnIndex === 0">
           <Checkbox
             :model-value="selected.has(item.id)"
+            :data-testid="`member-select-${item.id}`"
             :aria-label="`选择 ${item.username}`"
             @update:model-value="toggleSelect(item.id)"
           />
@@ -773,7 +792,8 @@ const columns = [
         </p>
         <div class="space-y-1.5">
           <Label for="batch-op">操作</Label>
-          <select id="batch-op" v-model="batchOperation" :class="selectClass">
+          <select id="batch-op" v-model="batchOperation" data-testid="batch-operation-select" :class="selectClass">
+            <option value="" disabled>请选择操作</option>
             <option value="assign_subscription">分配 / 切换订阅</option>
             <option value="set_active">启用 / 停用账户</option>
             <option value="set_expiry">调整有效期</option>
@@ -808,7 +828,7 @@ const columns = [
       </div>
       <template #footer>
         <Button variant="outline" @click="batchOpen = false">取消</Button>
-        <Button :disabled="!selected.size" @click="startBatchImpact">生成预览</Button>
+        <Button data-testid="batch-start-preview-button" :disabled="!selected.size || !batchOperation" @click="startBatchImpact">生成预览</Button>
       </template>
     </AppModal>
 
@@ -826,6 +846,7 @@ const columns = [
       :open="impact.open"
       :operation="impact.operation"
       :member-ids="[...selected]"
+      :selection-scope="selectionScope"
       :values="impact.values"
       title="批量影响预览"
       description="预览只读：显示受影响成员、节点数与不可执行项；确认提交后规则在面板事务内生效，节点异步分发。"

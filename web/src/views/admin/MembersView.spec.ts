@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import MembersView from './MembersView.vue'
+import type { MemberRecord } from '@/api/types'
 import { adminApi } from '@/api/endpoints'
 
 // 真实端点形状：列表行是服务端 decorateMember 派生后的扁平成员记录。
@@ -41,7 +42,7 @@ const fixture = vi.hoisted(() => ({
       proxy_access: 'no_subscription',
       over_quota: false,
     },
-  ],
+  ] satisfies MemberRecord[],
 }))
 
 vi.mock('@/api/endpoints', () => ({
@@ -70,6 +71,39 @@ function mountView() {
 }
 
 describe('MembersView 过滤空状态', () => {
+  it('cross-page selection previews all explicitly selected IDs, then refresh clears the scope', async () => {
+    vi.mocked(adminApi.members.list)
+      .mockResolvedValueOnce({ items: [fixture.items[0]!], next_cursor: 'page-2' })
+      .mockResolvedValueOnce({ items: [fixture.items[1]!], next_cursor: null })
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.find('[aria-label="选择 alice"]').trigger('click')
+    await wrapper.findAll('button').find(button => button.text() === '下一页')!.trigger('click')
+    await flushPromises()
+    await wrapper.find('[aria-label="选择 bob"]').trigger('click')
+    expect(wrapper.find('[data-testid="member-selection-scope"]').text()).toContain('已选 2 名（含其它页 1 名）')
+    const dialog = wrapper.findAllComponents({ name: 'ImpactPreviewDialog' }).at(-1)!
+    expect(dialog.props('memberIds')).toEqual(['mem_01', 'mem_02'])
+    await wrapper.find('[data-testid="member-refresh-button"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="member-selection-scope"]').text()).toContain('已选 0 名')
+    expect(dialog.props('memberIds')).toEqual([])
+    wrapper.unmount()
+  })
+
+  it('passes actual plan/archive filters and drops previous selections', async () => {
+    vi.mocked(adminApi.subscriptions.list).mockResolvedValueOnce({ items: [{ id: 'plan-2', name: 'Plan Two' } as Awaited<ReturnType<typeof adminApi.subscriptions.list>>['items'][number]], next_cursor: null })
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.find('[aria-label="选择 alice"]').trigger('click')
+    await wrapper.find('[data-testid="member-subscription-select"]').setValue('plan-2')
+    await flushPromises()
+    await wrapper.find('[data-testid="member-include-archived-checkbox"]').setValue(true)
+    await flushPromises()
+    expect(adminApi.members.list).toHaveBeenLastCalledWith({ limit: 50, cursor: null, q: '', subscription_id: 'plan-2', include_archived: true })
+    expect(wrapper.find('[data-testid="member-selection-scope"]').text()).toContain('已选 0 名')
+    wrapper.unmount()
+  })
   it('过滤无匹配时显示显式空状态并可一键清空', async () => {
     const wrapper = mountView()
     await flushPromises()

@@ -272,6 +272,21 @@ describe('ImpactPreviewDialog', () => {
     wrapper.unmount()
   })
 
+  it('范围离开后再返回也不能接纳旧预览的晚响应', async () => {
+    let resolve!: (value: BatchPreview) => void
+    mocks.preview.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+    const wrapper = mountDialog()
+    await wrapper.setProps({ open: true })
+    await wrapper.setProps({ memberIds: ['other'], selectionScope: 'page-2' })
+    await wrapper.setProps({ memberIds: ['m_01', 'm_02'], selectionScope: 'page-1' })
+    resolve(preview)
+    await flushPromises()
+    expect(document.body.textContent).not.toContain('预览版本 4')
+    expect(document.body.textContent).toContain('重新预览')
+    expect(buttonByText('确认提交').disabled).toBe(true)
+    wrapper.unmount()
+  })
+
   it('预览失败时展示错误并允许重新预览', async () => {
     mocks.preview.mockRejectedValueOnce(new Error('网络中断'))
     mocks.preview.mockResolvedValueOnce(preview)
