@@ -1,8 +1,14 @@
 {
-  "id": "webdemo-clients-group-e-v1",
+  "id": "webdemo-clients-group-e-v2",
   "owner": "web-demo/E",
-  "runner": "flock -w600 /home/compile/Work/.locks/proxypanel-webdemo-local-runtime.lock uv run tests/e2e/run_webdemo_clients.py",
   "plain_runner": "uv run tests/e2e/run_webdemo_clients.py",
+  "runner_note": "the runner acquires the canonical local-runtime lease itself, before any version probe or source snapshot, and releases it only after owned-core recovery/cleanup; do not wrap it in flock, and do not treat someone else holding the lock as ownership",
+  "local_runtime_lease": {
+    "path": "/home/compile/Work/.locks/proxypanel-webdemo-local-runtime.lock",
+    "scope": "shared local-runtime lease (not group-owned); held exclusively by this process for version probe -> snapshot -> run -> recovery -> cleanup",
+    "busy_policy": "bounded wait (WEBDEMO_LOCAL_RUNTIME_LEASE_TIMEOUT, default 300s) then fail closed with status=blocked and no probes executed",
+    "inheritance": "WEBDEMO_LOCAL_RUNTIME_LOCK_FD may carry an already-locked descriptor; it is adopted only if it is the same inode and excludes every other holder"
+  },
   "isolation": "loopback-only owned cores, fresh X25519/self-signed material, t.TempDir; no panel, Agent lab, preview 8445, old 8443, .devdb or shared PG/Redis",
   "pinned_binaries": {
     "XRAY_BIN": {
@@ -21,6 +27,7 @@
       "sha256": "09c2cb429cf45fb56884ceb91a0e5b17cc8b2c866c07811bcf75dfb59fef7662"
     }
   },
+  "evidence_payload_bytes": 69632,
   "external_platform_boundary": {
     "v2rayN": "not_supported_as_evidence: GUI import has no official non-GUI interface; only share-link shape can be verified",
     "clash_for_windows": "not_supported_as_evidence: no Windows App host in this environment; Mihomo core-level only",
@@ -42,38 +49,74 @@
       "id": "webdemo-vision",
       "package": "./tests/e2e",
       "run": "^(TestWebDemoVisionTrafficStatsAndStop|TestWebDemoRealityCrossClient)$",
-      "expected_cells": 3,
+      "expected_tests": [
+        "TestWebDemoVisionTrafficStatsAndStop",
+        "TestWebDemoRealityCrossClient"
+      ],
+      "expected_cells": [
+        {
+          "test": "TestWebDemoVisionTrafficStatsAndStop",
+          "client": "xray",
+          "result": "supported_pass"
+        },
+        {
+          "test": "TestWebDemoRealityCrossClient/sing-box",
+          "client": "sing-box",
+          "result": "supported_pass"
+        },
+        {
+          "test": "TestWebDemoRealityCrossClient/mihomo",
+          "client": "mihomo",
+          "result": "supported_pass"
+        }
+      ],
+      "cell_requirement": "each cell records 69632 bytes, a full SHA-256, uplink > 0 and downlink >= payload from the same server StatsService",
       "assertions": [
         "full 69632-byte payload through each exported client config with SHA-256",
         "per-user uplink/downlink counters read from the same server StatsService",
         "post-stop dial is ECONNREFUSED (never a timeout) and the live client core logs a concrete refused dial",
         "restart of the same document serves the exact content again on the same REALITY keys"
       ],
-      "requires": [
-        "xray",
-        "sing-box",
-        "mihomo"
-      ]
+      "requires": ["xray", "sing-box", "mihomo"]
     },
     {
       "id": "webdemo-local-matrix",
       "package": "./internal/panel/clientconfig",
-      "run": "^TestLocalCore",
-      "build_tags": [
-        "corematrix"
+      "run": "^TestLocalCore(ClientMatrix|CredentialGuards)$",
+      "build_tags": ["corematrix"],
+      "expected_tests": [
+        "TestLocalCoreClientMatrix",
+        "TestLocalCoreCredentialGuards"
       ],
-      "expected_cells": 21,
+      "matrix_cells": {
+        "subject_test": "TestLocalCoreClientMatrix",
+        "note": "main matrix only; TestLocalCoreCredentialGuards is in expected_tests and its own traffic cells are reported as auxiliary_cells (checked for payload validity) but never counted as part of the 21",
+        "clients": ["xray", "sing-box", "mihomo"],
+        "cases": [
+          "vless-tcp-none",
+          "vmess-tcp-none",
+          "trojan-tcp-tls",
+          "vless-ws-tls",
+          "trojan-tcp-none",
+          "ss-aes-128-gcm",
+          "ss2022-blake3-aes-128-gcm"
+        ],
+        "declared_rejections": {
+          "trojan-tcp-none": {
+            "mihomo": {
+              "field": "stream_settings.security"
+            }
+          }
+        },
+        "expected_cells": 21
+      },
       "reused_evidence": true,
       "note": "20 supported cells + 1 Mihomo Trojan/TCP/none declared rejection; reused only after confirming the same pinned cores and unchanged client projection",
-      "requires": [
-        "xray",
-        "sing-box",
-        "mihomo"
-      ]
+      "requires": ["xray", "sing-box", "mihomo"]
     }
   ],
   "not_run": [
-    "TestDockerClientMatrix (54-cell historical Docker matrix): not run; its environment is the old acceptance stack",
+    "TestDockerClientMatrix (historical multi-client Docker matrix): not run; its environment is the old acceptance stack, and no cell count is claimed here",
     "Windows GUI import for v2rayN/Clash Verge: no host",
     "public network / real public CA REALITY target: no authority"
   ],

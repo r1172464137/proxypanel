@@ -41,6 +41,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -224,6 +225,25 @@ func webdemoVisionFixtureBuild(t *testing.T) *webdemoVisionFixture {
 	}
 }
 
+// webdemoLogBuffer is a mutex-guarded log sink: the core keeps writing from its
+// own goroutines while the test reads the log for the refusal line.
+type webdemoLogBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *webdemoLogBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *webdemoLogBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 // webdemoStartCore starts a core and waits for its local listening socket.
 func webdemoStartCore(t *testing.T, bin string, args []string, port int) func() {
 	_, stop := webdemoStartCoreLog(t, bin, args, port)
@@ -231,32 +251,40 @@ func webdemoStartCore(t *testing.T, bin string, args []string, port int) func() 
 }
 
 // webdemoStartCoreLog also exposes the captured core log so a negative can cite
-// the concrete refusal instead of a bare error string.
+// the concrete refusal instead of a bare error string. Cleanup is registered the
+// moment the process exists, so t.Fatalf paths can never leak a core; the
+// returned stop is idempotent and bounded.
 func webdemoStartCoreLog(t *testing.T, bin string, args []string, port int) (func() string, func()) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, bin, args...)
-	var log bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &log, &log
+	log := &webdemoLogBuffer{}
+	cmd.Stdout, cmd.Stderr = log, log
 	if err := cmd.Start(); err != nil {
 		cancel()
 		t.Fatalf("%s did not start: %v", filepath.Base(bin), err)
 	}
-	stopped := false
+	pid := cmd.Process.Pid
+	var once sync.Once
 	stop := func() {
-		if stopped {
-			return
-		}
-		stopped = true
-		cancel()
-		_ = cmd.Wait()
+		once.Do(func() {
+			cancel()
+			done := make(chan error, 1)
+			go func() { done <- cmd.Wait() }()
+			select {
+			case <-done:
+			case <-time.After(20 * time.Second):
+				t.Errorf("%s (pid %d) did not exit within 20s of stop", filepath.Base(bin), pid)
+			}
+		})
 	}
+	t.Cleanup(stop)
 	deadline := time.Now().Add(15 * time.Second)
 	for {
 		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 300*time.Millisecond)
 		if err == nil {
 			_ = conn.Close()
-			return func() string { return log.String() }, stop
+			return log.String, stop
 		}
 		if time.Now().After(deadline) {
 			stop()
@@ -575,15 +603,10 @@ func TestWebDemoVisionTrafficStatsAndStop(t *testing.T) {
 
 	webdemoCheck(t, xrayBin, "run", "-test", "-c", fixture.serverCfg)
 	stopServer := webdemoStartCore(t, xrayBin, []string{"run", "-c", fixture.serverCfg}, fixture.proxyPort)
-	running := true
-	defer func() {
-		if running {
-			stopServer()
-		}
-	}()
 
 	// Positive A: the real exported Xray client config, full payload + counters.
-	socks, clientLog, stopClient := webdemoStartXrayClient(t, xrayBin, nc, fixture.dir)
+	// The client core's own t.Cleanup is registered inside the helper.
+	socks, clientLog, _ := webdemoStartXrayClient(t, xrayBin, nc, fixture.dir)
 	up0, down0 := webdemoStats(t, xrayBin, fixture.apiPort)
 	body := webdemoFetchThrough(t, socks, fixture.targetURL, 20*time.Second)
 	up1, down1 := webdemoStatsAfter(t, xrayBin, fixture.apiPort, up0, down0, len(fixture.payload))
@@ -595,7 +618,6 @@ func TestWebDemoVisionTrafficStatsAndStop(t *testing.T) {
 	// Strict negative: stop the server. The client core stays up, so the SOCKS
 	// entry is live and only the REALITY server can be the failing part.
 	stopServer()
-	running = false
 	dialErr := webdemoAwaitRefusal(fixture.proxyPort)
 	if dialErr == nil {
 		t.Fatalf("the stopped core still accepted TCP on the REALITY port %d", fixture.proxyPort)
@@ -639,7 +661,6 @@ func TestWebDemoVisionTrafficStatsAndStop(t *testing.T) {
 	// Legal before/after control: restart the same document and serve the exact
 	// content again through the same client core and the same REALITY keys.
 	stopServer = webdemoStartCore(t, xrayBin, []string{"run", "-c", fixture.serverCfg}, fixture.proxyPort)
-	running = true
 	up2, down2 := webdemoStats(t, xrayBin, fixture.apiPort)
 	after := webdemoFetchThrough(t, socks, fixture.targetURL, 20*time.Second)
 	up3, down3 := webdemoStatsAfter(t, xrayBin, fixture.apiPort, up2, down2, len(fixture.payload))
@@ -652,7 +673,6 @@ func TestWebDemoVisionTrafficStatsAndStop(t *testing.T) {
 	}
 	t.Logf(`webdemo_recovery={"case":"restart-serves-same-content","bytes":%d,"sha256":%q,"uplink":%d,"downlink":%d}`,
 		len(after), sum, up3, down3)
-	stopClient()
 }
 
 // webdemoAwaitRefusal waits until a dial to port fails and returns that error.
