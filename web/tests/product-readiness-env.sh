@@ -29,8 +29,12 @@ go build -o "$PRIVATE/panel" "$ROOT/cmd/panel"
 "$PRIVATE/db" init "$PRIVATE/owner.json" > "$PRIVATE/schema-proof.json"
 # Exactly one build, shared by every subsequent browser run in this invocation.
 (cd "$ROOT/web" && npm run build -- --outDir "$PRIVATE/dist") > "$PRIVATE/build.log" 2>&1
+# Optional probe entry: PR_PROBE=frontend-phase selects the additional technical
+# UI probe. Default (unset/anything else) keeps product-readiness-e2e.mjs only.
+PROBE_SCRIPT=product-readiness-e2e.mjs
+if [[ ${PR_PROBE:-} == frontend-phase ]]; then PROBE_SCRIPT=frontend-phase-probe.mjs; fi
 status=0
-node "$ROOT/web/tests/product-readiness-e2e.mjs" || status=$?
+node "$ROOT/web/tests/$PROBE_SCRIPT" || status=$?
 if [[ ${PR_ALLOW_RETEST:-0} == 1 ]]; then
   echo "RETEST_PRIVATE=$PRIVATE (touch retry to rerun without rebuilding; touch done to clean)"
   for ((i=0;i<900;i++)); do
@@ -44,7 +48,7 @@ if [[ ${PR_ALLOW_RETEST:-0} == 1 ]]; then
       fi
       "$PRIVATE/db" init "$PRIVATE/owner.json" > "$PRIVATE/schema-proof.json"
       status=0
-      node "$ROOT/web/tests/product-readiness-e2e.mjs" || status=$?
+      node "$ROOT/web/tests/$PROBE_SCRIPT" || status=$?
       echo 'RETEST_COMPLETE'
     fi
     sleep 1
