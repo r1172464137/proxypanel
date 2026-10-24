@@ -5,7 +5,8 @@ import { meApi } from '@/api/endpoints'
 import type { MeStatus } from '@/api/types'
 import { useResource } from '@/lib/async'
 import { formatBytes, formatDateTime, formatQuota, prettyJson } from '@/lib/format'
-import { accessReasonDetails, describeAccessReason, describeAccessStep, describeQuotaSource } from '@/lib/accessReasons'
+import { describeAccessReason, describeAccessStep, describeQuotaSource } from '@/lib/accessReasons'
+import { memberSummary } from '@/lib/memberService'
 import PageHeader from '@/components/PageHeader.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
@@ -23,11 +24,12 @@ onMounted(() => void status.reload())
 const data = computed(() => status.data.value)
 const member = computed(() => data.value?.member)
 const access = computed(() => data.value?.access)
+const summary = computed(() => memberSummary(data.value))
 
 const accountStatus = computed(() => {
   if (member.value?.archived) return 'archived'
   if (member.value && member.value.active === false) return 'suspended'
-  return 'active'
+  return member.value?.active === true ? 'active' : 'unknown'
 })
 
 // 判定链的 step 是内部标识（account_status / proxy_access / binding_…），
@@ -56,7 +58,7 @@ const chain = computed(() => (Array.isArray(access.value?.access_chain) ? access
             </div>
             <div class="flex flex-wrap items-center gap-2">
               <dt class="w-24 shrink-0 text-sm text-muted-foreground">代理访问</dt>
-              <dd><StatusBadge :status="access?.proxy_access ?? 'unknown'" /></dd>
+              <dd><StatusBadge :status="summary.state === 'enabled' ? 'enabled' : summary.state === 'unknown' ? 'unknown' : access?.proxy_access ?? 'disabled'" /></dd>
             </div>
             <div class="flex flex-wrap items-center gap-2">
               <dt class="w-24 shrink-0 text-sm text-muted-foreground">订阅</dt>
@@ -102,24 +104,25 @@ const chain = computed(() => (Array.isArray(access.value?.access_chain) ? access
         </CardContent>
         <CardContent class="pt-0">
           <Alert
-            v-if="accessReasonDetails(access?.access_reasons).length"
+            v-if="summary.reasons.length"
             class="border-amber-300/70 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-200"
           >
-            <AlertTitle>现在还不能使用代理</AlertTitle>
+            <AlertTitle>{{ summary.title }}</AlertTitle>
             <AlertDescription>
               <ul class="list-disc space-y-1 pl-4">
-                <li v-for="reason in accessReasonDetails(access?.access_reasons)" :key="reason.label">
+                <li v-for="reason in summary.reasons" :key="reason.label">
                   {{ reason.label }}。{{ reason.action }}
                 </li>
               </ul>
             </AlertDescription>
           </Alert>
           <p
-            v-else-if="access"
+            v-else-if="summary.state === 'enabled'"
             class="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800 dark:border-sky-900 dark:bg-sky-950/50 dark:text-sky-200"
           >
             权限正常，没有限制。
           </p>
+          <p v-else role="status">{{ summary.title }}</p>
         </CardContent>
       </Card>
 

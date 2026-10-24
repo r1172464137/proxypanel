@@ -4,6 +4,8 @@ import { createRouter, createMemoryHistory } from 'vue-router'
 import type { MeStatus, MeSubscription } from '@/api/types'
 import { ApiError } from '@/api/http'
 import MeSubscriptionView from './MeSubscriptionView.vue'
+import MeStatusView from './MeStatusView.vue'
+import { memberAccessState } from '@/lib/memberService'
 
 const state = vi.hoisted(() => ({
   status: {} as MeStatus,
@@ -41,6 +43,40 @@ beforeEach(() => {
 afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.unstubAllGlobals() })
 
 describe('成员首页', () => {
+  it('真实成功响应 fixture：ok 不是限制，首页不能同时声称不可用', async () => {
+    state.status = { data_complete: true, access: { algorithm_version: 'access/v1', access: true, proxy_access: 'enabled', access_reasons: ['ok'], used_bytes: 0, effective_quota_bytes: 1073741824 } }
+    const wrapper = await view()
+    const summary = wrapper.get('[data-testid="service-summary-card"]').text()
+    expect(summary).toContain('服务可用')
+    expect(summary).not.toContain('服务暂不可用')
+    expect(wrapper.find('[data-testid="import-download-button"]').exists()).toBe(true)
+  })
+  it('不完整周期响应 fixture：unknown 判定不能包装为已确认拒绝或成功', async () => {
+    state.status = { data_complete: false, data_issues: ['cycle_unproven'], access: { access: false, proxy_access: 'unknown', access_reasons: ['ok', 'cycle_unproven'], used_bytes: 1024, effective_quota_bytes: 4096 } }
+    const wrapper = await view()
+    expect(wrapper.get('[data-testid="service-summary-card"]').text()).toContain('服务状态尚未确认')
+    expect(wrapper.find('[data-testid="import-download-button"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('当前授权允许使用')
+  })
+  it.each([
+    [{ access: { access: true, proxy_access: 'future_state' } }, 'unknown'],
+    [{ access: { proxy_access: 'enabled', access_reasons: ['ok'] } }, 'unknown'],
+    [{ access: { access: false, proxy_access: 'enabled' } }, 'unknown'],
+    [{ access: { access: false, proxy_access: 'over_quota', access_reasons: ['over_quota'] } }, 'denied'],
+    [{ access: { access: false, proxy_access: 'expired', access_reasons: ['binding_expired'] } }, 'denied'],
+  ] as const)('只有明确一致的访问判定才可信：%j', (response, expected) => {
+    expect(memberAccessState(response as MeStatus)).toBe(expected)
+  })
+  it.each([true, false])('状态页也使用同一判定，ok 不产生限制、空判定不产生成功（access=%s）', async allowed => {
+    state.status = allowed ? { access: { access: true, proxy_access: 'enabled', access_reasons: ['ok'] } } : { access: {} }
+    const wrapper = mount(MeStatusView, { global: { stubs } })
+    wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('现在还不能使用代理')
+    expect(wrapper.text()).not.toContain('限制原因：ok')
+    expect(wrapper.text().includes('权限正常，没有限制。')).toBe(allowed)
+    if (!allowed) expect(wrapper.text()).toContain('服务状态尚未确认')
+  })
   it('先展示状态、已用与剩余，重置入口下沉，复制不触发重置', async () => {
     const wrapper = await view()
     expect(wrapper.text()).toContain('我的服务')

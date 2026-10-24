@@ -25,7 +25,7 @@ const checking = ref(false)
 const checkedUrl = ref('')
 const rejectedUrl = ref('')
 const checkMessage = ref('')
-const canCheck = computed(() => status.data.value?.access?.access === true && availability.value.available !== false && !!url.value)
+const canCheck = computed(() => summary.value.state === 'enabled' && availability.value.available !== false && !!url.value)
 const canImport = computed(() => canCheck.value && rejectedUrl.value !== url.value && (availability.value.available === true || checkedUrl.value === url.value))
 const timezone = computed(() => summary.value.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
 let checkGeneration = 0
@@ -102,7 +102,7 @@ async function retrieve(download = false) {
         <CardHeader><CardTitle>{{ summary.title }}</CardTitle></CardHeader>
         <CardContent class="space-y-4">
           <p v-if="summary.incomplete" role="status" class="text-sm text-amber-700 dark:text-amber-300">部分服务资料需核对，以下保留已知数据。未知字段显示为「—」，不代表零或不限量。</p>
-          <p v-if="status.data.value?.access?.access === true" class="text-sm text-muted-foreground">当前授权允许使用；真实连接需在客户端确认。</p>
+          <p v-if="summary.state === 'enabled'" class="text-sm text-muted-foreground">当前授权允许使用；真实连接需在客户端确认。</p>
           <ul v-if="summary.reasons.length" class="space-y-2 text-sm"><li v-for="reason in summary.reasons" :key="reason.label"><strong>{{ reason.label }}</strong>。{{ reason.action }}</li></ul>
           <dl class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div><dt class="text-sm text-muted-foreground">已用</dt><dd class="text-xl font-semibold">{{ formatBytes(summary.used) }}</dd></div>
@@ -127,7 +127,7 @@ async function retrieve(download = false) {
           <Button data-testid="import-retry-button" variant="outline" @click="subscription.reload()">重试获取导入资料</Button>
         </div>
         <ErrorState v-else-if="subscription.error.value" :error="subscription.error.value" @retry="subscription.reload()" />
-        <p v-else-if="status.data.value?.access?.access !== true" role="status">{{ status.data.value?.access?.access === false ? '当前服务不可用，暂不能导入。' : '服务状态尚未确认，请先刷新服务资料。' }}请联系为你开通服务的管理员，账号与用量页面仍可访问。</p>
+        <p v-else-if="summary.state !== 'enabled'" role="status">{{ summary.state === 'denied' ? '当前服务不可用，暂不能导入。' : '服务状态尚未确认，请先刷新服务资料。' }}请联系为你开通服务的管理员，账号与用量页面仍可访问。</p>
         <template v-else>
           <div class="space-y-2">
             <label for="member-client" class="text-sm font-medium">你使用的客户端</label>
