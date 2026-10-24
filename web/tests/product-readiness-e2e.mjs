@@ -749,6 +749,7 @@ try {
   // US-008 — pause reason + over-quota/expired distinction (real writes, restored).
   await record('us', 'US-PR-008', async () => {
     await memberPage.open('/me/subscription')
+    await mp.getByTestId('me-quota-meter').waitFor({ state: 'visible' })
     const summary = await memberPage.summary().innerText()
     assert.match(summary, /1\.00 GiB/)
     assert.match(summary, /已用|剩余|重置/)
