@@ -50,16 +50,26 @@ func TestTLSRequiresCertificateMaterial(t *testing.T) {
 	}
 }
 
+// TestTLSAcceptsInlineOrFileCertificates uses real, freshly generated material:
+// the old fixture only contained the PEM BEGIN lines, which the core rejects at
+// runtime even though `xray run -test` accepted it (see the review probe).
 func TestTLSAcceptsInlineOrFileCertificates(t *testing.T) {
-	// 内联 certificates 数组
-	inline := obj(t, `{"serverName":"n.example.invalid","certificates":[{"certificate":["-----BEGIN CERTIFICATE-----"],"key":["-----BEGIN PRIVATE KEY-----"]}]}`)
+	certPEM, keyPEM := reviewTLSPair(t)
+	// 内联 certificates 数组（核心实际读取的层级）
+	inline := obj(t, `{"serverName":"n.example.invalid","certificates":[{"certificate":[`+jsonString(t, certPEM)+`],"key":[`+jsonString(t, keyPEM)+`]}]}`)
 	if issues := Validate(tlsNode(t, inline)); len(issues) != 0 {
-		t.Fatalf("内联证书应通过: %v", issues)
+		t.Fatalf("有效的内联证书应通过: %v", issues)
 	}
-	// 文件路径
-	files := obj(t, `{"serverName":"n.example.invalid","certificateFile":"/etc/xray/fullchain.pem","keyFile":"/etc/xray/privkey.pem"}`)
+	// 核心原生 certificates[].certificateFile/keyFile
+	files := obj(t, `{"serverName":"n.example.invalid","certificates":[{"certificateFile":"/etc/xray/fullchain.pem","keyFile":"/etc/xray/privkey.pem"}]}`)
 	if issues := Validate(tlsNode(t, files)); len(issues) != 0 {
-		t.Fatalf("证书文件路径应通过: %v", issues)
+		t.Fatalf("核心原生证书文件路径应通过: %v", issues)
+	}
+	// 旧版顶层文件字段：Validate 会做等价归一化（两者成对时）后通过；
+	// Sanitize 负责真正迁移，见 TestReviewTLSLegacyFilesNormalizeWithoutLocalIO。
+	legacy := obj(t, `{"serverName":"n.example.invalid","certificateFile":"/etc/xray/fullchain.pem","keyFile":"/etc/xray/privkey.pem"}`)
+	if issues := Validate(tlsNode(t, legacy)); len(issues) != 0 {
+		t.Fatalf("旧顶层成对文件路径应被归一化后接受: %v", issues)
 	}
 	// 只有 certFile 没有 keyFile 仍算不完整
 	half := obj(t, `{"serverName":"n.example.invalid","certificateFile":"/etc/xray/fullchain.pem"}`)

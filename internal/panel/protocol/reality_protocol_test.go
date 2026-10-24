@@ -22,13 +22,13 @@ func realityNodeWithProto(t *testing.T, proto string) domain.Node {
 	rs := domain.NewObject()
 	_ = rs.Set("dest", "www.example.com:443")
 	_ = rs.Set("serverNames", []any{"www.example.com"})
-	_ = rs.Set("privateKey", "PRIVATE_KEY")
+	_ = rs.Set("privateKey", "dwdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LCo")
 	_ = rs.Set("shortIds", []any{"abcd1234"})
 	_ = stream.Set("realitySettings", rs)
 
 	client := domain.NewObject()
 	_ = client.Set("server_name", "www.example.com")
-	_ = client.Set("public_key", "PUBLIC_KEY")
+	_ = client.Set("public_key", "hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo")
 	_ = client.Set("short_id", "abcd1234")
 
 	ps := domain.NewObject()

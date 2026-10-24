@@ -15,7 +15,7 @@ import (
 // ─── sing-box ──────────────────────────────────────────────────────────────
 
 func renderSingbox(req Request) ([]byte, error) {
-	used := map[string]bool{}
+	used := newUsedTags()
 	outbounds := make([]any, 0, len(req.Nodes)+1)
 	firstTag := ""
 	for i, n := range req.Nodes {
@@ -47,10 +47,25 @@ func renderSingbox(req Request) ([]byte, error) {
 
 func singboxOutbound(n NodeConfig, tag string, index int) (map[string]any, error) {
 	ep := n.Endpoint
-	if err := requireNetwork(n, "sing-box", "tcp", "ws", "grpc", "httpupgrade", "xhttp", "http", "quic"); err != nil {
+	// sing-box 1.14.3 has no xhttp transport: emitting one makes the whole
+	// subscription fail to load with "unknown transport type: xhttp".
+	if ep.Network == "xhttp" {
+		return nil, &UnsupportedError{NodeName: ep.Name, NodeID: ep.NodeID, Client: "sing-box", Field: "stream_settings.network",
+			Reason: "sing-box 1.14.3 has no xhttp transport"}
+	}
+	if err := requireNetwork(n, "sing-box", "tcp", "ws", "grpc", "httpupgrade", "http", "quic"); err != nil {
 		return nil, err
 	}
 	if err := requireNoExplicitPin("sing-box", n); err != nil {
+		return nil, err
+	}
+	if err := requireRepresentableTCPHeader(n, "sing-box"); err != nil {
+		return nil, err
+	}
+	if err := requireNoGRPCMultiMode(n, "sing-box"); err != nil {
+		return nil, err
+	}
+	if err := requireShadowsocksTLSRepresentable(n, "sing-box"); err != nil {
 		return nil, err
 	}
 	out := map[string]any{"tag": tag, "server": ep.Address, "server_port": ep.Port}
@@ -150,11 +165,9 @@ func singboxTransport(n NodeConfig) (map[string]any, error) {
 	case "httpupgrade":
 		return map[string]any{"type": "httpupgrade", "path": ep.Path, "host": ep.Host}, nil
 	case "xhttp":
-		tr := map[string]any{"type": "xhttp", "path": ep.Path, "host": ep.Host}
-		if ep.XHTTPMode != "" {
-			tr["mode"] = ep.XHTTPMode
-		}
-		return tr, nil
+		// Rejected before this switch (sing-box 1.14.3 has no xhttp transport).
+		// Kept explicit so a future core upgrade must deliberately re-enable it.
+		return nil, &UnsupportedError{NodeName: ep.Name, NodeID: ep.NodeID, Client: "sing-box", Field: "stream_settings.network", Reason: "sing-box has no xhttp transport"}
 	case "http":
 		tr := map[string]any{"type": "http", "path": ep.Path}
 		if ep.Host != "" {
@@ -172,7 +185,7 @@ func singboxTransport(n NodeConfig) (map[string]any, error) {
 // ─── Mihomo / Clash.Meta ───────────────────────────────────────────────────
 
 func renderMihomo(req Request) ([]byte, error) {
-	used := map[string]bool{}
+	used := newUsedTags()
 	proxies := make([]map[string]any, 0, len(req.Nodes))
 	names := make([]string, 0, len(req.Nodes))
 	for i, n := range req.Nodes {
@@ -209,6 +222,15 @@ func mihomoProxy(n NodeConfig, name string) (map[string]any, error) {
 		return nil, err
 	}
 	if err := requireNoExplicitPin("mihomo", n); err != nil {
+		return nil, err
+	}
+	if err := requireRepresentableTCPHeader(n, "mihomo"); err != nil {
+		return nil, err
+	}
+	if err := requireNoGRPCMultiMode(n, "mihomo"); err != nil {
+		return nil, err
+	}
+	if err := requireShadowsocksTLSRepresentable(n, "mihomo"); err != nil {
 		return nil, err
 	}
 	p := map[string]any{"name": name, "server": ep.Address, "port": ep.Port, "udp": true}
@@ -313,7 +335,7 @@ func mihomoProxy(n NodeConfig, name string) (map[string]any, error) {
 // ─── v2rayN share links ────────────────────────────────────────────────────
 
 func renderV2rayN(req Request) ([]byte, error) {
-	used := map[string]bool{}
+	used := newUsedTags()
 	lines := make([]string, 0, len(req.Nodes))
 	for i, n := range req.Nodes {
 		link, err := shareLink(n, displayName(n, i, used))
@@ -337,6 +359,21 @@ func shareLink(n NodeConfig, name string) (string, error) {
 	ep := n.Endpoint
 	if err := requireNoExplicitPin("v2rayN", n); err != nil {
 		return "", err
+	}
+	if err := requireRepresentableTCPHeader(n, "v2rayN"); err != nil {
+		return "", err
+	}
+	if err := requireShadowsocksTLSRepresentable(n, "v2rayN"); err != nil {
+		return "", err
+	}
+	// A VMess gRPC share link cannot carry serviceName/multiMode reliably: the
+	// base64 payload this format uses has no interoperable field for them, and
+	// the previous code silently exported net=grpc without the service name,
+	// producing a link that could never connect. Reject instead of guessing.
+	if ep.Protocol == protocol.VMess && ep.Network == "grpc" {
+		return "", &UnsupportedError{NodeName: ep.Name, NodeID: ep.NodeID, Client: "v2rayN",
+			Field:  "stream_settings.grpcSettings",
+			Reason: "VMess gRPC share links cannot express the gRPC service name; use a JSON / sing-box client instead"}
 	}
 	hostPort := fmt.Sprintf("%s:%d", ep.Address, ep.Port)
 	q := url.Values{}

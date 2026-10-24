@@ -21,13 +21,18 @@ type Endpoint struct {
 	Address  string
 	Port     int
 
-	Network      string
-	Path         string
-	Host         string
-	ServiceName  string
-	GRPCMode     string
-	HeaderType   string
-	Seed         string
+	Network     string
+	Path        string
+	Host        string
+	ServiceName string
+	GRPCMode    string
+	HeaderType  string
+	Seed        string
+	// TCPHeader is the Xray tcpSettings.header object (e.g. type "http" with a
+	// request/response伪装). It is part of the connection semantics of a TCP
+	// inbound, so an exporter that cannot express it must reject the node
+	// instead of emitting a plain byte stream.
+	TCPHeader    map[string]any
 	QuicSecurity string
 	QuicKey      string
 	XHTTPMode    string
@@ -118,6 +123,23 @@ func EndpointFor(node domain.Node) (Endpoint, []Issue) {
 	}
 
 	switch ep.Network {
+	case "tcp":
+		if tcp, ok := stream.Sub("tcpSettings"); ok {
+			if header, ok := tcp.Sub("header"); ok {
+				// Only a non-"none" header carries parameters a client must
+				// reproduce; "none" and an empty header stay absent so the export
+				// of an ordinary TCP node is unchanged.
+				if headerType, ok := header.String("type"); ok && strings.TrimSpace(headerType) != "" && !strings.EqualFold(strings.TrimSpace(headerType), "none") {
+					ep.TCPHeader = map[string]any{}
+					for key, raw := range header {
+						var value any
+						if err := json.Unmarshal(raw, &value); err == nil {
+							ep.TCPHeader[key] = value
+						}
+					}
+				}
+			}
+		}
 	case "ws":
 		ws, ok := stream.Sub("wsSettings")
 		if !ok {
@@ -355,8 +377,8 @@ func NormalizeCertSHA256(raw string) (string, error) {
 }
 
 // inlineLeafCertSHA256 derives the certificate pin from the first inline
-// certificate of a node's tlsSettings. Only public material is read; a node
-// that only references certificate files has no derivable pin.
+// encipherment certificate of a node's tlsSettings. Only public material is
+// read; a node that only references certificate files has no derivable pin.
 func inlineLeafCertSHA256(stream domain.Object) (string, bool) {
 	ts, ok := stream.Sub("tlsSettings")
 	if !ok {
@@ -368,11 +390,18 @@ func inlineLeafCertSHA256(stream domain.Object) (string, bool) {
 	}
 	var entries []struct {
 		Certificate json.RawMessage `json:"certificate"`
+		Usage       string          `json:"usage"`
 	}
 	if err := json.Unmarshal(raw, &entries); err != nil {
 		return "", false
 	}
 	for _, entry := range entries {
+		// Only an ENCIPHERMENT entry is served to clients; a usage=verify entry is
+		// a root-pool CA and must not become the pin (the real core presents the
+		// encipherment certificate even when a CA entry comes first).
+		if certUsage(entry.Usage) != usageEncipherment {
+			continue
+		}
 		// Xray accepts the inline certificate either as one PEM document or as
 		// the individual PEM lines; the line array is the form the node API,
 		// the core's own config and the client matrix fixture use. Both describe

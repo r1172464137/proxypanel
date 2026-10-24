@@ -105,9 +105,11 @@ func TestNonUpgradeTransportsKeepServerALPN(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			// REALITY 只能配 VLESS（校验已强制），非 reality 的 case 仍用 VMess
+			// REALITY 只能配 VLESS（校验已强制）；gRPC 也用 VLESS，因为 VMess
+			// gRPC 分享链接无法表达 serviceName，v2rayN 会显式拒绝（D09b），那
+			// 是另一条契约，不该把本用例的 ALPN 断言拖成“没有格式可用”。
 			proto := protocol.VMess
-			if name == "tcp-reality" {
+			if name == "tcp-reality" || name == "grpc-tls" {
 				proto = protocol.VLESS
 			}
 			ep := endpointFrom(t, proto, tc.stream, tc.client, 443)

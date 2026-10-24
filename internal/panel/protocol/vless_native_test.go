@@ -25,7 +25,7 @@ const vlessNativeStream = `{
     "dest": "www.example.invalid:443",
     "xver": 1,
     "serverNames": ["www.example.invalid", "cdn.example.invalid"],
-    "privateKey": "SERVER_PRIVATE_KEY_PLACEHOLDER",
+    "privateKey": "dwdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LCo",
     "minClientVer": "1.8.0",
     "maxClientVer": "",
     "maxTimeDiff": 10000,
@@ -56,7 +56,7 @@ const vlessNativeProtocol = `{
 
 const vlessNativeClient = `{
   "server_name": "www.example.invalid",
-  "public_key": "CLIENT_PUBLIC_KEY_PLACEHOLDER",
+  "public_key": "hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo",
   "short_id": "0123abcd",
   "fingerprint": "chrome",
   "alpn": ["h2", "http/1.1"],
@@ -77,7 +77,7 @@ func nativeNode(t *testing.T) Node {
 	t.Helper()
 	return Node{
 		Protocol: VLESS, Flow: "xtls-rprx-vision", Host: "node.example.invalid", Port: 443,
-		Listen: "0.0.0.0",
+		Listen:           "0.0.0.0",
 		StreamSettings:   mustObject(t, vlessNativeStream),
 		ProtocolSettings: mustObject(t, vlessNativeProtocol),
 		ClientSettings:   mustObject(t, vlessNativeClient),
@@ -90,7 +90,7 @@ func TestVLESSEveryNativeFieldSurvives(t *testing.T) {
 	if len(issues) != 0 {
 		t.Fatalf("sanitize issues: %v", issues)
 	}
-	if key != "SERVER_PRIVATE_KEY_PLACEHOLDER" {
+	if key != "dwdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LCo" {
 		t.Fatalf("private key not extracted: %q", key)
 	}
 	// every streamSettings key must still be present
@@ -140,7 +140,7 @@ func TestVLESSEveryNativeFieldSurvives(t *testing.T) {
 	if len(epIssues) != 0 {
 		t.Fatalf("endpoint issues: %v", epIssues)
 	}
-	if ep.PublicKey != "CLIENT_PUBLIC_KEY_PLACEHOLDER" || ep.ShortID != "0123abcd" ||
+	if ep.PublicKey != "hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo" || ep.ShortID != "0123abcd" ||
 		ep.SNI != "www.example.invalid" || ep.Fingerprint != "chrome" || ep.Flow != "xtls-rprx-vision" {
 		t.Fatalf("endpoint = %+v", ep)
 	}
@@ -148,4 +148,3 @@ func TestVLESSEveryNativeFieldSurvives(t *testing.T) {
 		t.Fatal("server private key leaked into the client endpoint")
 	}
 }
-

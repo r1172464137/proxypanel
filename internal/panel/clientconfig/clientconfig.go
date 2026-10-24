@@ -119,7 +119,34 @@ func contentType(format string) string {
 	}
 }
 
-// displayName returns a unique, human readable node label.
+// reservedTags are the outbound/proxy names the exporters generate themselves.
+// A user controllable node name that equals one of them used to produce a
+// duplicate outbound tag, which makes the whole subscription unloadable
+// (sing-box: "duplicate outbound/endpoint tag: direct"). The set is seeded into
+// the uniqueness map, so such a node is renamed instead of colliding.
+var reservedTags = []string{
+	// sing-box built-ins and generated outbounds/groups.
+	"direct", "block", "dns-out", "mixed-in",
+	// Xray generated outbounds and inbounds.
+	"proxy", "block", "direct", "socks-in", "http-in",
+	// Mihomo generated proxy-groups and built-in policies.
+	"DIRECT", "REJECT", "PROXY", "GLOBAL", "PASS", "REJECT-DROP", "COMPATIBLE",
+}
+
+func reservedTagSet() map[string]bool {
+	out := make(map[string]bool, len(reservedTags))
+	for _, tag := range reservedTags {
+		out[tag] = true
+	}
+	return out
+}
+
+// reservedNameSuffix is appended to a node label that would collide with a
+// generated tag; the visible label stays recognisable for the administrator.
+const reservedNameSuffix = " (节点)"
+
+// displayName returns a unique, human readable node label. It never returns a
+// name that collides with a generated outbound/group tag or with another node.
 func displayName(n NodeConfig, index int, used map[string]bool) string {
 	name := strings.TrimSpace(n.Remark)
 	if name == "" {
@@ -129,11 +156,54 @@ func displayName(n NodeConfig, index int, used map[string]bool) string {
 		name = fmt.Sprintf("node-%d", index+1)
 	}
 	candidate := name
+	// Only a collision with a *generated* tag is renamed with the suffix; two
+	// nodes that share a label keep the established "name #2" numbering.
+	if reservedTagSet()[candidate] {
+		candidate = name + reservedNameSuffix
+	}
 	for i := 2; used[candidate]; i++ {
 		candidate = fmt.Sprintf("%s #%d", name, i)
 	}
 	used[candidate] = true
 	return candidate
+}
+
+// newUsedTags returns the uniqueness map pre-populated with generated tags so
+// no node label can take one of them.
+func newUsedTags() map[string]bool { return reservedTagSet() }
+
+// requireRepresentableTCPHeader rejects a TCP transport whose伪装 header a
+// client format cannot express. Emitting the node without its header would
+// silently change the wire protocol (the server expects an HTTP request).
+func requireRepresentableTCPHeader(n NodeConfig, client string) error {
+	if len(n.Endpoint.TCPHeader) == 0 {
+		return nil
+	}
+	return &UnsupportedError{NodeName: n.Endpoint.Name, NodeID: n.Endpoint.NodeID, Client: client,
+		Field:  "stream_settings.tcpSettings.header",
+		Reason: "this client cannot reproduce the Xray TCP HTTP伪装 header"}
+}
+
+// requireNoShadowsocksTLS rejects Shadowsocks with a TLS layer for formats that
+// would otherwise emit a plaintext ss proxy/link, silently dropping TLS.
+func requireShadowsocksTLSRepresentable(n NodeConfig, client string) error {
+	if n.Endpoint.Protocol != protocol.Shadowsocks || n.Endpoint.Security == "" {
+		return nil
+	}
+	return &UnsupportedError{NodeName: n.Endpoint.Name, NodeID: n.Endpoint.NodeID, Client: client,
+		Field:  "stream_settings.security",
+		Reason: "Shadowsocks over TLS cannot be represented by this client; it would silently become plaintext"}
+}
+
+// requireNoGRPCMultiMode rejects multiMode gRPC, which sing-box and Mihomo
+// cannot express (they only implement the single service-name mode).
+func requireNoGRPCMultiMode(n NodeConfig, client string) error {
+	if n.Endpoint.Network != "grpc" || n.Endpoint.GRPCMode != "multi" {
+		return nil
+	}
+	return &UnsupportedError{NodeName: n.Endpoint.Name, NodeID: n.Endpoint.NodeID, Client: client,
+		Field:  "stream_settings.grpcSettings.multiMode",
+		Reason: "this client has no multi-mode gRPC transport"}
 }
 
 func mergeTemplate(base map[string]any, tmpl domain.Object) {
@@ -238,7 +308,7 @@ func sortedFormats() []string {
 // ─── Xray client JSON ───────────────────────────────────────────────────────
 
 func renderXray(req Request) ([]byte, error) {
-	used := map[string]bool{}
+	used := newUsedTags()
 	outbounds := make([]any, 0, len(req.Nodes)+2)
 	for i, n := range req.Nodes {
 		ob, err := xrayOutbound(n, displayName(n, i, used), i)
@@ -375,7 +445,12 @@ func xrayStreamSettings(n NodeConfig) (map[string]any, error) {
 		}
 		ss["httpSettings"] = h
 	case "tcp":
-		// plain TCP needs no sub settings
+		// A TCP HTTP伪装 header changes what the server expects on the wire;
+		// authentic Xray JSON can express it, so reproduce it instead of
+		// emitting a plain byte stream.
+		if len(ep.TCPHeader) > 0 {
+			ss["tcpSettings"] = map[string]any{"header": ep.TCPHeader}
+		}
 	default:
 		return nil, &UnsupportedError{NodeName: ep.Name, NodeID: ep.NodeID, Client: "xray", Field: "stream_settings.network", Reason: "unknown transport " + ep.Network}
 	}

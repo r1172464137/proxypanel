@@ -8,7 +8,6 @@ import (
 	"crypto/ecdh"
 	"crypto/rand"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -295,7 +294,11 @@ func Validate(n Node) []Issue {
 		rs, _ := n.StreamSettings.Sub("realitySettings")
 		priv := strings.TrimSpace(n.ServerKey)
 		if pk, ok := rs.String("privateKey"); ok && strings.TrimSpace(pk) != "" {
-			priv = strings.TrimSpace(pk)
+			if priv != "" && priv != strings.TrimSpace(pk) {
+				add("stream_settings.realitySettings.privateKey", "conflicts with server_key")
+			} else {
+				priv = strings.TrimSpace(pk)
+			}
 		}
 		if priv == "" {
 			add("server_key", "REALITY requires a server private key")
@@ -306,8 +309,12 @@ func Validate(n Node) []Issue {
 				add("stream_settings.realitySettings.shortIds", "REALITY requires at least one short id")
 			}
 		}
-		if _, ok := clientPublicKey(n.ClientSettings); !ok {
+		if pub, ok := clientPublicKey(n.ClientSettings); !ok {
 			add("client_settings.public_key", "REALITY requires the client public key")
+		} else if priv != "" {
+			if err := validateX25519Pair(priv, pub); err != nil {
+				add("client_settings.public_key", "%s", err)
+			}
 		}
 		if _, ok := clientServerName(n); !ok {
 			add("client_settings.server_name", "REALITY requires the client server name")
@@ -316,32 +323,17 @@ func Validate(n Node) []Issue {
 			add("stream_settings.network", "REALITY is not available for transport %q", network)
 		}
 	case "tls":
-		ts, ok := n.StreamSettings.Sub("tlsSettings")
-		if !ok {
+		// 证书材料只认核心真实读取的位置：tlsSettings.certificates[]。旧的顶层
+		// certificateFile/keyFile 会被 NormalizeTLS 迁移；迁移冲突和不可用的内联
+		// 材料都在这里拒绝，而不是落库之后才发现核心不认（见 tls.go）。
+		normalized := n.StreamSettings.Clone()
+		for _, is := range NormalizeTLS(normalized) {
+			issues = append(issues, is)
+		}
+		if _, ok := normalized.Sub("tlsSettings"); !ok {
 			add("stream_settings.tlsSettings", "TLS requires tlsSettings")
-			ts = domain.NewObject()
 		}
-		// TLS 入站必须有证书材料，否则核心启动时直接失败（"no certificates configured"）。
-		//
-		// 之前只要求"证书或客户端域名二选一"，于是「TLS + 只填客户端域名」也能通过
-		// 校验并落库 —— 节点在列表里看起来正常，实际核心永远起不来，只在下发到
-		// Agent 时才报错。客户端域名是给成员配置用的，替代不了服务端证书。
-		//
-		// 证书材料可以是：内联 certificates 数组，或 certificateFile + keyFile 路径。
-		hasInline := false
-		if raw, ok := ts.Get("certificates"); ok && len(raw) > 0 {
-			var list []any
-			if err := json.Unmarshal(raw, &list); err == nil && len(list) > 0 {
-				hasInline = true
-			}
-		}
-		certFile, _ := ts.String("certificateFile")
-		keyFile, _ := ts.String("keyFile")
-		hasFiles := strings.TrimSpace(certFile) != "" && strings.TrimSpace(keyFile) != ""
-		if !hasInline && !hasFiles {
-			add("stream_settings.tlsSettings.certificates",
-				"TLS 入站必须配置证书：内联 certificates，或同时填 certificateFile 与 keyFile")
-		}
+		issues = append(issues, tlsMaterialIssues(normalized)...)
 		if _, ok := clientServerName(n); !ok {
 			add("client_settings.server_name", "TLS 需要客户端域名（成员配置里的 serverName）")
 		}
@@ -377,10 +369,18 @@ func Sanitize(n Node) (stream domain.Object, protocolSettings domain.Object, ser
 	serverKey = strings.TrimSpace(n.ServerKey)
 
 	issues = append(issues, streamTransportIssues(stream)...)
+	// Historical rows may still carry the legacy top-level certificateFile/keyFile
+	// pair; migrate them to the core-native certificates[] array before persisting
+	// again, and report a conflicting placement instead of dropping one source.
+	if security, _ := stream.String("security"); strings.EqualFold(strings.TrimSpace(security), "tls") {
+		issues = append(issues, NormalizeTLS(stream)...)
+	}
 	if rs, ok := stream.Sub("realitySettings"); ok {
 		if pk, ok := rs.String("privateKey"); ok && strings.TrimSpace(pk) != "" {
 			if serverKey == "" {
 				serverKey = strings.TrimSpace(pk)
+			} else if security, _ := stream.String("security"); strings.EqualFold(strings.TrimSpace(security), "reality") && serverKey != strings.TrimSpace(pk) {
+				issues = append(issues, Issue{Field: "stream_settings.realitySettings.privateKey", Message: "conflicts with server_key"})
 			}
 			rs.Delete("privateKey")
 			// keep the (non secret) public key that mirrors the private key

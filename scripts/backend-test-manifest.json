@@ -295,5 +295,51 @@
       "US-PR-017"
     ],
     "requires": []
+  },
+  {
+    "id": "protocol/offline-review",
+    "packages": [
+      "./internal/panel/protocol",
+      "./internal/panel/clientconfig",
+      "./internal/panel/xrayconf"
+    ],
+    "run": "^Test(TLS.*|RealityKeyPairValidation|ReviewTLS(RejectsUnusableInline|MatchesCoreUsageSemantics|RejectsInlineAndFileOnTheSameHalf|PinSkipsAuthorityVerifyEntries|LegacyFilesNormalizeWithoutLocalIO|RejectsConflictingLegacyPaths|NormalizesSingleStringToArray)|SanitizePrefersStoredServerKeyOverNestedPrivateKey|ReviewTCPHeaderPreservedOrRejected|ReviewUnsupportedClientCombinations|WSRealityALPNIsHTTP11|HTTPUpgradeRealityALPNIsHTTP11|NonUpgradeTransportsKeepServerALPN|PlainWSDoesNotGainALPN|Build.*|NativeVLESSFieldsReachTheCoreDocument|VLESSEveryNativeFieldSurvives|ValidateRealityVLESS|SanitizeMovesSecretsOutOfPersistedSettings|ValidateRejectsRealityForNonVLESS)$",
+    "expected_tests": [
+      "TestTLSRequiresCertificateMaterial",
+      "TestTLSAcceptsInlineOrFileCertificates",
+      "TestTLSNormalizationPreservesEveryNativeEntry",
+      "TestTLSIssueOnlyAndMalformedMaterial",
+      "TestRealityKeyPairValidation",
+      "TestVLESSEveryNativeFieldSurvives",
+      "TestValidateRealityVLESS",
+      "TestSanitizeMovesSecretsOutOfPersistedSettings",
+      "TestValidateRejectsRealityForNonVLESS",
+      "TestReviewTLSRejectsUnusableInline",
+      "TestReviewTLSMatchesCoreUsageSemantics",
+      "TestReviewTLSRejectsInlineAndFileOnTheSameHalf",
+      "TestReviewTLSPinSkipsAuthorityVerifyEntries",
+      "TestReviewTLSLegacyFilesNormalizeWithoutLocalIO",
+      "TestReviewTLSRejectsConflictingLegacyPaths",
+      "TestReviewTLSNormalizesSingleStringToArray",
+      "TestSanitizePrefersStoredServerKeyOverNestedPrivateKey",
+      "TestReviewTCPHeaderPreservedOrRejected",
+      "TestReviewUnsupportedClientCombinations",
+      "TestWSRealityALPNIsHTTP11",
+      "TestHTTPUpgradeRealityALPNIsHTTP11",
+      "TestNonUpgradeTransportsKeepServerALPN",
+      "TestPlainWSDoesNotGainALPN",
+      "TestBuildInjectsClientsAndReinjectsPrivateKey",
+      "TestBuildEmptyClientsIsExplicitEmptyArray",
+      "TestBuildRejectsAdminClients",
+      "TestBuildShadowsocks2022",
+      "TestBuildRequiresUUID",
+      "TestBuildShadowsocksClientsCarryMethod",
+      "TestNativeVLESSFieldsReachTheCoreDocument"
+    ],
+    "stories": [
+      "US-PR-011"
+    ],
+    "requires": [],
+    "timeout_seconds": 120
   }
 ]

@@ -34,6 +34,15 @@ func Build(node domain.Node, clients []Client) (json.RawMessage, error) {
 	if stream == nil {
 		stream = domain.NewObject()
 	}
+	// Historical rows persisted before certificate normalization may still carry
+	// certificateFile/keyFile directly on tlsSettings, which the frozen core
+	// ignores. Migrate them here as well so an already-stored node generates a
+	// usable document without an administrator re-saving it.
+	if security, _ := stream.String("security"); strings.EqualFold(strings.TrimSpace(security), "tls") {
+		if issues := protocol.NormalizeTLS(stream); len(issues) > 0 {
+			return nil, fmt.Errorf("tls settings: %s", issues[0])
+		}
+	}
 	ps := node.ProtocolSettings.Clone()
 	if ps == nil {
 		ps = domain.NewObject()

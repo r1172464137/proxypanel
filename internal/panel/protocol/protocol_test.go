@@ -75,11 +75,11 @@ func realityNode(t *testing.T) Node {
 		StreamSettings: obj(t, `{
 			"network":"tcp",
 			"security":"reality",
-			"realitySettings":{"privateKey":"PRIVATE_KEY_PLACEHOLDER","shortIds":["0123abcd",""],"serverNames":["www.example.invalid"],"dest":"www.example.invalid:443"},
+			"realitySettings":{"privateKey":"dwdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LCo","shortIds":["0123abcd",""],"serverNames":["www.example.invalid"],"dest":"www.example.invalid:443"},
 			"sockopt":{"tcpFastOpen":true,"mark":255}
 		}`),
 		ProtocolSettings: obj(t, `{"decryption":"none","fallbacks":[{"dest":80}]}`),
-		ClientSettings:   obj(t, `{"server_name":"www.example.invalid","public_key":"PUBLIC_KEY_PLACEHOLDER","short_id":"0123abcd","fingerprint":"chrome","alpn":["h2","http/1.1"]}`),
+		ClientSettings:   obj(t, `{"server_name":"www.example.invalid","public_key":"hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo","short_id":"0123abcd","fingerprint":"chrome","alpn":["h2","http/1.1"]}`),
 	}
 }
 
@@ -207,7 +207,7 @@ func TestSanitizeMovesSecretsOutOfPersistedSettings(t *testing.T) {
 	if len(issues) != 0 {
 		t.Fatalf("sanitize issues: %v", issues)
 	}
-	if serverKey != "PRIVATE_KEY_PLACEHOLDER" {
+	if serverKey != "dwdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LCo" {
 		t.Fatalf("server key not extracted: %q", serverKey)
 	}
 	if stream.Has("realitySettings") {
@@ -273,7 +273,7 @@ func TestEndpointForReality(t *testing.T) {
 	if ep.Network != "tcp" || ep.Security != "reality" || ep.Flow != "xtls-rprx-vision" {
 		t.Fatalf("endpoint = %+v", ep)
 	}
-	if ep.PublicKey != "PUBLIC_KEY_PLACEHOLDER" || ep.ShortID != "0123abcd" || ep.SNI != "www.example.invalid" {
+	if ep.PublicKey != "hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo" || ep.ShortID != "0123abcd" || ep.SNI != "www.example.invalid" {
 		t.Fatalf("reality client params = %+v", ep)
 	}
 	if ep.Fingerprint != "chrome" {
