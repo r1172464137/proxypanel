@@ -74,7 +74,8 @@ F：真实部署/两托管TLS/安装systemd能力与安全隔离验证，专用w
 | D | 01a16d01-efe5-75a9-8640-ad63001064fa | old Agent/SQLite与core跨版 |
 | E | 01a16d01-eff4-75a9-8640-ad69ff316078 | Vision与实际支持矩阵 |
 | F | 01a16d01-efeb-75a9-8640-ad64709b3e75 | 初报完成；原89470e5暂不合并，见复查差异 |
-| F定向补正 | 01a16d0d-6bfb-75a9-8640-ad6f9e0d694d | 真Agent生命周期/负例oracle与同次证据修正 |
+| F定向补正 | 01a16d0d-6bfb-75a9-8640-ad6f9e0d694d | 已返回5501a93：真实Agent PID/二进制/心跳重启证据；仅部分闭合 |
+| 真实host nginx | 01a16d1b-d579-75a9-8640-ad71e140ad53 | 不触宿主服务的私有用户态nginx、两托管及严格TLS补缺 |
 
 ### F主复查检查点（不等于阶段验收）
 
@@ -82,7 +83,9 @@ F：真实部署/两托管TLS/安装systemd能力与安全隔离验证，专用w
 
 原F的长运行实际ExecStart为`/bin/sh -c sleep 600`，与真实Agent的单独`-check`不能组合成“Agent重启通过”；原unit否定例只验非零，PATH含真实install/systemctl，且raw Go log与JSON是不同unit运行。主暂不合并89470e5、不计Agent restart为PASS，派同组定向修正，不重跑有效dual证据。formal dev仍in_progress。
 
-外部环境缺口保留：系统级Agent安装/完整硬化须独立有权限PID1环境；实际host nginx/public DNS/CA不由selfsigned preview或容器网关证明；读屏环境缺；masked视觉截图可后接A专用空fixture。当前内部IP预览授权不能自动当最终生产支持范围裁决。其余5路继续，缺口不得靠N/A/改弱断言关闭。
+5501a93在同次原始JSON/退出码/receipt证明真实Agent先后PID、同exe+SHA、恢复心跳，原sleep结果已明确撤回；主合并为0485312+9ea6bde（测试资产，不涉及生产源码）。主又修三个残余oracle：RAF不能认任意失败、core PID检测原argv顺序颠倒/未按owner筛选、即使xray version也必须持共享锁而不能抢不到就绕过；增加合法core classifier对照、精确socket errno检查、0用例/SKIP/package与SHA一致性门禁，冻结dd40fac后开始本机定向复验。复验未返回前不把新资产记为PASS。
+
+外部环境缺口保留：系统级Agent安装/完整硬化须独立有权限PID1环境；实际host nginx/public DNS/CA不由selfsigned preview或容器网关证明。主对照源确认US001/PRD要求域名证书/受保护HTTPS与两托管，未自行写“必须公有CA/公开DNS”或特定Orca/NVDA承诺；额外公有PKI/读屏器检查不能只因先前验收承接表提到就扩大为新业务规则，但仍如实not_run，不冒通过。实际host nginx是明确架构责任，另派私有用户态host进程补验证；masked截图用其新空fixture，不捕获preview。最终必要性由需求/设计/证据判定，不自动N/A，也不以当前内部IP预览授权更改正式支持范围。其余5路继续。
 
 ## 完成/停止
 
