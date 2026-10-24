@@ -1,0 +1,374 @@
+{
+  "agent": "web-demo-accept",
+  "feature": "product-readiness",
+  "phase": "web-demo-final",
+  "validation_revision": "final-r1",
+  "acceptance_result": "ACCEPTED_WITH_IMPROVEMENTS",
+  "task_completion_status": "success",
+  "document_candidate": "ee57982c4139b24fd2047e4f3ff5b48d9f0600ab",
+  "independent_audit_of_previous_report": ".ai/quality/web-demo-accept-product-readiness-final-20261024-122828.md",
+  "previous_acceptance_result": "REJECTED",
+  "production_bytes_equal_to_previous_candidate": true,
+  "production_diff_since_fea3187": [],
+  "candidate_diff_since_previous_review": [
+    "web/tests/product-readiness-e2e.mjs"
+  ],
+  "candidate_diff_note": "e68f048..ee57982 仅 web/tests/product-readiness-e2e.mjs (+56/-6)；a177779 仅新增上一份REJECTED报告与audit",
+  "main_root": "/home/compile/Work/proxypanel",
+  "mode": "independent read-only; no source/test/design/state edits; no services/PG/core/browser started; no deploy; no 203/8445/8443/15432 access",
+  "report_path": ".ai/quality/web-demo-accept-product-readiness-final-r1-20261024-210146.md",
+  "report_sha256": "ad6b2e9e2f3b4acb654b81e76f55dfca33dfc4a16b0b65addd31f354d17345dc",
+  "evidence_hashes": {
+    "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/manifest.txt": "198a0b3ae408f152c7519b390a217e2cccbf1bdefd0eaeefa8f09439f813e36a",
+    "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/report.json": "99b4598af0e091109d3228ef95858a423e118d74468e5c96b884127ba9c39f86",
+    "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/results.json": "5cec3ea0be41d179a920346e73c35832023a5e4a83e59490a9a70a821f87e9b6",
+    "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/us-matrix.json": "2d825388c5067ab9c465c863454f47abcf2280fc5e5e66adfab9d86d7a42cc46",
+    "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/page-errors.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/procs-before.txt": "cdfdabca74f54658d0b77d65a9b27bf1e39f53790771091e370b2c0ccf834f04",
+    "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/procs-after.txt": "cdfdabca74f54658d0b77d65a9b27bf1e39f53790771091e370b2c0ccf834f04"
+  },
+  "runner_binding": {
+    "manifest_candidate": "ee57982c4139b24fd2047e4f3ff5b48d9f0600ab",
+    "manifest_worktree_sha": "d61dfc6288a9aa7fb4aa7a770f828e38d1b64c14c6bd4fd573043236edc6e65a",
+    "worktree_sha_recomputed": "d61dfc6288a9aa7fb4aa7a770f828e38d1b64c14c6bd4fd573043236edc6e65a (sha256 of 'git status --porcelain' = the two previous-review untracked reports)",
+    "runner_sha": [
+      "6ad2a652b4af387f99ac328bcb35d459671908b90369133034e53127590dc446 (web/tests/product-readiness-e2e.mjs)",
+      "820bbf5979c3584de09dc3c278f8933c8bbeba4d3df619ce9736cf5c33ff5927 (web/tests/webdemo-pom.mjs)",
+      "0f943260436b275d5fb2d24438f21aca687a1278023291f578189a255fdf353f (web/tests/webdemo-env.sh)",
+      "08f1a52ab8cf5f0b0ae4143a6248a6d0d61932c9c0a895fc2f367b3c01a2797a (tests/e2e/webdemo_ui_fixture_test.go)"
+    ],
+    "all_recomputed_match_current_tree": true,
+    "fixture_binary": "02baeec552d49fb7e8ca18bbe8eeda9f4a7439151c9f3b300dcd55c6dbb526cd",
+    "browser_exit": 0,
+    "protected_before": 7,
+    "protected_checked": 7,
+    "protected_lost": 0,
+    "owned_process_leftovers": 0,
+    "procs_before_equals_after": true
+  },
+  "story_matrix": {
+    "total": 23,
+    "us": 18,
+    "chain": 5,
+    "pass": 23,
+    "fail": 0,
+    "skip": 0,
+    "all_us_ids": [
+      "US-PR-001",
+      "US-PR-002",
+      "US-PR-003",
+      "US-PR-004",
+      "US-PR-005",
+      "US-PR-006",
+      "US-PR-007",
+      "US-PR-008",
+      "US-PR-009",
+      "US-PR-010",
+      "US-PR-011",
+      "US-PR-012",
+      "US-PR-013",
+      "US-PR-014",
+      "US-PR-015",
+      "US-PR-016",
+      "US-PR-017",
+      "US-PR-018"
+    ]
+  },
+  "previous_p1_closure": [
+    {
+      "id": "P1-1",
+      "story": "US-PR-005",
+      "result": "closed",
+      "why": "test now waits subscription-form + #sub-name visible and asserts 节点组：wdemo group / 每人额度：1 GiB / 周期|UTC|锚定日 before reading detail; run records planSummaryVisible=true (previous run …123301Z… genuinely FAILED on the same line, so the assertion is live)"
+    },
+    {
+      "id": "P1-2",
+      "story": "US-PR-003",
+      "result": "closed",
+      "why": "after real Agent applied (applied_revision>0, core_instances state applied/running) the test reopens /admin/servers, waits server-agent-state to show 在线 and records afterAgent{pageState:在线,realHeartbeatVisible:true}; report.requests shows /admin/servers at 12:35:44.950Z > agent applied 12:35:34.95Z; pre-registration badge still asserted against 未接入|离线|未知"
+    },
+    {
+      "id": "P1-3",
+      "story": "US-PR-002",
+      "why": "fresh 0/6 asserted first, then done>=3 && done>initial, /6 步/, and exactly one reused server + one reused service plan; run records initialCompletedCount=0, completedCount=3, reusedServerId/reusedPlanId",
+      "result": "closed"
+    },
+    {
+      "id": "P1-4",
+      "story": "US-PR-006",
+      "why": "UI creates a no-plan invitation (selectOption('')), POST 201, real redeem lands on /me/subscription?welcome=1, bounded poll asserts 尚未分配服务方案|待开通, and /me/status member.subscription_id===null; unusable invitation still 400 with 0 accounts",
+      "result": "closed"
+    }
+  ],
+  "gates": [
+    {
+      "name": "candidate/production byte closure and story-run to source mapping",
+      "result": "passed",
+      "evidence": [
+        "git diff fea3187..ee57982",
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/manifest.txt"
+      ]
+    },
+    {
+      "name": "A whole-file real execution, no skip/zero-case, no page errors",
+      "result": "passed",
+      "evidence": [
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/results.json",
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/report.json",
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/page-errors.json"
+      ]
+    },
+    {
+      "name": "all 18 US IDs present in final matrix and not skipped",
+      "result": "passed",
+      "evidence": [
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/us-matrix.json",
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/results.json"
+      ]
+    },
+    {
+      "name": "key success/exception assertions for US-PR-001/007/008/009/011/013/014/016/017/018",
+      "result": "passed",
+      "evidence": [
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/results.json"
+      ]
+    },
+    {
+      "name": "US-PR-005 plan deliverability page assertion (previous P1-1)",
+      "result": "passed",
+      "evidence": [
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/results.json",
+        "web/tests/product-readiness-e2e.mjs:781-787"
+      ]
+    },
+    {
+      "name": "US-PR-003 in-page real connection/sync after Agent attach (previous P1-2)",
+      "result": "passed",
+      "evidence": [
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/results.json",
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/report.json",
+        "web/tests/product-readiness-e2e.mjs:651-670"
+      ]
+    },
+    {
+      "name": "US-PR-002 partial-config progress and object reuse (previous P1-3)",
+      "result": "passed",
+      "evidence": [
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/results.json",
+        "web/tests/product-readiness-e2e.mjs:429-461"
+      ]
+    },
+    {
+      "name": "US-PR-006 no-plan invitation path (previous P1-4)",
+      "result": "passed",
+      "evidence": [
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/results.json",
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/report.json",
+        "web/tests/product-readiness-e2e.mjs:519-541"
+      ]
+    },
+    {
+      "name": "B dual Agent/offline/UDP/partial/rollback real assertions",
+      "result": "passed",
+      "evidence": [
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/B/main-20261024T121009Z-133312/receipt.json",
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/B/main-20261024T121009Z-133312/test.log"
+      ]
+    },
+    {
+      "name": "C real backup/restore without reviving revoked authorization",
+      "result": "passed",
+      "evidence": [
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/C/r3-final-green-20261024T115143Z-b7506f/receipt.json",
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/C/r3-final-green-20261024T115143Z-b7506f/runner-receipt.json"
+      ]
+    },
+    {
+      "name": "D cross-version Agent/core upgrade+rollback real process evidence",
+      "result": "passed",
+      "evidence": [
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/D/main-final-pass-20261024T121918Z-b2af77/receipt.json",
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/D/main-final-pass-20261024T121918Z-b2af77/test.log"
+      ]
+    },
+    {
+      "name": "E declared client matrix and Vision",
+      "result": "passed",
+      "evidence": [
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/E/main-20261024T115431Z-4d728d/receipt.json"
+      ]
+    },
+    {
+      "name": "F dual hosting HTTPS and Agent user-unit lifecycle (declared scope)",
+      "result": "passed",
+      "evidence": [
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/F/host-main-20261024T101214Z-fe65bc/main-verification.json",
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/F/main-dd40fac-retry-20261024T093138Z-a8941e/main-verification.json"
+      ]
+    },
+    {
+      "name": "isolation/lock/cleanup/protected objects",
+      "result": "passed",
+      "evidence": [
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/manifest.txt",
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/procs-after.txt",
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/B/main-20261024T121009Z-133312/receipt.json",
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/D/main-final-pass-20261024T121918Z-b2af77/receipt.json"
+      ]
+    },
+    {
+      "name": "evidence free of secrets/raw tokens/private keys",
+      "result": "passed",
+      "evidence": [
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/results.json",
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/report.json"
+      ]
+    },
+    {
+      "name": "backend readiness/store/API validity on current bytes",
+      "result": "passed",
+      "evidence": [
+        ".ai/quality/backend-accept-product-readiness-backend-r3-20261024-122207-3fedab77.md",
+        ".ai/evidence/backend-test/20261024T122047Z-8d27c817",
+        ".ai/evidence/backend-test/20261024T113542Z-7676d17a"
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "severity": "P2",
+      "location": "tests/e2e/run_webdemo_upgrade.py receipt base_commit vs tests/e2e/webdemo_upgrade_test.go",
+      "evidence": [
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/D/main-final-pass-20261024T121918Z-b2af77/receipt.json",
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/D/main-final-pass-20261024T121918Z-b2af77/test.log"
+      ],
+      "impact": "receipt labels base_commit=fea3187 but the run executed the f40ee37 test content from the dirty worktree (source_files=07f9df9c…, log line numbers 564/593/597/670 only exist in the newer file layout, and test_binary_sha256 equals the A-run fixture binary byte-for-byte). Previous review's 'D ran an older test binary' conclusion is withdrawn by this audit; only the label/reproducibility gap remains, no rerun required.",
+      "suggested_fix": "record source_dirty plus the executed test content sha in the receipt (or commit the test before the run)"
+    },
+    {
+      "severity": "P2",
+      "location": "web/tests/product-readiness-e2e.mjs:482 (US-PR-003 exception branch)",
+      "evidence": [
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/results.json",
+        "web/src/views/admin/ServersView.vue:92-109"
+      ],
+      "impact": "the badge assertion is a loose /未接入|离线|未知/ match and the run only exercised 未接入; the 离线 and 状态未知 branches plus the re-registration/diagnostic entry have no runtime assertion",
+      "suggested_fix": "add one injectable offline/unknown state assertion per branch"
+    },
+    {
+      "severity": "P2",
+      "location": "web/tests/product-readiness-e2e.mjs:780-796 (US-PR-005 second scenario)",
+      "evidence": [
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/results.json",
+        "web/src/components/ImpactPreviewDialog.spec.ts",
+        "web/tests/e2e-ui-full.mjs:1141-1152"
+      ],
+      "impact": "the 'impact on existing members' preview is not asserted in the A run; it is currently carried by the dialog unit test, the node-group PREVIEW_REQUIRED e2e flow and the server-side PREVIEW_REQUIRED contract (cross-evidence, not absent)",
+      "suggested_fix": "fold a bound-plan impact preview assertion into the A run"
+    },
+    {
+      "severity": "P2",
+      "location": "US-PR-015 second scenario (loaded/empty/error states)",
+      "evidence": [
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/results.json",
+        "web/src/views/admin/MembersView.spec.ts",
+        "web/src/views/me/MeUsageView.spec.ts"
+      ],
+      "impact": "the three-state distinction is only covered by unit specs on the same frontend bytes, not by the A browser run (which covers 390px/keyboard/dark)",
+      "suggested_fix": "keep it explicitly labelled as cross-evidence, or add a browser assertion"
+    },
+    {
+      "severity": "P2",
+      "location": "web/tests/product-readiness-e2e.mjs:993 (US-PR-010 responseLoss)",
+      "evidence": [
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928/results.json"
+      ],
+      "impact": "detail points at 'tests/e2e data-plane runner' without a run path, leaving a dangling reference while idempotentReplay + backend store evidence carry the claim",
+      "suggested_fix": "cite the concrete run directory"
+    },
+    {
+      "severity": "P2",
+      "location": "/home/compile/Work/proxypanel/.ai/evidence/web-demo/C/r3-final-green-20261024T115143Z-b7506f/restore-evidence.json",
+      "evidence": [
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/C/r3-final-green-20261024T115143Z-b7506f/restore-evidence.json",
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/C/r3-final-green-20261024T115143Z-b7506f/receipt.json"
+      ],
+      "impact": "startup placeholder still says status=fail; authoritative values live in receipt.json (20/20 assertions)",
+      "suggested_fix": "drop the placeholder or make it reference the receipt"
+    },
+    {
+      "severity": "P2",
+      "location": "/home/compile/Work/proxypanel/.ai/evidence/web-demo/E/main-20261024T115431Z-4d728d/receipt.json lease",
+      "evidence": [
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/E/main-20261024T115431Z-4d728d/receipt.json"
+      ],
+      "impact": "lease.acquired=false coexists with acquired_at/released_at/own_pid values (describe() called after release()); facts are recoverable but the field is self-contradictory",
+      "suggested_fix": "describe the lease before release or rename the flags"
+    },
+    {
+      "severity": "P2",
+      "location": "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928 (group A run directory)",
+      "evidence": [
+        "/home/compile/Work/proxypanel/.ai/evidence/web-demo/A/full-contract-pass-20261024T123512Z-91d928"
+      ],
+      "impact": "no runner-level receipt or test.log, only manifest.txt plus the three JSON originals; third-party recomputation relies on the manifest",
+      "suggested_fix": "keep a runner receipt for group A"
+    }
+  ],
+  "pending_verification": [
+    {
+      "scenario": "D receipt records source_dirty/executed test content (documentation only)",
+      "owner": "web-demo D",
+      "location": "tests/e2e/run_webdemo_upgrade.py"
+    },
+    {
+      "scenario": "US-PR-003 offline/unknown badge and diagnostic-entry assertions",
+      "owner": "web-demo dev/test",
+      "location": "web/tests/product-readiness-e2e.mjs"
+    },
+    {
+      "scenario": "US-PR-005 bound-plan impact preview folded into the A run",
+      "owner": "web-demo A",
+      "location": "web/tests/product-readiness-e2e.mjs"
+    },
+    {
+      "scenario": "final 8445 deployment and hot-update verification",
+      "owner": "main/delivery (after this acceptance)",
+      "location": "deployment stage"
+    }
+  ],
+  "boundaries": [
+    "public CA / public DNS: not claimed; F proves both hostings with a strict private CA and no bypass",
+    "Windows/mobile GUI and screen readers: no device/AT environment; headless AX is not equivalent",
+    "system-level Agent installation/hardening: not_run (no root/disposable PID1); F proves the user-level transient unit only",
+    "WAL archiving/PITR/off-host backup: not_run; no production RPO/RTO claim; the 49,546B ACK-deleted gap stays recorded once",
+    "external AgentLab core child churn: recorded as foreign change, not attributed as our leak",
+    "8445 preview is not the final candidate and was not used as acceptance input",
+    "E declares 21 local matrix cells + 3 Vision + 4 auxiliary guards only; the historical 54-cell figure is not reused"
+  ],
+  "change_scope": {
+    "backend": false,
+    "frontend": false,
+    "extension": false,
+    "miniapp": false,
+    "flutter": false,
+    "shopify": false,
+    "web_demo": false,
+    "extension_demo": false,
+    "flutter_demo": false
+  },
+  "tests_to_run": [],
+  "derived_artifacts": [
+    ".ai/quality/web-demo-accept-product-readiness-final-r1-20261024-210146.md",
+    ".ai/quality/web-demo-accept-product-readiness-final-r1-20261024-210146-audit.json"
+  ],
+  "cleanup": {
+    "services_started": false,
+    "pg_touched": false,
+    "browser_started": false,
+    "state_modified": false,
+    "source_modified": false,
+    "test_modified": false,
+    "files_created": 2
+  }
+}

@@ -191,12 +191,12 @@
       }
     },
     "web-demo": {
-      "status": "blocked",
+      "status": "completed",
       "plan": ".ai/super-run/product-readiness/web-demo.md",
       "validation_revision": 0,
       "tasks": {
         "dev": {
-          "status": "blocked",
+          "status": "completed",
           "agent_spec": "/home/compile/code/t-tools/agents/web-demo-dev.md",
           "references": [
             ".ai/design/product-readiness.md",
@@ -213,11 +213,15 @@
             "/home/compile/code/t-tools/protocols/diagnostic-report-contract.md"
           ],
           "evidence": [
-            ".ai/quality/product-readiness-stage-delivery-20261024.md"
+            ".ai/quality/product-readiness-stage-delivery-20261024.md",
+            ".ai/quality/product-readiness-webdemo-final-candidate.md",
+            ".ai/quality/web-demo-accept-product-readiness-final-r1-20261024-210146.md",
+            ".ai/quality/web-demo-accept-product-readiness-final-r1-20261024-210146-audit.json",
+            ".ai/quality/product-readiness-final-delivery.md"
           ]
         },
         "accept": {
-          "status": "pending",
+          "status": "completed",
           "agent_spec": "/home/compile/code/t-tools/agents/web-demo-accept.md",
           "references": [
             ".ai/design/product-readiness.md",
@@ -231,7 +235,12 @@
             "/home/compile/code/t-tools/protocols/verification-evidence-contract.md",
             "/home/compile/code/t-tools/guides/web-demo/quality.md"
           ],
-          "evidence": []
+          "evidence": [
+            ".ai/quality/product-readiness-webdemo-final-candidate.md",
+            ".ai/quality/web-demo-accept-product-readiness-final-r1-20261024-210146.md",
+            ".ai/quality/web-demo-accept-product-readiness-final-r1-20261024-210146-audit.json",
+            ".ai/quality/product-readiness-final-delivery.md"
+          ]
         }
       }
     }
