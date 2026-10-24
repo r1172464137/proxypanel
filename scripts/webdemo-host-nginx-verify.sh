@@ -8,13 +8,17 @@
 #
 # Environment it needs (all optional except the lock path):
 #   PPF_EVIDENCE      evidence dir (default: .ai/evidence/web-demo/F/host-nginx-<utc>-<rand>)
-#   PPF_NGINX_DEB     already downloaded Ubuntu nginx .deb (optional)
-#   PPF_NGINX_BIN     already extracted nginx ELF (optional)
-#   PPF_NSS_CERTUTIL  already extracted certutil from libnss3-tools (optional)
+# No binary/deb can be injected: both packages are fetched over HTTPS only and
+# verified against Ubuntu's GPG-signed Packages metadata (see fetch_verified_deb).
 #   PPF_NODE_MODULES  Playwright node_modules (default /home/compile/Work/proxypanel/web/node_modules)
 #   PPF_GO            go binary
 #   PPF_PG_BIN        directory with initdb/pg_ctl (default /home/compile/sdk/pkg/usr/lib/postgresql/17/bin)
-#   PPF_LOCK          default /home/compile/Work/.locks/proxypanel-webdemo-remote-runtime.lock
+#   PPF_LOCK_WAIT     seconds to wait for the local runtime lock (default 60)
+#
+# Runtime lock: this run starts a local PG + panel + nginx, so it holds
+# /home/compile/Work/.locks/proxypanel-webdemo-local-runtime.lock from before the
+# "before" snapshot until all owned processes are reaped. No remote resource is
+# created, so the remote-runtime lock is deliberately NOT touched.
 #
 # Guarantees: no root/sudo, no apt install, no PATH mutation, no system unit,
 # every port on 127.0.0.1 random, every file under the evidence dir (0700/0600),
@@ -25,16 +29,22 @@ umask 077
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$(openssl rand -hex 4)"
 EVIDENCE="${PPF_EVIDENCE:-$ROOT/.ai/evidence/web-demo/F/host-nginx-$RUN_ID}"
-LOCK="${PPF_LOCK:-/home/compile/Work/.locks/proxypanel-webdemo-remote-runtime.lock}"
+LOCK="${PPF_LOCK:-/home/compile/Work/.locks/proxypanel-webdemo-local-runtime.lock}"
+LOCK_WAIT="${PPF_LOCK_WAIT:-60}"
 NODE_MODULES="${PPF_NODE_MODULES:-/home/compile/Work/proxypanel/web/node_modules}"
 GO_BIN="${PPF_GO:-/home/compile/sdk/go1.27.3/go/bin/go}"
 PG_BIN="${PPF_PG_BIN:-/home/compile/sdk/pkg/usr/lib/postgresql/17/bin}"
 PG_LIB="${PPF_PG_LIB:-/home/compile/sdk/pkg/usr/lib/x86_64-linux-gnu}"
 export LD_LIBRARY_PATH="$PG_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-NGINX_DEB_IN="${PPF_NGINX_DEB:-}"
-NGINX_BIN_IN="${PPF_NGINX_BIN:-}"
-CERTUTIL_IN="${PPF_NSS_CERTUTIL:-}"
-APT_BASE="http://archive.ubuntu.com/ubuntu/pool"
+# HTTPS only. Pinned version; the digest is NOT taken from the download, it comes
+# from Ubuntu's GPG-verified Packages index for this pinned version.
+NGINX_VERSION_PIN="1.24.0-2ubuntu7.18"
+NSS_VERSION_PIN="3.98-1ubuntu0.3"
+NSS_EPOCH_PIN="2"
+UBUNTU_HTTPS="https://archive.ubuntu.com/ubuntu"
+KEYRING="/usr/share/keyrings/ubuntu-archive-keyring.gpg"
+CURL_HTTPS=(--proto '=https' --tlsv1.2 --max-redirs 3 --noproxy '*')
+CURL_LOCAL=(--noproxy '*' --max-time 10)
 
 REPORT="$EVIDENCE/result.json"
 MANIFEST="$EVIDENCE/manifest.json"
@@ -45,6 +55,8 @@ PANELPID=""
 PG_STARTED=0
 LOCK_HELD=0
 FAIL_REASON=""
+RUN_STARTED="$(date +%s)"
+LEASE_STARTED=""
 declare -a CHECKS=()
 declare -a NOTRUN=()
 
@@ -91,7 +103,7 @@ cleanup() {
       if [ "$rc" -eq 0 ]; then write_result passed; else write_result failed; fi
     fi
   fi
-  if [ "$LOCK_HELD" = 1 ]; then :; fi   # lock fd 9 closed by shell exit
+  release_lock
   exit $rc
 }
 trap cleanup EXIT
@@ -100,23 +112,32 @@ trap 'exit 130' INT TERM
 
 acquire_lock() {
   mkdir -p "$(dirname "$LOCK")"
-  # The remote-runtime lock serialises remote runtime mutation. This run performs
-  # NO remote mutation and creates NO remote/preview/203 resource: every fixture
-  # is a private temp prefix on this host user account. The lock is still tried
-  # first, as the plan requires before any rented runtime.
+  # A local PG/panel/nginx is started by this run, so the local runtime lock is
+  # mandatory per the plan: taken before the "before" snapshot and held until all
+  # owned processes are reaped. No remote/preview/203 resource is created, so the
+  # remote-runtime lock is not used at all.
   exec 9>"$LOCK"
-  if flock -n 9; then
+  if flock -w "$LOCK_WAIT" 9; then
     LOCK_HELD=1
-    check_ok "remote-runtime lock held (fd 9) before any fixture creation"
+    LEASE_STARTED="$(date +%s)"
+    { echo "lock=$LOCK"; echo "state=held"; echo "role=local-runtime"; } >"$EVIDENCE/lock-note.txt"
+    check_ok "local-runtime lock held (fd 9) before the before-snapshot"
   else
-    # Another in-flight web-demo group holds it (e.g. a remote PG inherited the
-    # fd). We must not wait for or disturb it, and we cannot claim the lock.
-    LOCK_HELD=0
-    { echo "lock=$LOCK"; echo "state=held_by_other_run";
-      fuser -v "$LOCK" 2>&1 | sed 's/^/holder: /'; } >"$EVIDENCE/lock-note.txt" 2>&1 || true
-    NOTRUN_LOCK=1
-    not_run "remote-runtime lock is held by another in-flight run; this run creates no remote resource, so it proceeds host-local only (see lock-note.txt)"
+    # Bounded wait only. Contention is an ENV failure, never a reason to run
+    # unprotected: an unlocked run could not legitimately assert "no listener lost".
+    { echo "lock=$LOCK"; echo "state=contended"; fuser -v "$LOCK" 2>&1; } >"$EVIDENCE/lock-note.txt" 2>&1 || true
+    fail "local-runtime lock not acquired within ${LOCK_WAIT}s (another owned runtime is active); rerun when free"
   fi
+}
+
+release_lock() {
+  if [ "${LOCK_HELD:-0}" = 1 ]; then
+    flock -u 9 2>/dev/null || true
+    exec 9>&- 2>/dev/null || true
+    LOCK_HELD=0
+    check_ok "local-runtime lock released after all owned processes were reaped"
+  fi
+  return 0
 }
 
 # ---------------------------------------------------------------- evidence base
@@ -202,7 +223,11 @@ assert not diff, f'protected host identity changed: {diff}'
 # The only loopback listeners this run may add are its own random panel/HTTPS
 # ports, and they must already be gone when the after-snapshot is taken.
 assert not new_listen, f'loopback listener left behind: {new_listen}'
-print('host identity unchanged')
+# Symmetric requirement: an unrelated process disappearing is NOT ignorable.
+# Any change is the caller's signal to re-run under a quiet local-runtime lease.
+assert not stale_listen, (f'loopback listener disappeared during this run: {stale_listen}; '
+                          're-run when the host runtime is quiet (unrelated tasks in scope)')
+print('host identity unchanged (no new and no lost loopback listener)')
 PY
   chmod 600 "$EVIDENCE/host-identity-diff.json"
   check_ok "protected host identity unchanged before/after (pid1/namespaces/cgroup, no leftover 127 listener)"
@@ -210,44 +235,102 @@ PY
 
 leftover_check() {
   local prefix="$WORK/nginx/prefix"
+  # A run that exceeded its own budget is not a valid quiet-runtime observation.
+  local elapsed=$(( $(date +%s) - RUN_STARTED ))
+  echo "elapsed_seconds=$elapsed lease_seconds=$(( $(date +%s) - LEASE_STARTED ))" >"$EVIDENCE/timing.txt"
+  chmod 600 "$EVIDENCE/timing.txt"
+  [ "$elapsed" -le "${PPF_MAX_SECONDS:-180}" ] || fail "run took ${elapsed}s, over the ${PPF_MAX_SECONDS:-180}s budget"
   [ ! -e "$prefix/logs/nginx.pid" ] || fail "nginx pidfile left behind"
   if pgrep -f "$WORK/nginx/nginx -p $prefix" >/dev/null 2>&1; then fail "nginx process left behind"; fi
   if ss -ltn "sport = :$HTTPS_PORT" 2>/dev/null | grep -q LISTEN; then fail "https port $HTTPS_PORT still listening"; fi
   if ss -ltn "sport = :$PANEL_PORT" 2>/dev/null | grep -q LISTEN; then fail "panel port $PANEL_PORT still listening"; fi
-  check_ok "no leftover nginx/panel process, pidfile or listener after cleanup"
+  check_ok "no leftover nginx/panel process, pidfile or listener; run finished in ${elapsed}s (<= ${PPF_MAX_SECONDS:-180}s)"
 }
 
 # --------------------------------------------------- real user-space nginx ELF
+# ------------------------------------------------- verified package acquisition
+# The executed nginx ELF must be the *official* Ubuntu build for the pinned
+# version, so the digest cannot come from the download itself. Chain:
+#   1. HTTPS fetch of dists/<suite>/InRelease
+#   2. gpgv against the distro's own ubuntu-archive-keyring -> good signature
+#   3. InRelease's own SHA256 section authenticates main/binary-amd64/Packages.gz
+#   4. the authenticated index gives the .deb SHA256 for the pinned version
+#   5. HTTPS fetch of that pool path; the digest must equal step 4
+# Nothing is installed; the payload is only unpacked into the private prefix.
+# There is no caller-supplied binary/deb override, by design.
+fetch_verified_deb() {
+  local suite="$1" package="$2" version="$3" dest="$4" log="$5"
+  local meta="$WORK/pkgmeta" dir="$WORK/pkgmeta/$package"
+  mkdir -p "$meta" "$dir"
+  chmod 700 "$meta" "$dir"
+  local inrelease="$meta/${suite//\//_}.InRelease"
+  local pkgs="$dir/Packages.gz"
+  local base="$UBUNTU_HTTPS/dists/$suite"
+  curl "${CURL_HTTPS[@]}" -fsS -o "$inrelease" "$base/InRelease" \
+    || fail "cannot fetch $base/InRelease over HTTPS"
+  gpgv --keyring "$KEYRING" "$inrelease" >"$dir/gpgv.log" 2>&1 \
+    || { cat "$dir/gpgv.log" >&2; fail "Ubuntu InRelease signature verification failed for $suite"; }
+  grep -q 'Good signature' "$dir/gpgv.log" || fail "gpgv did not report a good signature for $suite"
+  local expected_pkgs
+  expected_pkgs="$(awk '/^SHA256:/{f=1;next} /^[A-Za-z]/{f=0} f && $3=="main/binary-amd64/Packages.gz"{print $1}' "$inrelease")"
+  [ -n "$expected_pkgs" ] || fail "InRelease ($suite) has no SHA256 for main/binary-amd64/Packages.gz"
+  curl "${CURL_HTTPS[@]}" -fsS -o "$pkgs" "$base/main/binary-amd64/Packages.gz" \
+    || fail "cannot fetch $base/main/binary-amd64/Packages.gz over HTTPS"
+  [ "$(sha256 "$pkgs")" = "$expected_pkgs" ] \
+    || fail "Packages.gz digest mismatch for $suite (authenticated=$expected_pkgs actual=$(sha256 "$pkgs"))"
+  gzip -dc "$pkgs" >"$dir/Packages" || fail "cannot decompress authenticated Packages.gz"
+  local filename expected_deb
+  filename="$(awk -v p="$package" -v v="$version" '
+    /^Package: /{cur=$2} cur==p && /^Version: /{ver=$2}
+    cur==p && ver==v && /^Filename: /{fn=$2}
+    cur==p && ver==v && /^SHA256: /{print fn" "$2; exit}' "$dir/Packages")"
+  [ -n "$filename" ] || fail "pinned $package=$version not found in authenticated $suite index"
+  expected_deb="${filename##* }"
+  local pool_path="${filename%% *}"
+  curl "${CURL_HTTPS[@]}" -fsS -o "$dest" "$UBUNTU_HTTPS/$pool_path" \
+    || fail "cannot fetch $UBUNTU_HTTPS/$pool_path over HTTPS"
+  [ "$(sha256 "$dest")" = "$expected_deb" ] \
+    || fail "$package deb digest does not match authenticated index (expected=$expected_deb actual=$(sha256 "$dest"))"
+  {
+    echo "package=$package"
+    echo "version=$version"
+    echo "suite=$suite"
+    echo "origin=$UBUNTU_HTTPS"
+    echo "inrelease=$base/InRelease"
+    echo "inrelease_sha256=$(sha256 "$inrelease")"
+    echo "signing_key=$(grep -o 'using RSA key [0-9A-F]*' "$dir/gpgv.log" | awk '{print $4}')"
+    echo "gpgv_reported=$(grep -m1 'Good signature' "$dir/gpgv.log")"
+    echo "packages_index=$base/main/binary-amd64/Packages.gz"
+    echo "packages_index_sha256=$expected_pkgs"
+    echo "deb_url=$UBUNTU_HTTPS/$pool_path"
+    echo "deb_sha256_verified=$expected_deb"
+    echo "installed=no (unpacked only)"
+    echo "protocol=https-only"
+  } >>"$log"
+  chmod 600 "$log"
+}
+
 obtain_nginx() {
   local dir="$WORK/nginx"
   mkdir -p "$dir"
-  if [ -n "$NGINX_BIN_IN" ] && [ -x "$NGINX_BIN_IN" ]; then
-    cp "$NGINX_BIN_IN" "$dir/nginx"
-    echo "source=provided:$NGINX_BIN_IN" >"$dir/provenance.txt"
-  else
-    local deb="$NGINX_DEB_IN"
-    if [ -z "$deb" ]; then
-      # Download only; never install. Pin the exact Ubuntu noble-updates version.
-      local ver="1.24.0-2ubuntu7.18"
-      deb="$dir/nginx_${ver}_amd64.deb"
-      local url="$APT_BASE/main/n/nginx/nginx_${ver}_amd64.deb"
-      curl -fsS --max-time 120 -o "$deb" "$url" || fail "cannot download $url (network/dependency gap)"
-      echo "url=$url" >>"$dir/provenance.txt"
-    fi
-    dpkg-deb -e "$deb" "$dir/control"
-    dpkg-deb -x "$deb" "$dir/rootfs"
-    # Package payloads carry world-readable modes; keep the whole private prefix
-    # owner-only as required for this evidence tree.
-    chmod -R go-rwx "$dir/control" "$dir/rootfs"
-    cp "$dir/rootfs/usr/sbin/nginx" "$dir/nginx"
-    echo "deb=$deb" >>"$dir/provenance.txt"
-    echo "deb_sha256=$(sha256 "$deb")" >>"$dir/provenance.txt"
-    grep -E '^(Package|Version|Source|Architecture):' "$dir/control/control" >>"$dir/provenance.txt"
-  fi
+  chmod 700 "$dir"
+  local deb="$dir/nginx_${NGINX_VERSION_PIN}_amd64.deb"
+  : >"$dir/provenance.txt"
+  fetch_verified_deb "noble-updates" "nginx" "$NGINX_VERSION_PIN" "$deb" "$dir/provenance.txt"
+  dpkg-deb -e "$deb" "$dir/control"
+  dpkg-deb -x "$deb" "$dir/rootfs"
+  # Package payloads carry world-readable modes; keep the whole private prefix
+  # owner-only as required for this evidence tree.
+  chmod -R go-rwx "$dir/control" "$dir/rootfs"
+  cp "$dir/rootfs/usr/sbin/nginx" "$dir/nginx"
+  grep -E '^(Package|Version|Source|Architecture):' "$dir/control/control" >>"$dir/provenance.txt"
   chmod 700 "$dir/nginx"
   NGINX_ELF="$dir/nginx"
   NGINX_VERSION="$("$NGINX_ELF" -v 2>&1 | tr -d '\r')"
-  check_ok "real user-space nginx ELF prepared ($NGINX_VERSION)"
+  [ "$(sha256 "$NGINX_ELF")" = "$(sha256 "$dir/rootfs/usr/sbin/nginx")" ] \
+    || fail "extracted nginx ELF does not match the verified package payload"
+  echo "nginx_elf_sha256=$(sha256 "$NGINX_ELF")" >>"$dir/provenance.txt"
+  check_ok "official nginx ELF from GPG-verified Ubuntu index ($NGINX_VERSION, https-only, not installed)"
 }
 
 nginx_proc_identity() {
@@ -358,18 +441,15 @@ install_nss_trust() {
   local dir="$WORK/nss"
   mkdir -p "$dir" "$HOME_ISO/.pki/nssdb"
   chmod 700 "$HOME_ISO" "$HOME_ISO/.pki" "$HOME_ISO/.pki/nssdb"
-  local certutil="$CERTUTIL_IN"
-  if [ -z "$certutil" ] || [ ! -x "$certutil" ]; then
-    local deb="$dir/libnss3-tools.deb"
-    # Filename without the epoch prefix; the dir name is the source package.
-    local url="$APT_BASE/main/n/nss/libnss3-tools_3.98-1ubuntu0.3_amd64.deb"
-    if curl -fsS --max-time 120 -o "$deb" "$url"; then
-      dpkg-deb -x "$deb" "$dir/rootfs"
-      chmod -R go-rwx "$dir/rootfs"
-      certutil="$dir/rootfs/usr/bin/certutil"
-      echo "certutil_url=$url" >"$dir/provenance.txt"
-      echo "certutil_deb_sha256=$(sha256 "$deb")" >>"$dir/provenance.txt"
-    fi
+  local certutil=""
+  local deb="$dir/libnss3-tools_${NSS_VERSION_PIN}_amd64.deb"
+  if fetch_verified_deb "noble-updates" "libnss3-tools" "$NSS_EPOCH_PIN:$NSS_VERSION_PIN" \
+       "$deb" "$dir/provenance.txt" >>"$dir/fetch.log" 2>&1; then
+    dpkg-deb -x "$deb" "$dir/rootfs"
+    chmod -R go-rwx "$dir/rootfs"
+    certutil="$dir/rootfs/usr/bin/certutil"
+  else
+    tail -5 "$dir/fetch.log" >&2 || true
   fi
   if [ -z "$certutil" ] || [ ! -x "$certutil" ]; then
     not_run "NSS browser trust: certutil unavailable (browser would need narrow self-signed helper)"
@@ -388,6 +468,29 @@ install_nss_trust() {
 }
 
 # ---------------------------------------------------------------- postgres + panel
+# Build-only phase: no runtime resource, so it runs before the local lease.
+build_panel() {
+  local panelbin="$WORK/bin/panel"
+  mkdir -p "$WORK/bin"
+  chmod 700 "$WORK/bin"
+  ( cd "$ROOT" && "$GO_BIN" build -trimpath -buildvcs=false -o "$panelbin" ./cmd/panel ) \
+    >"$EVIDENCE/go-build.log" 2>&1 || fail "panel build failed"
+  PANELBIN="$panelbin"
+  PANEL_BIN_SHA="$(sha256 "$panelbin")"
+
+  WEBROOT="$ROOT/web/dist"
+  if [ ! -f "$WEBROOT/index.html" ]; then
+    ( cd "$ROOT/web" && npm run build ) >"$EVIDENCE/web-build.log" 2>&1 \
+      || fail "web build failed (web/dist/index.html unavailable)"
+  fi
+  WEB_INDEX_SHA="$(sha256 "$WEBROOT/index.html")"
+  ASSET_JS="$(grep -o 'assets/[^"]*\.js' "$WEBROOT/index.html" | head -1)"
+  [ -n "$ASSET_JS" ] || fail "could not locate hashed asset in dist/index.html"
+  WEB_ASSET_SHA="$(sha256 "$WEBROOT/$ASSET_JS")"
+  ASSET_PATH="/$ASSET_JS"
+  check_ok "built owned panel + recorded web/dist asset sha (pre-lease, no runtime)"
+}
+
 start_fixture() {
   local pg="$WORK/pg"
   # AF_UNIX socket paths are limited to 107 bytes; the evidence path is longer,
@@ -403,23 +506,7 @@ start_fixture() {
   PG_STARTED=1
   "$PG_BIN/createdb" -h 127.0.0.1 -p "$PG_PORT" -U postgres webdemo_host_nginx \
     || fail "createdb failed"
-  check_ok "owned private PG cluster on 127.0.0.1:$PG_PORT (temp prefix, own data dir)"
-
-  local panelbin="$WORK/bin/panel"
-  mkdir -p "$WORK/bin"
-  ( cd "$ROOT" && "$GO_BIN" build -trimpath -buildvcs=false -o "$panelbin" ./cmd/panel ) \
-    >"$EVIDENCE/go-build.log" 2>&1 || fail "panel build failed"
-  PANEL_BIN_SHA="$(sha256 "$panelbin")"
-
-  local webroot="$ROOT/web/dist"
-  if [ ! -f "$webroot/index.html" ]; then
-    ( cd "$ROOT/web" && PPF_API_URL=x npm run build ) >"$EVIDENCE/web-build.log" 2>&1 \
-      || fail "web build failed (web/dist/index.html unavailable)"
-  fi
-  WEB_INDEX_SHA="$(sha256 "$webroot/index.html")"
-  ASSET_JS="$(grep -o 'assets/[^"]*\.js' "$webroot/index.html" | head -1)"
-  [ -n "$ASSET_JS" ] || fail "could not locate hashed asset in dist/index.html"
-  WEB_ASSET_SHA="$(sha256 "$webroot/$ASSET_JS")"
+  check_ok "owned private PG cluster on 127.0.0.1:$PG_PORT (temp prefix, own data dir, under local lease)"
 
   PANEL_PORT="$(rand_port)"
   export DATABASE_URL="postgres://postgres@127.0.0.1:$PG_PORT/webdemo_host_nginx?sslmode=disable"
@@ -427,20 +514,118 @@ start_fixture() {
   export PANEL_TRUST_REVERSE_PROXY=true
   export PANEL_DEV=false
   export PANEL_MASTER_KEY="$(openssl rand -base64 32)"
-  export PANEL_WEB_ROOT="$webroot"
   export PANEL_MIGRATIONS_DIR="$ROOT/migrations"
   export PANEL_PUBLIC_URL="https://localhost:$HTTPS_PORT"
   export PANEL_ADMIN_USER=admin
   export PANEL_ADMIN_PASSWORD="ppf-$(openssl rand -hex 12)"
-  ( cd "$ROOT" && exec "$panelbin" ) >"$EVIDENCE/panel.log" 2>&1 &
+  start_panel spa
+}
+
+# start_panel <spa|api>: (re)start the SAME owned binary against the SAME owned
+# database with the SAME master key. Only PANEL_WEB_ROOT differs, which is what
+# actually makes hosting #2 an API-only panel instead of a second SPA.
+start_panel() {
+  local mode="$1"
+  stop_panel
+  if [ "$mode" = "spa" ]; then
+    export PANEL_WEB_ROOT="$WEBROOT"
+  else
+    export PANEL_WEB_ROOT=""
+  fi
+  ( cd "$ROOT" && exec "$PANELBIN" ) >"$EVIDENCE/panel-$mode.log" 2>&1 &
   PANELPID=$!
+  local ready=0
   for _ in $(seq 1 120); do
-    if [ "$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PANEL_PORT/api/v1/auth/session" 2>/dev/null)" = "401" ]; then break; fi
-    kill -0 "$PANELPID" 2>/dev/null || fail "panel exited during startup (see panel.log)"
+    if [ "$(curl "${CURL_LOCAL[@]}" -sS -o /dev/null -w '%{http_code}' \
+          "http://127.0.0.1:$PANEL_PORT/api/v1/auth/session" 2>/dev/null)" = "401" ]; then
+      ready=1; break
+    fi
+    kill -0 "$PANELPID" 2>/dev/null || fail "panel ($mode) exited during startup (see panel-$mode.log)"
     sleep 0.5
   done
-  grep -qi 'panic\|fatal' "$EVIDENCE/panel.log" && fail "panel log shows fatal error"
-  check_ok "fresh owned panel built+started on 127.0.0.1:$PANEL_PORT with PANEL_WEB_ROOT (Go SPA mode)"
+  [ "$ready" = 1 ] || fail "panel ($mode) did not become ready on 127.0.0.1:$PANEL_PORT"
+  if grep -qi 'panic\|fatal' "$EVIDENCE/panel-$mode.log"; then fail "panel ($mode) log shows fatal error"; fi
+  local web_root_log
+  web_root_log="$(grep -c 'web: serving SPA from' "$EVIDENCE/panel-$mode.log" || true)"
+  if [ "$mode" = "spa" ]; then
+    [ "$web_root_log" = "1" ] || fail "spa panel did not report serving the SPA (PANEL_WEB_ROOT missing?)"
+  else
+    [ "$web_root_log" = "0" ] || fail "api panel still serves the SPA (PANEL_WEB_ROOT not empty)"
+    grep -q 'serving API only' "$EVIDENCE/panel-$mode.log" \
+      || fail "api panel did not report API-only mode"
+  fi
+  check_ok "owned panel ($mode) ready on 127.0.0.1:$PANEL_PORT, PANEL_WEB_ROOT=$([ "$mode" = spa ] && echo set || echo empty)"
+}
+
+# Direct-to-Go probes. These prove what the panel itself answers, before any
+# nginx static layer is involved, so hosting #2 cannot look "API only" merely
+# because nginx happens to serve the files.
+go_direct_probes() {
+  local mode="$1"
+  local out="$EVIDENCE/go-direct-$mode.txt"
+  local base="http://127.0.0.1:$PANEL_PORT"
+  : >"$out"
+  probe_code() { # name path expect
+    local name="$1" path="$2" expect="$3"
+    local body="$EVIDENCE/go-direct-$mode-$name.body" code ctype
+    code="$(curl "${CURL_LOCAL[@]}" -sS -o "$body" -w '%{http_code}' -D "$body.h" "$base$path" 2>>"$out" || true)"
+    ctype="$(tr -d '\r' <"$body.h" | awk 'tolower($1)=="content-type:"{print $2; exit}')"
+    echo "$name path=$path code=$code content_type=${ctype:-none} expect=$expect" >>"$out"
+    rm -f "$body.h"
+    printf '%s' "$code"
+  }
+  if [ "$mode" = "spa" ]; then
+    [ "$(probe_code root / 200)" = 200 ] || fail "spa: Go root is not 200"
+    grep -q 'id="app"' "$EVIDENCE/go-direct-spa-root.body" || fail "spa: Go root is not the SPA shell"
+    [ "$(probe_code deeplink /admin/nodes 200)" = 200 ] || fail "spa: Go deeplink is not 200"
+    grep -q 'id="app"' "$EVIDENCE/go-direct-spa-deeplink.body" || fail "spa: Go deeplink is not the SPA shell"
+    [ "$(probe_code asset "$ASSET_PATH" 200)" = 200 ] || fail "spa: Go hashed asset is not 200"
+    check_ok "spa: Go itself serves root/deeplink/asset as SPA (200)"
+  else
+    local code
+    code="$(probe_code root / 404)"
+    [ "$code" = 404 ] || fail "api: Go root returned $code, expected non-HTML 404"
+    ! grep -qi '<html\|id="app"' "$EVIDENCE/go-direct-api-root.body" || fail "api: Go root returned SPA HTML"
+    code="$(probe_code deeplink /admin/nodes 404)"
+    [ "$code" = 404 ] || fail "api: Go deeplink returned $code, expected non-HTML 404"
+    ! grep -qi '<html\|id="app"' "$EVIDENCE/go-direct-api-deeplink.body" || fail "api: Go deeplink returned SPA HTML"
+    code="$(probe_code asset "$ASSET_PATH" 404)"
+    [ "$code" = 404 ] || fail "api: Go hashed asset returned $code, expected non-HTML 404"
+    [ "$(probe_code apisession /api/v1/auth/session 401)" = 401 ] || fail "api: Go API is not answering"
+    [ "$(probe_code readyz /readyz 200)" = 200 ] || fail "api: Go /readyz is not 200"
+    check_ok "api: Go itself answers non-HTML 404 for root/deeplink/asset while the API works"
+  fi
+  chmod 600 "$out"
+  chmod 600 "$EVIDENCE"/go-direct-"$mode"-*.body 2>/dev/null || true
+}
+
+session_cookie_value() {
+  local jar_headers="$1"
+  tr -d '\r' <"$jar_headers" | awk 'tolower($1)=="set-cookie:" && $2 ~ /^pp_session=/{v=$2; sub(/^pp_session=/,"",v); sub(/;.*/,"",v); print v; exit}'
+}
+
+# Swap hosting #1 (Go SPA) to hosting #2 (API only) on the same DB/binary/key and
+# prove an already-issued session survives the restart.
+switch_to_api_only() {
+  local hdr="$EVIDENCE/session-before-restart.headers"
+  curl "${CURL_LOCAL[@]}" -sS -o /dev/null -D "$hdr" \
+    -H 'Content-Type: application/json' \
+    -d "{\"username\":\"$PANEL_ADMIN_USER\",\"password\":\"$PANEL_ADMIN_PASSWORD\"}" \
+    "http://127.0.0.1:$PANEL_PORT/api/v1/auth/login" || fail "spa panel: direct login failed"
+  local cookie
+  cookie="$(session_cookie_value "$hdr")"
+  [ -n "$cookie" ] || { cat "$hdr" >&2; fail "spa panel: login set no pp_session cookie"; }
+  tr -d '\r' <"$hdr" | grep -qi 'set-cookie: .*pp_session=.*Secure' || fail "session cookie is not Secure"
+  tr -d '\r' <"$hdr" | grep -qi 'set-cookie: .*pp_session=.*HttpOnly' || fail "session cookie is not HttpOnly"
+  echo "session_cookie_secure_httponly=1" >"$EVIDENCE/session-continuity.txt"
+  start_panel api
+  [ "$(curl "${CURL_LOCAL[@]}" -sS -o /dev/null -w '%{http_code}' \
+        -H "Cookie: pp_session=$cookie" "http://127.0.0.1:$PANEL_PORT/api/v1/auth/session")" = "200" ] \
+    || fail "session issued before the API-only restart is no longer valid"
+  echo "session_survives_api_only_restart=1 (same DB, same master key, same binary)" >>"$EVIDENCE/session-continuity.txt"
+  chmod 600 "$EVIDENCE/session-continuity.txt" "$hdr"
+  check_ok "panel restarted in API-only mode with the same DB/key/binary; pre-restart session still valid"
+  go_direct_probes api
 }
 
 # ------------------------------------------------------------------- nginx
@@ -534,7 +719,7 @@ nginx_start() {
     || { cat "$EVIDENCE/nginx-$mode-start.log" >&2; fail "nginx start failed for $mode"; }
   NGINX_PID="$(cat "$prefix/logs/nginx.pid")"
   for _ in $(seq 1 60); do
-    if curl -fsS --max-time 3 --cacert "$WORK/pki/ca.crt" "https://localhost:$HTTPS_PORT/login" -o /dev/null; then break; fi
+    if curl "${CURL_LOCAL[@]}" -fsS --cacert "$WORK/pki/ca.crt" "https://localhost:$HTTPS_PORT/login" -o /dev/null; then break; fi
     sleep 0.25
   done
   nginx_proc_identity "$mode"
@@ -546,6 +731,13 @@ stop_pg() {
     "$PG_BIN/pg_ctl" -D "$WORK/pg/data" -m fast stop >>"$EVIDENCE/pg-stop.log" 2>&1 || true
     PG_STARTED=0
   fi
+  # The socket/port may take a moment to be released; the after-snapshot must not
+  # race it, otherwise our own port would look like an unrelated lost listener.
+  local _i
+  for _i in $(seq 1 50); do
+    ss -ltn 2>/dev/null | grep -q ":$PG_PORT " || break
+    sleep 0.1
+  done
   return 0
 }
 
@@ -575,22 +767,45 @@ strict_probes() {
   local base="https://localhost:$HTTPS_PORT"
   local out="$EVIDENCE/strict-tls.txt"
   : >"$out"
-  # default trust store must reject the private CA
-  local code
-  code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$base/login" 2>>"$out" || true)"
-  { echo "untrusted_default_store_code=$code"; } >>"$out"
-  [ "$code" = "000" ] || fail "default trust store unexpectedly accepted private CA (code=$code)"
-  # strict trust with --cacert, hostname check on both localhost and SAN IP
-  curl -fsS --max-time 10 --cacert "$WORK/pki/ca.crt" "$base/login" -o "$EVIDENCE/tls-login.html" \
+  local rc err
+
+  # 1. Default trust store must reject: curl exit 60 (peer certificate cannot be
+  # authenticated) plus the issuer diagnostic, with NO --cacert. A network error,
+  # a timeout, or a bare 000 is explicitly not accepted as "rejected".
+  set +e
+  err="$(curl "${CURL_LOCAL[@]}" -sS -o /dev/null -w '%{http_code}' "$base/login" 2>&1)"
+  rc=$?
+  set -e
+  echo "default_store_curl_exit=$rc" >>"$out"
+  echo "default_store_output=$err" >>"$out"
+  [ "$rc" = "60" ] || fail "default store probe exited $rc (expected 60); a non-certificate failure cannot prove rejection"
+  grep -qi 'unable to get local issuer certificate' <<<"$err" \
+    || fail "default store rejection lacks the CA-issuer diagnostic: $err"
+
+  # 2. Positive control: strict trust on both SAN entries.
+  curl "${CURL_LOCAL[@]}" -fsS --cacert "$WORK/pki/ca.crt" "$base/login" -o "$EVIDENCE/tls-login.html" \
     >>"$out" 2>&1 || fail "curl --cacert to https://localhost failed"
-  curl -fsS --max-time 10 --cacert "$WORK/pki/ca.crt" "https://127.0.0.1:$HTTPS_PORT/login" -o /dev/null \
+  curl "${CURL_LOCAL[@]}" -fsS --cacert "$WORK/pki/ca.crt" "https://127.0.0.1:$HTTPS_PORT/login" -o /dev/null \
     >>"$out" 2>&1 || fail "curl --cacert to https://127.0.0.1 (SAN IP) failed"
-  if curl -fsS --max-time 10 --cacert "$WORK/pki/ca.crt" "https://wrong.invalid:$HTTPS_PORT/login" -o /dev/null \
-      --connect-to "wrong.invalid:$HTTPS_PORT:127.0.0.1:$HTTPS_PORT" >>"$out" 2>&1; then
-    fail "hostname mismatch was not rejected"
-  fi
-  echo 'hostname_mismatch_rejected=1' >>"$out"
-  # Node TLS with the private CA and rejectUnauthorized
+  echo 'ca_trusted_localhost_and_san_ip=1' >>"$out"
+
+  # 3. Hostname mismatch must fail for the certificate reason (exit 60 +
+  # SAN text), not for connectivity. --noproxy '*' keeps HTTPS_PROXY from
+  # turning wrong.invalid into a proxy error.
+  set +e
+  err="$(curl "${CURL_LOCAL[@]}" -sS -o /dev/null --cacert "$WORK/pki/ca.crt" \
+          --connect-to "wrong.invalid:$HTTPS_PORT:127.0.0.1:$HTTPS_PORT" \
+          "https://wrong.invalid:$HTTPS_PORT/login" 2>&1)"
+  rc=$?
+  set -e
+  echo "hostname_mismatch_curl_exit=$rc" >>"$out"
+  echo "hostname_mismatch_output=$err" >>"$out"
+  [ "$rc" = "60" ] || fail "hostname mismatch exited $rc (expected 60); not a certificate refusal"
+  grep -Eqi 'no alternative certificate subject name|does not match|subject name' <<<"$err" \
+    || fail "hostname mismatch rejection lacks a SAN/hostname diagnostic: $err"
+  echo 'hostname_mismatch_rejected_by_certificate=1' >>"$out"
+
+  # 4. Node client with the private CA and rejectUnauthorized (no bypass).
   node -e '
 const https=require("https"), fs=require("fs");
 const ca=fs.readFileSync(process.argv[1]); const port=process.argv[2];
@@ -599,14 +814,25 @@ const req=https.request({host:"localhost",port,path:"/login",ca,rejectUnauthoriz
 });
 req.on("error",e=>{console.error("ERR",e.message);process.exit(2)}); req.end();
 ' "$WORK/pki/ca.crt" "$HTTPS_PORT" >>"$out" 2>&1 || fail "Node rejectUnauthorized TLS client failed"
-  # hostile XFF must not expand the trusted network. Each attempt spoofs a
+  # ...and the same client must fail without the CA.
+  set +e
+  node -e '
+const https=require("https");
+const req=https.request({host:"localhost",port:process.argv[1],path:"/login",rejectUnauthorized:true},res=>{console.log("UNEXPECTED",res.statusCode);process.exit(1)});
+req.on("error",e=>{console.log("expected_error="+e.code);process.exit(e.code==="UNABLE_TO_VERIFY_LEAF_SIGNATURE"?0:2)}); req.end();
+' "$HTTPS_PORT" >>"$out" 2>&1
+  rc=$?
+  set -e
+  [ "$rc" = "0" ] || fail "Node without the private CA did not fail with UNABLE_TO_VERIFY_LEAF_SIGNATURE (rc=$rc)"
+
+  # 5. hostile XFF must not expand the trusted network. Each attempt spoofs a
   # DIFFERENT client address; if the panel trusted the override every attempt
   # would be a fresh source and never hit the per-source budget, so the observed
   # 429 proves the address actually used is the nginx peer (127.0.0.1), not XFF.
   # A throwaway username is used so the real admin budget is untouched.
   local i code_i
   for i in $(seq 1 12); do
-    code_i="$(curl -sS --max-time 10 --cacert "$WORK/pki/ca.crt" \
+    code_i="$(curl "${CURL_LOCAL[@]}" --cacert "$WORK/pki/ca.crt" \
       -H "X-Forwarded-For: 198.51.100.$i" -H 'Content-Type: application/json' \
       -d '{"username":"ppf-xff-probe","password":"wrong-on-purpose"}' \
       -o "$EVIDENCE/login-probe-$i.json" -w '%{http_code}' "$base/api/v1/auth/login" 2>>"$out" || true)"
@@ -617,7 +843,7 @@ req.on("error",e=>{console.error("ERR",e.message);process.exit(2)}); req.end();
   grep -q 'invalid username or password' "$EVIDENCE/login-probe-1.json" || fail "login error body is not uniform"
   echo 'xff_spoof_does_not_widen_trust=1 (last of 12 distinct spoofed sources -> 429)' >>"$out"
   chmod 600 "$out"
-  check_ok "strict TLS: default store rejects, --cacert/Node verify real chain, DNS mismatch rejected"
+  check_ok "strict TLS: default store exit60+issuer, --cacert/Node verify, SAN mismatch exit60"
 }
 
 # -------------------------------------------------------- browser (two modes)
@@ -681,6 +907,56 @@ browser_mode_selfsigned() {
 }
 
 # ------------------------------------------------------------------- manifest
+# Same-invocation Go evidence: raw -json plus the raw exit status of the owned
+# contract test. A skip or 0 executed cases must never be readable as a pass.
+go_contract_run() {
+  local json="$EVIDENCE/go-test.json" rawexit="$EVIDENCE/go-test.rawexit"
+  ( cd "$ROOT" && "$GO_BIN" test ./tests/e2e/ -run '^TestWebdemoHostNginxVerifyScriptContract$' \
+      -count=1 -v -json ) >"$json" 2>"$EVIDENCE/go-test.stderr.log"
+  echo "$?" >"$rawexit"
+  chmod 600 "$json" "$rawexit" "$EVIDENCE/go-test.stderr.log"
+  [ "$(cat "$rawexit")" = "0" ] || { tail -5 "$EVIDENCE/go-test.stderr.log" >&2; fail "Go contract test exited $(cat "$rawexit")"; }
+  python3 - "$json" "$EVIDENCE/go-test.summary.json" <<'PY'
+import json, sys
+acts = {'run': 0, 'pass': 0, 'skip': 0, 'fail': 0}
+for line in open(sys.argv[1]):
+    line = line.strip()
+    if not line.startswith('{'):
+        continue
+    ev = json.loads(line)
+    if ev.get('Action') in acts:
+        acts[ev['Action']] += 1
+json.dump(acts, open(sys.argv[2], 'w'), indent=2)
+assert acts['run'] > 0, f'no Go test executed: {acts}'
+assert acts['skip'] == 0, f'Go test skipped: {acts}'
+assert acts['fail'] == 0, f'Go test failed: {acts}'
+# -json emits a package-level pass in addition to test-level ones, so pass >= run.
+assert acts['pass'] >= acts['run'], f'Go test did not pass: {acts}'
+print('go test json ok', acts)
+PY
+  chmod 600 "$EVIDENCE/go-test.summary.json"
+  check_ok "Go contract test passed in this same run (raw -json + rawexit, no skip/0 cases)"
+}
+
+browser_report_assert() {
+  local mode="$1"
+  local dir="$EVIDENCE/browser-$mode"
+  local expect_asset="$WEB_ASSET_SHA"
+  python3 - "$mode" "$dir" "$expect_asset" <<'PY'
+import json, sys, os
+mode, d, expect = sys.argv[1], sys.argv[2], sys.argv[3]
+code = open(os.path.join(d, 'exit-code.txt')).read().strip()
+assert code == '0', f'{mode}: browser exit code {code}'
+rep = json.load(open(os.path.join(d, 'report.json')))
+assert rep['status'] == 'passed', f"{mode}: report status {rep['status']}"
+assert rep['errors'] == [], f"{mode}: browser errors {rep['errors']}"
+asset = rep.get('asset') or {}
+assert asset.get('sha256') == expect, f"{mode}: asset sha {asset.get('sha256')} != manifest {expect}"
+print(f'{mode}: report passed, asset sha matched {expect}')
+PY
+  check_ok "browser $mode report status/exit 0 and hashed asset sha matches the recorded build"
+}
+
 write_manifest() {
   python3 - "$ROOT" "$EVIDENCE" "$NGINX_ELF" "$WORK" "$PANEL_BIN_SHA" "$WEB_INDEX_SHA" "$WEB_ASSET_SHA" <<'PY'
 import json, sys, os, hashlib, subprocess
@@ -702,9 +978,40 @@ m = {
  'pki': {'ca_sha256': sha(os.path.join(work,'pki/ca.crt')),
          'leaf_sha256': sha(os.path.join(work,'pki/server.crt'))},
  'test_script_sha256': sha(os.path.join(root,'web/tests/host-nginx-smoke.mjs')),
+ 'uid': os.getuid(), 'gid': os.getgid(), 'euid_is_root': os.geteuid() == 0,
+ 'hostings': {
+   'spa': {'panel_web_root': 'set', 'go_serves_spa': True,
+           'nginx_terminates_tls_and_proxies_to_go': True},
+   'api': {'panel_web_root': 'empty', 'go_serves_api_only': True,
+           'nginx_serves_static_dist': True,
+           'same_db_same_key_same_binary': True},
+ },
+ 'local_runtime_lock': {
+   'path': os.path.join(os.sep, 'home/compile/Work/.locks/proxypanel-webdemo-local-runtime.lock'),
+   'role': 'local-runtime', 'held_before_snapshot': True, 'released_after_cleanup': True,
+ },
+ 'remote_runtime_lock_used': False,
+ 'system_level_install': 'not_run (no root, no disposable PID1)',
+ 'public_ca_or_dns': 'not_run (not required by the story source)',
 }
+for mode in ('spa', 'api'):
+    d = os.path.join(ev, 'browser-' + mode)
+    rep = json.load(open(os.path.join(d, 'report.json')))
+    m['hostings'][mode]['browser'] = {
+        'status': rep.get('status'), 'checks': rep.get('checks'),
+        'asset_path': (rep.get('asset') or {}).get('path'),
+        'asset_sha256': (rep.get('asset') or {}).get('sha256'),
+        'browser_matched_build': (rep.get('asset') or {}).get('sha256') == asset_sha,
+        'ignore_https_errors': False,
+        'trusted_via_temporary_home_nss': os.path.exists(os.path.join(work, 'nss/trust.txt')),
+    }
 if os.path.exists(os.path.join(work,'nss/provenance.txt')):
     m['certutil_provenance'] = open(os.path.join(work,'nss/provenance.txt')).read().strip().splitlines()
+assert m['uid'] != 0 and not m['euid_is_root'], 'must not run as root'
+assert not m['remote_runtime_lock_used'], 'no remote resource may be created by this round'
+for mode in ('spa','api'):
+    assert m['hostings'][mode]['browser']['browser_matched_build'], f'{mode} asset sha != build sha'
+    assert m['hostings'][mode]['browser']['status'] == 'passed', f'{mode} browser not passed'
 json.dump(m, open(os.path.join(ev,'manifest.json'),'w'), indent=2)
 print('manifest ok')
 PY
@@ -714,7 +1021,11 @@ PY
 dump_arrays() {
   [ -n "$WORK" ] && [ -d "$WORK" ] || return 0
   printf '%s\n' ${CHECKS[@]+"${CHECKS[@]}"} >"$WORK/checks.txt" 2>/dev/null || : >"$WORK/checks.txt"
-  printf '%s\n' ${NOTRUN[@]+"${NOTRUN[@]}"} >"$WORK/notrun.txt" 2>/dev/null || : >"$WORK/notrun.txt"
+  if [ "${#NOTRUN[@]}" -gt 0 ]; then
+    printf '%s\n' "${NOTRUN[@]}" >"$WORK/notrun.txt"
+  else
+    : >"$WORK/notrun.txt"
+  fi
 }
 
 write_result() {
@@ -737,13 +1048,20 @@ PY
 # ---------------------------------------------------------------------- main
 main() {
   prepare_evidence
+  [ "$(id -u)" != "0" ] || fail "refusing to run as root: this verifies the unprivileged host-user path"
+  check_ok "running as uid $(id -u) (not root)"
+  # Build steps (package download/verify, panel build, web build) are safe without
+  # the lease; the lease starts before the "before" snapshot and the fixtures.
+  obtain_nginx
+  make_pki
+  build_panel
   acquire_lock
   snapshot_host_identity "$EVIDENCE/host-before.json"
   check_ok "host identity snapshot (pid1 / namespaces / non-docker) recorded"
-  obtain_nginx
-  make_pki
+  go_contract_run
   HTTPS_PORT="$(rand_port)"
-  start_fixture
+  start_fixture            # build + PG + panel, hosting #1 = Go SPA
+  go_direct_probes spa
   nginx_write_config spa
   nginx_start spa
   strict_probes
@@ -752,14 +1070,18 @@ main() {
     NSS_OK=1
   else
     NSS_OK=0
+    # Narrow fallback while nginx still fronts hosting #1: labelled bypass only.
+    browser_mode_selfsigned spa || fail "spa browser (self-signed fallback) failed"
   fi
   nginx_stop
+  # Hosting #2 is a genuine API-only panel on the same owned DB/binary/key;
+  # only the hosting layer (nginx static dist) changes afterwards.
+  switch_to_api_only
   nginx_write_config api
   nginx_start api
   if [ "$NSS_OK" = 1 ]; then
     browser_mode api || fail "api browser (trusted NSS) failed"
   else
-    browser_mode_selfsigned spa || fail "spa browser (self-signed fallback) failed"
     browser_mode_selfsigned api || fail "api browser (self-signed fallback) failed"
   fi
   nginx_stop
@@ -767,10 +1089,13 @@ main() {
   stop_pg
   # Chromium creates caches under the temporary HOME; re-assert owner-only modes.
   chmod -R go-rwx "$HOME_ISO" "$WORK/nginx" "$WORK/nss" "$WORK/pg" "$WORK/pki" 2>/dev/null || true
+  browser_report_assert spa
+  browser_report_assert api
   leftover_check
   snapshot_host_identity "$EVIDENCE/host-after.json"
   compare_host_identity
   write_manifest
+  release_lock
   dump_arrays
   write_result passed
   log "HOST_NGINX_VERIFIED evidence=$EVIDENCE"
