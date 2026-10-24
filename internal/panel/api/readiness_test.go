@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -72,5 +73,26 @@ func TestUpgradeReadinessUsesConfiguredStoreNotRequestPath(t *testing.T) {
 	var count int
 	if err = conn.QueryRow(ctx, `SELECT count(*) FROM pg_tables WHERE schemaname=$1`, schema).Scan(&count); err != nil || count != 0 {
 		t.Fatalf("readiness changed schema: %d %v", count, err)
+	}
+	// Even when PostgreSQL inspection is unavailable, diagnosis remains HTTP
+	// 200 unknown, with null checksum and non-null arrays, never driver text.
+	st.Close()
+	w = httptest.NewRecorder()
+	server.handleGetUpgradeReadiness(w, httptest.NewRequest("GET", "/api/v1/admin/upgrade-readiness?path=/etc/passwd", nil))
+	var failed struct {
+		Data map[string]any `json:"data"`
+	}
+	if err = json.Unmarshal(w.Body.Bytes(), &failed); err != nil {
+		t.Fatal(err)
+	}
+	if w.Code != 200 || failed.Data["status"] != "unknown" || failed.Data["checked_at"] == nil || failed.Data["candidate_version"] != store.CandidateBuildVersion() {
+		t.Fatalf("unavailable diagnosis: %s", w.Body)
+	}
+	schemaState := failed.Data["schema"].(map[string]any)
+	if schemaState["checksum_ok"] != nil || schemaState["applied_migrations"] == nil || schemaState["pending_migrations"] == nil || failed.Data["blockers"] == nil {
+		t.Fatalf("invented success/null arrays: %s", w.Body)
+	}
+	if strings.Contains(w.Body.String(), "/etc/") || strings.Contains(w.Body.String(), "sql: database is closed") {
+		t.Fatalf("raw error/path leaked: %s", w.Body)
 	}
 }

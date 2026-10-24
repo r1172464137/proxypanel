@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"proxypanel/internal/panel/domain"
 	"proxypanel/internal/panel/usagecalc"
 )
 
@@ -25,6 +27,8 @@ type ReadinessCheck struct {
 }
 type UpgradeReadiness struct {
 	Status           string           `json:"status"`
+	CheckedAt        time.Time        `json:"checked_at"`
+	CandidateVersion string           `json:"candidate_version"`
 	StopVerification string           `json:"stop_verification,omitempty"`
 	Phase            string           `json:"phase"`
 	Checks           []ReadinessCheck `json:"checks"`
@@ -37,6 +41,127 @@ type UpgradeReadiness struct {
 	periods          []PeriodAssertion
 	owners           []OwnerAssertion
 	evidence         *UpgradeEvidence
+	checksumOK       *bool
+}
+
+// ReadinessSchema uses null for an unavailable/unverifiable checksum result.
+// In particular, an inspection error is not evidence of checksum success.
+type ReadinessSchema struct {
+	AppliedMigrations []string `json:"applied_migrations"`
+	PendingMigrations []string `json:"pending_migrations"`
+	ChecksumOK        *bool    `json:"checksum_ok"`
+}
+
+// ReadinessCheckDTO is a projection, not a second set of checks. Keep the
+// original Go fields and legacy JSON for deployment/helper consumers.
+type ReadinessCheckDTO struct {
+	ReadinessCheck
+	ID            string   `json:"id"`
+	Severity      string   `json:"severity"`
+	State         string   `json:"state"`
+	Summary       string   `json:"summary"`
+	AffectedCount int      `json:"affected_count"`
+	Evidence      []string `json:"evidence"`
+}
+
+// CandidateBuildVersion is shared by HTTP and CLI. There is no separate Panel
+// release-version variable today; Go records the module version, or (devel).
+func CandidateBuildVersion() string {
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
+		return info.Main.Version
+	}
+	return "devel"
+}
+
+func newUpgradeReadiness(at time.Time, preflight bool) *UpgradeReadiness {
+	r := &UpgradeReadiness{Status: "ready", CheckedAt: at.UTC(), CandidateVersion: CandidateBuildVersion(), Phase: "post-migrate", Checks: []ReadinessCheck{}, Applied: []string{}, Pending: []string{}}
+	if preflight {
+		r.Phase = "preflight"
+	}
+	return r
+}
+
+// UnknownUpgradeReadiness deliberately excludes raw driver/filesystem errors,
+// which may contain credentials or private material paths.
+func UnknownUpgradeReadiness(preflight bool) *UpgradeReadiness {
+	r := newUpgradeReadiness(time.Now(), preflight)
+	r.add("INSPECTION_UNAVAILABLE", "unknown", 1, "Verify database access, schema and configured migration files, then rerun the read-only check.")
+	return r
+}
+
+func readinessCheckID(code string) string {
+	switch code {
+	case "MEMBER_PERIOD_UNKNOWN", "MEMBER_PERIOD_HISTORY_MISSING", "MEMBER_TIMEZONE_INVALID", "PERIOD_PROOF_INVALID":
+		return "member_cycle_unproven"
+	case "LEDGER_PERIOD_UNPROVEN":
+		return "ledger_rows_without_period"
+	case "PERIOD_OVERLAP":
+		return "member_period_overlap"
+	case "BATCH_CLOCK_INVALID":
+		return "usage_batch_clock_skew"
+	case "TASK_ORPHAN", "ITEM_TASK_ORPHAN":
+		return "batch_task_orphan"
+	case "AGENT_EVIDENCE_MISSING", "AGENT_SCHEMA_UNSUPPORTED":
+		return "agent_state_unreadable"
+	case "PENDING_SAMPLE_UNPROVEN":
+		return "node_unattributable_pending"
+	default:
+		return strings.ToLower(code)
+	}
+}
+
+func (r *UpgradeReadiness) blockerCodes() []string {
+	codes := []string{}
+	seen := map[string]bool{}
+	for _, c := range r.Checks {
+		if c.Status != "blocked" && c.Status != "unknown" {
+			continue
+		}
+		id := readinessCheckID(c.Code)
+		if !seen[id] {
+			codes = append(codes, id)
+			seen[id] = true
+		}
+	}
+	return codes
+}
+
+// MarshalJSON adds the public contract from exactly the internal result used by
+// migration gates. No pass/zero rows, queue facts or external observations are
+// inferred. Pending migrations keep their existing phase-dependent semantics.
+func (r UpgradeReadiness) MarshalJSON() ([]byte, error) {
+	type legacy UpgradeReadiness
+	copy := legacy(r)
+	copy.Applied = append([]string{}, r.Applied...)
+	copy.Pending = append([]string{}, r.Pending...)
+	checks := make([]ReadinessCheckDTO, 0, len(r.Checks))
+	for _, c := range r.Checks {
+		state := "unknown"
+		if c.Status == "blocked" {
+			state = "fail"
+		} else if c.Status == "ready" {
+			state = "pass"
+		}
+		evidence := []string{fmt.Sprintf("check=%s; status=%s; affected_count=%d", c.Code, c.Status, c.Count)}
+		if r.DatabaseSHA256 != "" {
+			evidence = append(evidence, "database_sha256="+r.DatabaseSHA256)
+		}
+		checks = append(checks, ReadinessCheckDTO{ReadinessCheck: c, ID: readinessCheckID(c.Code), Severity: "blocker", State: state, Summary: c.Remedy, AffectedCount: c.Count, Evidence: evidence})
+	}
+	return json.Marshal(struct {
+		*legacy
+		Schema   ReadinessSchema     `json:"schema"`
+		Checks   []ReadinessCheckDTO `json:"checks"`
+		Blockers []string            `json:"blockers"`
+	}{&copy, ReadinessSchema{copy.Applied, copy.Pending, r.checksumOK}, checks, r.blockerCodes()})
+}
+
+// Only existing unsafe-upgrade/startup refusal branches call this. Diagnostic
+// GETs still return 200; entering recovery is deliberately not gated here.
+func readinessBlocked(reason string, r *UpgradeReadiness, extra ...string) error {
+	codes := r.blockerCodes()
+	codes = append(codes, extra...)
+	return domain.Conflict(domain.CodeReadinessBlocked, "%s", reason).WithDetail("blockers", codes)
 }
 
 func (r *UpgradeReadiness) add(code, status string, count int, remedy string) {
@@ -110,13 +235,13 @@ func (s *Store) checkPostMigrationReadiness(ctx context.Context, conn *sql.Conn,
 		return fmt.Errorf("post-migration readiness unavailable: %w", err)
 	}
 	if receipt != nil && (r.DatabaseSHA256 != receipt.expected || r.EvidenceSHA256 != receipt.evidence) {
-		return fmt.Errorf("post-migration upgrade evidence or database changed; rerun preflight")
+		return readinessBlocked("post-migration upgrade evidence or database changed; rerun preflight", r, "upgrade_proof_changed")
 	}
 	if r.Status != "ready" {
-		return fmt.Errorf("post-migration readiness %s: %v", r.Status, r.Checks)
+		return readinessBlocked(fmt.Sprintf("post-migration readiness %s: %v", r.Status, r.Checks), r)
 	}
 	if len(r.Pending) != 0 {
-		return fmt.Errorf("post-migration readiness incomplete: %v", r.Pending)
+		return readinessBlocked(fmt.Sprintf("post-migration readiness incomplete: %v", r.Pending), r, "pending_migration")
 	}
 	return tx.Commit()
 }
@@ -239,10 +364,7 @@ func (s *Store) checkUpgradeReadinessQ(ctx context.Context, q querier, preflight
 // DDL/imports. Every file AND Open's final verification compare the CURRENT
 // snapshot with the exact expected digest and require unchanged evidence.
 func (s *Store) checkUpgradeReadinessWithBaselineQ(ctx context.Context, q querier, preflight bool, baseline string) (*UpgradeReadiness, error) {
-	r := &UpgradeReadiness{Status: "ready", Phase: "post-migrate", Checks: []ReadinessCheck{}, Applied: []string{}, Pending: []string{}}
-	if preflight {
-		r.Phase = "preflight"
-	}
+	r := newUpgradeReadiness(s.now(), preflight)
 	evidence, err := LoadUpgradeEvidence(s.upgradeEvidenceFile)
 	if err != nil {
 		r.add("EVIDENCE_INVALID", "blocked", 1, "Correct the local evidence manifest and referenced files; rerun preflight.")
@@ -560,5 +682,16 @@ func (s *Store) checkUpgradeMigrations(data upgradeSnapshot, r *UpgradeReadiness
 		}
 	}
 	r.add("MIGRATION_UNKNOWN", "blocked", len(known), "Use the matching migration set for this database.")
+	// Only publish success after all recorded files were actually checked.
+	// A nonempty unregistered schema or unknown recorded migration is unproven.
+	checksumOK := true
+	for _, c := range r.Checks {
+		if c.Code == "MIGRATION_CHECKSUM_MISMATCH" {
+			checksumOK = false
+		}
+	}
+	if !checksumOK || len(known) == 0 && (len(data) == 0 || data["schema_migrations"] != nil) {
+		r.checksumOK = &checksumOK
+	}
 	return nil
 }

@@ -2,11 +2,14 @@ package store
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"proxypanel/internal/panel/domain"
 )
 
 func upgradePrefixDir(t *testing.T, count int) string {
@@ -131,6 +134,14 @@ func TestUpgradeOpenFinalProofRecheck(t *testing.T) {
 				if err == nil || !strings.Contains(err.Error(), want) {
 					t.Fatalf("want %q, got %v", want, err)
 				}
+				var de *domain.Error
+				if !errors.As(err, &de) || de.Code != domain.CodeReadinessBlocked || de.Status != 409 {
+					t.Fatalf("final refusal must preserve typed READINESS_BLOCKED: %v", err)
+				}
+				codes, ok := de.Details["blockers"].([]string)
+				if !ok || len(codes) == 0 {
+					t.Fatalf("missing real final blockers: %+v", de)
+				}
 				t.Logf("final boundary correctly refused %s: %v", change, err)
 			}
 		})
@@ -150,6 +161,14 @@ func TestUpgradeOpenPostMigrationSemantics(t *testing.T) {
 	}
 	if err == nil || !strings.Contains(err.Error(), "post-migration readiness blocked") || !strings.Contains(err.Error(), "MEMBER_PERIOD_UNKNOWN") {
 		t.Fatalf("post-migration semantics must still block: %v", err)
+	}
+	var de *domain.Error
+	if !errors.As(err, &de) || de.Code != domain.CodeReadinessBlocked {
+		t.Fatalf("Open lost typed semantic refusal: %v", err)
+	}
+	codes, ok := de.Details["blockers"].([]string)
+	if !ok || len(codes) != 1 || codes[0] != "member_cycle_unproven" {
+		t.Fatalf("Open semantic blockers: %+v", de.Details)
 	}
 	t.Logf("matching expected digest does not bypass current semantics: %v", err)
 }

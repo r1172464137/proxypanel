@@ -817,7 +817,7 @@
     "packages": [
       "./internal/panel/store"
     ],
-    "run": "^(TestUpgrade|TestLoadUpgrade)",
+    "run": "^(TestUpgrade|TestLoadUpgrade|TestReadinessPublicContract)",
     "expected_tests": [
       "TestUpgradeReadinessEmptyReadOnlyAndMigrate",
       "TestUpgradeReadinessLegacyAndUnknown",
@@ -833,7 +833,9 @@
       "TestUpgradeReadinessDurableExecutionPending",
       "TestUpgradeOpenControlledMigration",
       "TestUpgradeOpenFinalProofRecheck",
-      "TestUpgradeOpenPostMigrationSemantics"
+      "TestUpgradeOpenPostMigrationSemantics",
+      "TestReadinessPublicContractSameSnapshot",
+      "TestReadinessPublicContractUnverifiedSchema"
     ],
     "stories": [
       "US-PR-013",

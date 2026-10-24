@@ -36,7 +36,7 @@ func runCheck(ctx context.Context, args []string, out, stderr io.Writer) int {
 		r, err = st.CheckUpgradeReadiness(ctx, *preflight)
 	}
 	if err != nil {
-		r = &store.UpgradeReadiness{Status: "unknown", Checks: []store.ReadinessCheck{{Code: "INSPECTION_UNAVAILABLE", Status: "unknown", Count: 1, Remedy: "Verify database access, schema and migration files, then rerun the read-only check."}}}
+		r = store.UnknownUpgradeReadiness(*preflight)
 	}
 	if *asJSON {
 		if err := json.NewEncoder(out).Encode(r); err != nil {

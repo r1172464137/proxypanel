@@ -4,6 +4,39 @@
  * 未在契约中逐字段列出的资源使用“已知可选字段 + 未知字段保留”的宽容类型。
  */
 
+export interface UpgradeReadiness {
+  status: 'ready' | 'blocked' | 'unknown'
+  checked_at: string
+  candidate_version: string
+  schema: {
+    applied_migrations: string[]
+    pending_migrations: string[]
+    checksum_ok: boolean | null // null: inspection/checksum verification unavailable
+  }
+  checks: {
+    id: string
+    severity: 'blocker' | 'warning'
+    state: 'pass' | 'fail' | 'unknown'
+    summary: string
+    affected_count: number
+    evidence: string[]
+    // Same-source compatibility aliases retained for deployment consumers.
+    code: string
+    status: 'ready' | 'blocked' | 'unknown'
+    count: number
+    remedy: string
+  }[]
+  blockers: string[]
+  phase: 'preflight' | 'post-migrate'
+  applied_migrations: string[]
+  pending_migrations: string[]
+  pending_batches: number
+  duplicate_batches: number
+  database_sha256?: string
+  evidence_sha256?: string
+  stop_verification?: string
+}
+
 export type Role = 'admin' | 'member'
 
 export interface User {

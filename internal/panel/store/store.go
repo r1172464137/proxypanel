@@ -207,7 +207,7 @@ func (s *Store) migrate(ctx context.Context, dir string, postflight bool) error 
 		return fmt.Errorf("upgrade preflight unavailable: %w", err)
 	}
 	if proof.Status != "ready" {
-		return fmt.Errorf("upgrade preflight %s: %v", proof.Status, proof.Checks)
+		return readinessBlocked(fmt.Sprintf("upgrade preflight %s: %v", proof.Status, proof.Checks), proof)
 	}
 	expected := proof.DatabaseSHA256
 	applied := false
@@ -254,7 +254,7 @@ func (s *Store) migrate(ctx context.Context, dir string, postflight bool) error 
 		}
 		if fresh.Status != "ready" || fresh.DatabaseSHA256 != expected || fresh.EvidenceSHA256 != proof.EvidenceSHA256 {
 			_ = tx.Rollback()
-			return errors.New("upgrade evidence or database changed; rerun preflight")
+			return readinessBlocked("upgrade evidence or database changed; rerun preflight", fresh, "upgrade_proof_changed")
 		}
 		if _, err := tx.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
 			_ = tx.Rollback()
