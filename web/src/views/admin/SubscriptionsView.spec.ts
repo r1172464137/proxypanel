@@ -17,9 +17,9 @@ describe('SubscriptionsView DELETE feedback', () => {
     mocks.remove.mockResolvedValue({ retired })
     const wrapper = mount(SubscriptionsView, { attachTo: document.body, global: { stubs: { RouterLink: true } } })
     await flushPromises()
-    await wrapper.findAll('button').find((b) => b.text() === '删除')!.trigger('click')
+    await wrapper.find('[data-testid="subscription-retire-button-sub"]').trigger('click')
     await flushPromises()
-    const confirm = [...document.querySelectorAll('.modal__footer button')].find((b) => b.textContent?.includes('退役方案')) as HTMLButtonElement
+    const confirm = [...document.querySelectorAll('.modal__footer button')].find((b) => !b.textContent?.includes('取消')) as HTMLButtonElement
     expect(confirm).toBeTruthy()
     confirm.click()
     await flushPromises()
