@@ -593,20 +593,55 @@ func TestSubscriptionRuleEditSchedulesImmediatelyForNextBoundary(t *testing.T) {
 	}
 }
 
-// (2) Usage submitted after a rollover is booked into the new cycle instead of
-// the previous period_start, and it does not revoke the member.
+// (2) Delayed usage from the new cycle advances an expired member on submit,
+// books into that cycle instead of the previous one, and preserves access.
 func TestUsageBatchBooksIntoAdvancedCycle(t *testing.T) {
 	quota := int64(1 << 20)
-	f := newRegFixture(t, &quota)
 	ctx := context.Background()
-	now := f.st.now()
+	st := newRegStore(t)
+	// Independent, fixed expectations: do not derive the oracle from period code.
+	prev := period.Boundary{
+		Start: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		End:   time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
+	}
+	cur := period.Boundary{
+		Start: prev.End,
+		End:   time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+	}
+	now := prev.End.Add(-time.Minute)
+	st.Now = func() time.Time { return now }
+	f := &regFixture{st: st, prev: prev, cur: cur}
+	f.server = regServer(t, st, "server-a")
+	f.agent = regAgent(t, st, f.server.ID)
+	// CreateNode publishes real Agent-specific authorization before the sample.
+	f.node = regNode(t, st, f.server.ID, "node-a", 10443)
+	group, err := st.CreateNodeGroup(ctx, &domain.NodeGroup{
+		ID: ids.New(ids.NodeGroup), Name: "group-a", NodeIDs: []string{f.node.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.sub = regSubscription(t, st, "sub-a", &quota, []string{group.ID})
+	// CreateMember records the explicit old interval through the production API.
+	f.member = regMember(t, st, "user-a", f.sub, prev)
+	if _, _, err := st.EnsureCredentials(ctx, f.member.ID, []string{f.node.ID}, func(kind string) (string, string, string, error) {
+		return ids.New(ids.Credential), "11111111-2222-3333-4444-555555555555", kind, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if f.member.PeriodStart == nil || !f.member.PeriodStart.Equal(prev.Start) {
+		t.Fatalf("fixture must still be in the expired cycle: %+v", f.member)
+	}
+	// Submit later than the complete sample; SubmitUsageBatch itself must roll
+	// forward and record coverage, not a preparatory tick/access/snapshot read.
+	now = cur.Start.Add(20 * time.Second)
 
 	batch := contracts.UsageBatch{
 		SchemaVersion: contracts.SchemaVersion,
 		BatchID:       "batch-1",
 		Samples: []contracts.UsageSample{{
 			NodeID: f.node.ID, MemberID: f.member.ID,
-			StartedAt: now.Add(-5 * time.Second), EndedAt: now,
+			StartedAt: cur.Start.Add(5 * time.Second), EndedAt: cur.Start.Add(10 * time.Second),
 			UploadBytes: 500, DownloadBytes: 500,
 		}},
 	}
@@ -618,13 +653,17 @@ func TestUsageBatchBooksIntoAdvancedCycle(t *testing.T) {
 		t.Fatalf("status = %q, want accepted", status)
 	}
 
-	var rows int
-	if err := f.st.DB.QueryRowContext(ctx, `SELECT count(*) FROM usage_entries
-		WHERE member_id=$1 AND period_start=$2`, f.member.ID, f.cur.Start).Scan(&rows); err != nil {
-		t.Fatalf("count new cycle rows: %v", err)
+	var rows, currentRows int
+	var up, down int64
+	if err := f.st.DB.QueryRowContext(ctx, `SELECT count(*),
+		count(*) FILTER (WHERE period_start=$2 AND period_end=$3),
+		coalesce(sum(up_bytes),0), coalesce(sum(down_bytes),0)
+		FROM usage_entries WHERE member_id=$1`, f.member.ID, cur.Start, cur.End).
+		Scan(&rows, &currentRows, &up, &down); err != nil {
+		t.Fatalf("read ledger totals: %v", err)
 	}
-	if rows != 1 {
-		t.Fatalf("rows in the current cycle = %d, want 1", rows)
+	if rows != 1 || currentRows != 1 || up != 500 || down != 500 {
+		t.Fatalf("ledger rows=%d current=%d up=%d down=%d; want 1,1,500,500", rows, currentRows, up, down)
 	}
 	moved, err := f.st.GetMember(ctx, f.member.ID)
 	if err != nil {

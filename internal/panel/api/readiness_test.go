@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -55,8 +56,18 @@ func TestUpgradeReadinessUsesConfiguredStoreNotRequestPath(t *testing.T) {
 	if err = json.Unmarshal(w.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if response.Data.Status != "ready" || len(response.Data.Pending) != 5 {
-		t.Fatalf("%s", w.Body)
+	// This empty configured schema must report the exact shipped migrations,
+	// regardless of the attacker-controlled evidence/path query parameters.
+	wantPending := []string{
+		"0001_init.sql",
+		"0002_batch_preview.sql",
+		"0003_maintenance.sql",
+		"0004_node_external_port.sql",
+		"0005_period_and_owner_history.sql",
+		"0006_batch_task_durability.sql",
+	}
+	if response.Data.Status != "ready" || !slices.Equal(response.Data.Pending, wantPending) {
+		t.Fatalf("want ready with pending %v; got %s", wantPending, w.Body)
 	}
 	var count int
 	if err = conn.QueryRow(ctx, `SELECT count(*) FROM pg_tables WHERE schemaname=$1`, schema).Scan(&count); err != nil || count != 0 {
