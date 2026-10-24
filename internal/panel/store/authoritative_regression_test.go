@@ -640,6 +640,56 @@ func TestUsageBatchBooksIntoAdvancedCycle(t *testing.T) {
 	}
 }
 
+func TestTransitionCycleUsageCountsAgainstQuota(t *testing.T) {
+	quota := int64(1000)
+	f := newRegFixture(t, &quota)
+	ctx := context.Background()
+	// Place the sample after fixture creation without relying on wall-clock month/day.
+	oldEnd := time.Date(f.cur.End.Year(), f.cur.End.Month(), 15, 0, 0, 0, 0, time.UTC)
+	oldStart := oldEnd.AddDate(0, -1, 0)
+	now := oldEnd.Add(36 * time.Hour)
+	f.st.Now = func() time.Time { return now }
+	if _, err := f.st.DB.ExecContext(ctx, `UPDATE subscriptions SET anchor_day=31, timezone='UTC' WHERE id=$1`, f.sub.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.st.DB.ExecContext(ctx, `UPDATE members SET period_start=$2,period_end=$3,
+		period_anchor_day=15,period_timezone='UTC',over_quota=false,expires_at=$4,
+		pending_period_rule='{"anchor_day":31,"timezone":"UTC"}'::jsonb WHERE id=$1`, f.member.ID, oldStart, oldEnd, now.AddDate(0, 1, 0)); err != nil {
+		t.Fatal(err)
+	}
+	batch := contracts.UsageBatch{SchemaVersion: contracts.SchemaVersion, BatchID: "short-cycle-live-quota",
+		Samples: []contracts.UsageSample{{NodeID: f.node.ID, MemberID: f.member.ID,
+			StartedAt: now.Add(-time.Minute), EndedAt: now, UploadBytes: 2000}}}
+	status, err := f.st.SubmitUsageBatch(ctx, f.agent, batch)
+	if err != nil || status != "accepted" {
+		t.Fatalf("valid live usage was not accepted: %q %v", status, err)
+	}
+	m, err := f.st.GetMember(ctx, f.member.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.PeriodStart == nil || !m.PeriodStart.Equal(oldEnd) {
+		t.Fatalf("transition start = %v, want old end %s", m.PeriodStart, oldEnd)
+	}
+	used, err := f.st.UsedBytes(ctx, m.ID, &oldEnd)
+	if err != nil || used != 2000 || !m.OverQuota {
+		t.Fatalf("live short-cycle bytes escaped quota: used=%d over=%t err=%v", used, m.OverQuota, err)
+	}
+	res, err := f.st.EvaluateAccessForMember(ctx, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Decision.Access {
+		t.Fatalf("over-quota member retained access: %+v", res.Decision)
+	}
+	if status, err := f.st.SubmitUsageBatch(ctx, f.agent, batch); err != nil || status != "duplicate" {
+		t.Fatalf("same batch was not idempotent: %q %v", status, err)
+	}
+	if again, err := f.st.UsedBytes(ctx, m.ID, &oldEnd); err != nil || again != 2000 {
+		t.Fatalf("replay changed usage: %d %v", again, err)
+	}
+}
+
 // seedBulkNodesAndMembers creates count nodes, one node group, one subscription
 // and count members with one credential each in a single transaction, and returns
 // the id of the last-sorted node. Doing this through the per object API cost one

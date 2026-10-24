@@ -113,6 +113,12 @@ func (s *Store) SubmitUsageBatch(ctx context.Context, agent *domain.Agent, batch
 			if m.PeriodStart != nil {
 				currentStart = *m.PeriodStart
 			}
+			// A rule transition can create a short first cycle whose persisted
+			// start is not a calendar anchor. Current usage must use that key.
+			if m.PeriodStart != nil && m.PeriodEnd != nil &&
+				!sample.StartedAt.Before(*m.PeriodStart) && !sample.EndedAt.After(*m.PeriodEnd) {
+				windows = []period.Boundary{{Start: m.PeriodStart.UTC(), End: m.PeriodEnd.UTC()}}
+			}
 			allocs := usagecalc.Allocate(sample, windows, currentStart)
 			if len(allocs) == 0 {
 				continue
