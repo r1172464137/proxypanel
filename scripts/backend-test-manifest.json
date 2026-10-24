@@ -1,5 +1,14 @@
 [
   {
+    "id": "api/product-status",
+    "packages": ["./internal/panel/api"],
+    "run": "^TestProduct(StatusReadModel|SetupEvidence)$",
+    "expected_tests": ["TestProductStatusReadModel", "TestProductSetupEvidence"],
+    "stories": ["US-PR-002", "US-PR-007", "US-PR-008", "US-PR-014", "US-PR-017"],
+    "requires": ["postgres"],
+    "timeout_seconds": 120
+  },
+  {
     "id": "store/period-history-candidate",
     "packages": [
       "./internal/panel/store"

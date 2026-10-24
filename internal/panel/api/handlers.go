@@ -262,7 +262,7 @@ func (s *Server) handleRedeem(w http.ResponseWriter, r *http.Request) {
 // ─── member scope ──────────────────────────────────────────────────────────
 
 func (s *Server) handleMeStatus(w http.ResponseWriter, r *http.Request) {
-	res, err := s.Store.EvaluateAccess(r.Context(), memberFrom(r.Context()).ID)
+	res, err := s.Store.ProductStatus(r.Context(), memberFrom(r.Context()).ID)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -270,6 +270,7 @@ func (s *Server) handleMeStatus(w http.ResponseWriter, r *http.Request) {
 	s.writeData(w, http.StatusOK, map[string]any{
 		"member": res.Evidence.Member, "access": res.Decision,
 		"nodes_allowed": len(res.Decision.AllowedNodeIDs),
+		"data_complete": res.Evidence.Member.DataComplete, "data_issues": res.Evidence.Member.DataIssues,
 	})
 }
 
@@ -362,12 +363,24 @@ func (s *Server) subscriptionURL(token string) string {
 
 func (s *Server) handleMeSubscription(w http.ResponseWriter, r *http.Request) {
 	m := memberFrom(r.Context())
+	res, err := s.Store.ProductStatus(r.Context(), m.ID)
+	if err != nil {
+		s.writeError(w, r, err)
+		return
+	}
+	formats, err := s.Store.ProductFormats(r.Context(), res)
+	if err != nil {
+		s.writeError(w, r, err)
+		return
+	}
 	token, url, err := s.currentToken(r, m.ID)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
 	}
-	s.writeData(w, http.StatusOK, map[string]any{"url": url, "token": token, "formats": clientconfig.Formats})
+	s.writeData(w, http.StatusOK, map[string]any{"url": url, "token": token, "formats": clientconfig.Formats,
+		"format_status": formats, "expires_at": res.Evidence.Member.ExpiresAt,
+		"period_end": res.Evidence.Member.PeriodEnd, "rotation_impact": "old_link_invalid_new_required"})
 }
 
 func (s *Server) handleMeTokenRotation(w http.ResponseWriter, r *http.Request) {

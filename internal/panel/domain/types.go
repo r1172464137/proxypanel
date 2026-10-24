@@ -244,12 +244,32 @@ type Member struct {
 	UpdatedAt            time.Time   `json:"updated_at"`
 
 	// Derived values (computed per request, never stored).
+	DataComplete        *bool    `json:"data_complete,omitempty"`
+	DataIssues          []string `json:"data_issues"`
 	UsedBytes           int64    `json:"used_bytes"`
 	EffectiveQuotaBytes *int64   `json:"effective_quota_bytes"`
 	AccessReasons       []string `json:"access_reasons"`
 	ProxyAccess         string   `json:"proxy_access"`
 	AllowedNodeIDs      []string `json:"allowed_node_ids"`
 	PasswordHash        string   `json:"-"`
+}
+
+type FormatStatus struct {
+	Format    string `json:"format"`
+	Available bool   `json:"available"`
+	Reason    string `json:"reason"`
+}
+
+type SetupStep struct {
+	Key    string `json:"key"`
+	State  string `json:"state"`
+	Reason string `json:"reason"`
+}
+
+type OverviewSetup struct {
+	Steps          []SetupStep `json:"steps"`
+	CompletedCount int         `json:"completed_count"`
+	BlockingReason string      `json:"blocking_reason,omitempty"`
 }
 
 type Template struct {

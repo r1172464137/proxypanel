@@ -431,7 +431,7 @@ func (s *Server) handleCreateMember(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetMember(w http.ResponseWriter, r *http.Request) {
-	res, err := s.Store.EvaluateAccess(r.Context(), r.PathValue("id"))
+	res, err := s.Store.ProductStatus(r.Context(), r.PathValue("id"))
 	if err != nil {
 		s.writeError(w, r, err)
 		return

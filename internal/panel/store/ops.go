@@ -759,6 +759,11 @@ func (s *Store) Overview(ctx context.Context) (domain.Object, error) {
 	if err != nil {
 		return nil, err
 	}
+	setup, err := s.productSetup(ctx)
+	if err != nil {
+		return nil, err
+	}
+	_ = out.Set("setup", setup)
 	_ = out.Set("counts", counts)
 	_ = out.Set("usage_bytes", usageBytes)
 	_ = out.Set("agents_online", agentsOnline)
