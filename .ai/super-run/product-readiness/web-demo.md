@@ -104,3 +104,9 @@ F：真实部署/两托管TLS/安装systemd能力与安全隔离验证，专用w
 - A旧run14PASS/7红不是18/18；source/main-budget-cancellation与clean-event证明自有场景退出无遗留，取消不当产品失败。新定向01a16d44-806d-75a9-8640-ad74f45f3d91补首页导入（生产ClientImportGuide检查按钮两页都存在，不能移页绕首页状态）、原进程身份保护、脚本自身持锁/短deadline及最小主链。
 - host nginx初报1dd2fd3正向：真实host ELF/严格私CA链/NSS浏览器两前端归属、browser asset SHA均与manifest相同。主发现Go API-only开关尚未清空、HTTP下载无来源校验、证书负例任意失败、旧listener消失未断言及本机PG却误用remote锁，尚不合并/不计完整PASS；原01a16d1b-d579-75a9-8640-ad71e140ad53继续同两文件定向修。
 - E原de2c058：3Vision完整载荷+stats+停止拒绝/恢复、21本地格有效正向记录。主发现lock_is_held只证明有人持锁而非本family、只凭任一PASS未按case/cells核对、Go日志buffer并发与失败cleanup不严格，暂不合并。新01a16d3d-b186-75a9-8640-ad7281011b7e定向修；54历史口径不复述，实际40行历史(30真实+10GUI notrun)待统一矩阵明确。
+
+### B/D交付与当前只读审查
+
+B返回428eca6+c9a7fb4，raw证据B/final2声明TCP/真实SOCKS5 UDP、双Agent在线撤权/离线到期/partial/旧回执与回滚/崩溃实际运行；D返回a4b568b，raw证据D/20261024T172004-7436510b声明旧Agent原SQLite/outbox→新Agent原ID/payload排空、两官方core双向切换与安全拒绝。主尚未合并或采信全PASS；只读定向01a16d4b-8f4b-75a9-8640-ad7674912097核对两组租约/原进程保护/具体oracle与D旧产物SHA256SUMS来源，20min内报告具体证据，不修改源码/运行环境，也非正式accept。
+
+当前原始修正任务：A2=01a16d44-806d-75a9-8640-ad74f45f3d91，E2=01a16d3d-b186-75a9-8640-ad7281011b7e，host-nginx同原01a16d1b-d579-75a9-8640-ad71e140ad53恢复；C原备份恢复尚待交。Root两文件f38aff4单独做无物理服务的302测试/typecheck/build，锁/依赖输入未变的R0 audit复用，之后独立frontend只读R1；不因此声称全部业务故事已完。

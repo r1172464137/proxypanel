@@ -134,11 +134,12 @@
             ".ai/evidence/frontend-phase/frozen-706f0ba/20261024T071857Z-1046d1af/summary.json",
             ".ai/evidence/frontend-phase/frozen-706f0ba/20261024T071857Z-1046d1af/vitest.json",
             ".ai/evidence/frontend-phase/frozen-706f0ba/20261024T071857Z-1046d1af/probe/2026-10-24T07-20-06-410Z/report.json",
-            ".ai/evidence/frontend-phase/frozen-706f0ba/20261024T071857Z-1046d1af/main-touch-review.json"
+            ".ai/evidence/frontend-phase/frozen-706f0ba/20261024T071857Z-1046d1af/main-touch-review.json",
+            ".ai/quality/product-readiness-frontend-root-route-r1.md"
           ]
         },
         "test": {
-          "status": "pending",
+          "status": "in_progress",
           "agent_spec": "/home/compile/code/t-tools/agents/frontend-test.md",
           "references": [
             ".ai/design/product-readiness.md",
