@@ -18,13 +18,17 @@ func (s *Store) SubmitUsageBatch(ctx context.Context, agent *domain.Agent, batch
 	hash := usagecalc.PayloadSHA256(batch)
 	status = "accepted"
 	err = s.inTx(ctx, func(tx *sql.Tx) error {
+		recovery, err := recoveryModeTx(ctx, tx)
+		if err != nil {
+			return err
+		}
 		// Serialize a batch without holding an Agent row while quota updates
 		// publish to all Agents (which would invert the revision lock order).
 		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "usage:"+agent.ID+":"+batch.BatchID); err != nil {
 			return dbErr(err)
 		}
 		var existing string
-		err := tx.QueryRowContext(ctx, `SELECT payload_sha256 FROM usage_batches
+		err = tx.QueryRowContext(ctx, `SELECT payload_sha256 FROM usage_batches
 			WHERE agent_id=$1 AND batch_id=$2 FOR UPDATE`, agent.ID, batch.BatchID).Scan(&existing)
 		switch {
 		case err == nil:
@@ -117,11 +121,13 @@ func (s *Store) SubmitUsageBatch(ctx context.Context, agent *domain.Agent, batch
 			// cycle itself was rolled forward: otherwise a new month's bytes are
 			// booked against the previous period_start, which is what made the
 			// quota never reset.
-			if _, err := s.advanceMemberPeriodTx(ctx, tx, m, s.now()); err != nil {
-				if errors.Is(err, ErrPeriodInvalid) || errors.Is(err, ErrPeriodConflict) {
-					return ledgerUnattributable()
+			if !recovery {
+				if _, err := s.advanceMemberPeriodTx(ctx, tx, m, s.now()); err != nil {
+					if errors.Is(err, ErrPeriodInvalid) || errors.Is(err, ErrPeriodConflict) {
+						return ledgerUnattributable()
+					}
+					return err
 				}
-				return err
 			}
 			windows, err := recordedWindowsTx(ctx, tx, m.ID, sample.StartedAt, sample.EndedAt)
 			if err != nil {
@@ -157,6 +163,11 @@ func (s *Store) SubmitUsageBatch(ctx context.Context, agent *domain.Agent, batch
 		// Quota enforcement: the ledger is authoritative, excess revokes access
 		// in the same transaction and schedules a revision bump.
 		for memberID := range touched {
+			// Recovery accepts attributable ledger telemetry, but never implicitly
+			// relaxes quota state or recreates authorization credentials.
+			if recovery {
+				continue
+			}
 			if err := s.applyQuotaState(ctx, tx, memberID); err != nil {
 				return err
 			}
@@ -346,7 +357,7 @@ func (s *Store) CreateQuotaAdjustment(ctx context.Context, memberID string, byte
 		ID: newID(ids.QuotaAdjustment), MemberID: memberID, Bytes: bytes, Reason: reason,
 		CreatedBy: actor, CreatedAt: s.now(),
 	}
-	err := s.inTx(ctx, func(tx *sql.Tx) error {
+	err := s.inWritableTx(ctx, func(tx *sql.Tx) error {
 		m, err := scanMember(tx.QueryRowContext(ctx, `SELECT `+memberCols+` FROM members WHERE id=$1 FOR UPDATE`, memberID))
 		if err != nil {
 			return err

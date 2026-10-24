@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"proxypanel/internal/panel/period"
+	"proxypanel/internal/panel/domain"
 )
 
 func periodTestRecord() PeriodRecord {
@@ -67,8 +67,12 @@ func TestPeriodRecordValidation(t *testing.T) {
 func periodTestMember(t *testing.T, st *Store) PeriodRecord {
 	t.Helper()
 	rec := periodTestRecord()
-	sub := regSubscription(t, st, "period-sub", nil, nil)
-	member := regMember(t, st, "period-member", sub, period.Boundary{Start: rec.PeriodStart, End: rec.PeriodEnd})
+	// Storage primitive tests need a subject with no registered interval yet;
+	// bound CreateMember now correctly records history itself.
+	member, err := st.CreateMember(context.Background(), &domain.Member{ID: newID("mem"), Username: "period-member", PasswordHash: "fixture", Role: "member", Active: true})
+	if err != nil {
+		t.Fatal(err)
+	}
 	rec.MemberID = member.ID
 	return rec
 }

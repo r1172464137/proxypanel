@@ -709,5 +709,88 @@
       "postgres"
     ],
     "timeout_seconds": 120
+  },
+  {
+    "id": "store/abc-integration",
+    "packages": [
+      "./internal/panel/store"
+    ],
+    "run": "^TestABC",
+    "expected_tests": [
+      "TestABCRecoveryTelemetryAndAuthorizationFreeze",
+      "TestABCBatchBindingUsesRecordedHistory"
+    ],
+    "stories": [
+      "US-PR-013",
+      "US-PR-017"
+    ],
+    "requires": [
+      "postgres"
+    ]
+  },
+  {
+    "id": "api/abc-readiness",
+    "packages": [
+      "./internal/panel/api"
+    ],
+    "run": "^(TestABCReadinessMountedDuringRecovery|TestUpgradeReadinessUsesConfiguredStoreNotRequestPath)$",
+    "expected_tests": [
+      "TestABCReadinessMountedDuringRecovery",
+      "TestUpgradeReadinessUsesConfiguredStoreNotRequestPath"
+    ],
+    "stories": [
+      "US-PR-013",
+      "US-PR-017"
+    ],
+    "requires": [
+      "postgres"
+    ]
+  },
+  {
+    "id": "store/upgrade-preflight",
+    "packages": [
+      "./internal/panel/store"
+    ],
+    "run": "^(TestUpgrade|TestLoadUpgrade)",
+    "expected_tests": [
+      "TestUpgradeReadinessEmptyReadOnlyAndMigrate",
+      "TestUpgradeReadinessLegacyAndUnknown",
+      "TestUpgradeReadinessACKLostAndHashMismatch",
+      "TestUpgradeReadinessSchemaOneCannotClaimIntents",
+      "TestUpgradeReadinessImportRollback",
+      "TestUpgradeReadinessDatabaseFingerprintChange",
+      "TestLoadUpgradeEvidenceValidAndUnchanged",
+      "TestLoadUpgradeEvidenceEmptyAndMissing",
+      "TestLoadUpgradeEvidenceRejectsBadMaterials",
+      "TestLoadUpgradeEvidenceStrictJSONAndLimit",
+      "TestUpgradeEvidenceFingerprintAndManifestSymlink",
+      "TestUpgradeReadinessDurableExecutionPending"
+    ],
+    "stories": [
+      "US-PR-013",
+      "US-PR-017"
+    ],
+    "requires": [
+      "postgres",
+      "unix"
+    ]
+  },
+  {
+    "id": "cmd/upgrade-check",
+    "packages": [
+      "./cmd/panel"
+    ],
+    "run": "^TestCheckPreflightWithoutMasterKeyOrMigrations$",
+    "expected_tests": [
+      "TestCheckPreflightWithoutMasterKeyOrMigrations"
+    ],
+    "stories": [
+      "US-PR-013",
+      "US-PR-017"
+    ],
+    "requires": [
+      "postgres",
+      "unix"
+    ]
   }
 ]

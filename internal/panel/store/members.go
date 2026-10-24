@@ -193,6 +193,9 @@ func (s *Store) CreateMember(ctx context.Context, m *domain.Member) (*domain.Mem
 			pendingJSON(m.PendingPeriodRule), nullableTime(m.BoundAt), nullableTime(m.LastLoginAt)); err != nil {
 			return dbErr(err)
 		}
+		if err := s.refreshMemberPeriod(ctx, tx, m); err != nil {
+			return err
+		}
 		// A new member can grant access, so the revision that makes the agents
 		// re-read their authorization commits together with the row.
 		_, err := s.bumpRevisionsTx(ctx, tx, nil)
@@ -251,6 +254,11 @@ func (s *Store) updateMember(ctx context.Context, id string, expectedVersion int
 		if err := protectLastAdminTx(ctx, tx, &before, cur); err != nil {
 			return err
 		}
+		if !selfPassword && derefString(before.SubscriptionID) != derefString(cur.SubscriptionID) {
+			cur.PeriodStart, cur.PeriodEnd = before.PeriodStart, before.PeriodEnd
+			cur.PeriodTimezone, cur.PeriodAnchorDay = before.PeriodTimezone, before.PeriodAnchorDay
+			cur.PendingPeriodRule = nil
+		}
 		cur.Version++
 		cur.UpdatedAt = s.now()
 		if _, err := tx.ExecContext(ctx, `UPDATE members SET username=$2,password_hash=$3,role=$4,active=$5,
@@ -284,6 +292,16 @@ func (s *Store) updateMember(ctx context.Context, id string, expectedVersion int
 					memberBindingID(cur.ID, cur.Version), cur.ID, *cur.SubscriptionID, nullableTime(cur.ExpiresAt)); err != nil {
 					return dbErr(err)
 				}
+			}
+		}
+		if !selfPassword && derefString(before.SubscriptionID) != derefString(cur.SubscriptionID) {
+			// Preserve the old running interval even if the caller supplied new
+			// cycle fields. Only the shared helper chooses binding boundaries.
+			cur.PeriodStart, cur.PeriodEnd = before.PeriodStart, before.PeriodEnd
+			cur.PeriodTimezone, cur.PeriodAnchorDay = before.PeriodTimezone, before.PeriodAnchorDay
+			cur.PendingPeriodRule = nil
+			if err := s.refreshMemberPeriod(ctx, tx, cur); err != nil {
+				return err
 			}
 		}
 		// Active, proxy switch, binding, expiry and quota changes all decide

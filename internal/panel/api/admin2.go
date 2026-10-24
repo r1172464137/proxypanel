@@ -551,12 +551,6 @@ func (s *Server) handlePatchMember(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	// Binding to a concrete subscription is validated up front; explicit null
 	// unbinds instead (see applyMemberPatch).
-	type bindPlan struct {
-		window period.Boundary
-		tz     string
-		anchor int
-	}
-	var bind *bindPlan
 	if in.SubscriptionID.Set && !in.SubscriptionID.Null {
 		if target := strings.TrimSpace(in.SubscriptionID.Value); target != "" {
 			sub, err := s.Store.GetSubscription(r.Context(), target)
@@ -569,40 +563,12 @@ func (s *Server) handlePatchMember(w http.ResponseWriter, r *http.Request) {
 					"subscription %q does not accept new bindings", sub.Name))
 				return
 			}
-			loc, err := period.LoadTimezone(sub.Timezone)
-			if err != nil {
-				s.writeError(w, r, domain.Validation("%s", err.Error()))
-				return
-			}
-			bind = &bindPlan{
-				window: period.Containing(sub.AnchorDay, loc, time.Now().UTC()),
-				tz:     sub.Timezone, anchor: sub.AnchorDay,
-			}
 		}
 	}
 	v, err := s.Store.UpdateMember(r.Context(), id, in.Version, func(m *domain.Member) error {
+		// Store.UpdateMember owns binding history and the unique cycle helper.
 		_, err := applyMemberPatch(m, &in)
-		if err != nil {
-			return err
-		}
-		if bind == nil || m.SubscriptionID == nil {
-			return nil
-		}
-		now := time.Now().UTC()
-		if m.PeriodStart == nil || m.PeriodEnd == nil || !m.PeriodEnd.After(now) {
-			// No running cycle yet: initialise it from the new subscription.
-			start, end := bind.window.Start, bind.window.End
-			m.PeriodStart, m.PeriodEnd = &start, &end
-			m.PeriodTimezone, m.PeriodAnchorDay = bind.tz, bind.anchor
-			m.PendingPeriodRule = nil
-			return nil
-		}
-		if m.PeriodAnchorDay != bind.anchor || m.PeriodTimezone != bind.tz {
-			// The running cycle is preserved; the new rule applies next cycle.
-			submitted := now
-			m.PendingPeriodRule = &domain.PeriodRule{AnchorDay: bind.anchor, Timezone: bind.tz, SubmittedAt: &submitted}
-		}
-		return nil
+		return err
 	})
 	if err != nil {
 		s.writeError(w, r, err)

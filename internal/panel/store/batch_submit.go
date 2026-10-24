@@ -13,7 +13,6 @@ import (
 	"proxypanel/internal/panel/access"
 	"proxypanel/internal/panel/domain"
 	"proxypanel/internal/panel/ids"
-	"proxypanel/internal/panel/period"
 )
 
 // BatchSubmitRequest is the /batches input.
@@ -61,7 +60,7 @@ func (s *Store) SubmitBatch(ctx context.Context, req BatchSubmitRequest) (*Batch
 	}
 	fingerprint := requestFingerprint(req.PreviewID, req.Confirm)
 	var result *BatchSubmitResult
-	err := s.inTx(ctx, func(tx *sql.Tx) error {
+	err := s.inWritableTx(ctx, func(tx *sql.Tx) error {
 		if err := lockMemberChangesTx(ctx, tx); err != nil {
 			return err
 		}
@@ -439,29 +438,14 @@ func (s *Store) applyPreview(ctx context.Context, tx *sql.Tx, plan *Preview, now
 // applySubscriptionBinding binds a member to a subscription keeping the running
 // cycle and the subscription token; only the next cycle uses the new rule.
 func (s *Store) applySubscriptionBinding(ctx context.Context, tx *sql.Tx, m *domain.Member, sub *domain.Subscription, now time.Time) error {
-	loc, err := period.LoadTimezone(sub.Timezone)
-	if err != nil {
-		return domain.Validation("%s", err.Error())
-	}
-	pending := &domain.PeriodRule{AnchorDay: sub.AnchorDay, Timezone: sub.Timezone, SubmittedAt: &now}
-	periodStart, periodEnd := m.PeriodStart, m.PeriodEnd
-	anchor, tz := m.PeriodAnchorDay, m.PeriodTimezone
-	if periodStart == nil || periodEnd == nil || !periodEnd.After(now) {
-		win := period.Containing(sub.AnchorDay, loc, now)
-		periodStart, periodEnd = &win.Start, &win.End
-		anchor, tz = sub.AnchorDay, sub.Timezone
-		pending = nil
-	}
 	expires := m.ExpiresAt
 	if expires == nil && sub.DefaultValidDays != nil {
 		exp := now.AddDate(0, 0, *sub.DefaultValidDays)
 		expires = &exp
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE members SET subscription_id=$2, expires_at=$3, period_start=$4,
-		period_end=$5, period_timezone=$6, period_anchor_day=$7, pending_period_rule=$8, bound_at=now(),
+	if _, err := tx.ExecContext(ctx, `UPDATE members SET subscription_id=$2, expires_at=$3, bound_at=now(),
 		version=version+1, updated_at=now() WHERE id=$1`,
-		m.ID, sub.ID, nullableTime(expires), nullableTime(periodStart), nullableTime(periodEnd), tz, anchor,
-		pendingJSON(pending)); err != nil {
+		m.ID, sub.ID, nullableTime(expires)); err != nil {
 		return dbErr(err)
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE member_bindings SET ended_at=now() WHERE member_id=$1 AND ended_at IS NULL`, m.ID); err != nil {
@@ -471,7 +455,9 @@ func (s *Store) applySubscriptionBinding(ctx context.Context, tx *sql.Tx, m *dom
 		VALUES ($1,$2,$3,now(),$4,'batch_assign')`, newID("mbd"), m.ID, sub.ID, nullableTime(expires)); err != nil {
 		return dbErr(err)
 	}
-	return nil
+	m.SubscriptionID, m.ExpiresAt, m.BoundAt = &sub.ID, expires, &now
+	m.PendingPeriodRule = nil
+	return s.refreshMemberPeriod(ctx, tx, m)
 }
 
 // applySubscriptionPatch writes a previewed subscription patch.

@@ -166,10 +166,15 @@ func regMember(t *testing.T, st *Store, username string, sub *domain.Subscriptio
 	if err != nil {
 		t.Fatalf("hash: %v", err)
 	}
+	// Model creation at the supplied cycle, then move the fixture clock
+	// forward. Production CreateMember now records/advances through the helper.
+	previousClock := st.Now
+	st.Now = func() time.Time { return cycle.Start.Add(time.Hour) }
+	defer func() { st.Now = previousClock }()
 	m, err := st.CreateMember(context.Background(), &domain.Member{
 		ID: ids.New(ids.Member), Username: username, PasswordHash: hash, Role: "member",
 		Active: true, ProxyEnabled: true, SubscriptionID: &sub.ID,
-		PeriodStart: &start, PeriodEnd: &end, PeriodTimezone: "UTC", PeriodAnchorDay: 1,
+		PeriodStart: &start, PeriodEnd: &end, PeriodTimezone: sub.Timezone, PeriodAnchorDay: sub.AnchorDay,
 	})
 	if err != nil {
 		t.Fatalf("create member %s: %v", username, err)
@@ -644,11 +649,18 @@ func TestTransitionCycleUsageCountsAgainstQuota(t *testing.T) {
 	quota := int64(1000)
 	f := newRegFixture(t, &quota)
 	ctx := context.Background()
-	// Place the sample after fixture creation without relying on wall-clock month/day.
+	// Use a separate member with the actual short-cycle history. Rewriting the
+	// fixture member's already recorded intervals would contradict immutable history.
 	oldEnd := time.Date(f.cur.End.Year(), f.cur.End.Month(), 15, 0, 0, 0, 0, time.UTC)
 	oldStart := oldEnd.AddDate(0, -1, 0)
 	now := oldEnd.Add(36 * time.Hour)
 	f.st.Now = func() time.Time { return now }
+	f.sub.AnchorDay = 15
+	if _, err := f.st.DB.ExecContext(ctx, `UPDATE subscriptions SET anchor_day=15 WHERE id=$1`, f.sub.ID); err != nil {
+		t.Fatal(err)
+	}
+	f.member = regMember(t, f.st, "short-cycle-user", f.sub, period.Boundary{Start: oldStart, End: oldEnd})
+	regCredential(t, f.st, f.member.ID, f.node.ID)
 	if _, err := f.st.DB.ExecContext(ctx, `UPDATE subscriptions SET anchor_day=31, timezone='UTC' WHERE id=$1`, f.sub.ID); err != nil {
 		t.Fatal(err)
 	}

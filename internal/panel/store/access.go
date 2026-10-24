@@ -438,10 +438,11 @@ func (s *Store) refreshMemberPeriod(ctx context.Context, tx *sql.Tx, m *domain.M
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE members SET period_start=NULL, period_end=NULL,
-			period_timezone='', period_anchor_day=0 WHERE id=$1`, m.ID); err != nil {
+			period_timezone='', period_anchor_day=0, pending_period_rule=NULL WHERE id=$1`, m.ID); err != nil {
 			return dbErr(err)
 		}
 		m.PeriodStart, m.PeriodEnd = nil, nil
+		m.PeriodTimezone, m.PeriodAnchorDay, m.PendingPeriodRule = "", 0, nil
 		return nil
 	}
 	sub, err := scanSubscription(tx.QueryRowContext(ctx, `SELECT `+subscriptionCols+` FROM subscriptions WHERE id=$1`, *m.SubscriptionID))
@@ -668,6 +669,10 @@ func (s *Store) ensureMemberPeriod(ctx context.Context, m *domain.Member) error 
 		return nil
 	}
 	return s.inTx(ctx, func(tx *sql.Tx) error {
+		recovery, err := recoveryModeTx(ctx, tx)
+		if err != nil || recovery {
+			return err // reads must not advance or recreate credentials in recovery
+		}
 		cur, err := scanMember(tx.QueryRowContext(ctx, `SELECT `+memberCols+` FROM members WHERE id=$1 FOR UPDATE`, m.ID))
 		if err != nil {
 			return err
@@ -723,7 +728,7 @@ func (s *Store) AdvancePeriods(ctx context.Context, now time.Time) (int, error) 
 	}
 	advanced := 0
 	for _, id := range ids {
-		err := s.inTx(ctx, func(tx *sql.Tx) error {
+		err := s.inWritableTx(ctx, func(tx *sql.Tx) error {
 			cur, err := scanMember(tx.QueryRowContext(ctx, `SELECT `+memberCols+` FROM members WHERE id=$1 FOR UPDATE`, id))
 			if err != nil {
 				return err

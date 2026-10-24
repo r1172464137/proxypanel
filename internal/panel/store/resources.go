@@ -133,9 +133,12 @@ func (s *Store) GetServer(ctx context.Context, id string) (*domain.Server, error
 
 // CreateServer inserts a server.
 func (s *Store) CreateServer(ctx context.Context, v *domain.Server) (*domain.Server, error) {
-	_, err := s.DB.ExecContext(ctx, `INSERT INTO servers (`+serverCols+`)
+	err := s.inWritableTx(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `INSERT INTO servers (`+serverCols+`)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,false,1,now(),now())`,
-		v.ID, v.Name, v.Address, v.Region, v.Notes, nullableTime(v.ExpiresAt), nullableInt64(v.CostMinor), v.Currency)
+			v.ID, v.Name, v.Address, v.Region, v.Notes, nullableTime(v.ExpiresAt), nullableInt64(v.CostMinor), v.Currency)
+		return dbErr(err)
+	})
 	if err != nil {
 		return nil, dbErr(err)
 	}
@@ -162,7 +165,7 @@ func archivedGuard(kind string, wasArchived, nowArchived bool) error {
 
 func (s *Store) UpdateServer(ctx context.Context, id string, expectedVersion int64, fn func(*domain.Server) error) (*domain.Server, error) {
 	var out *domain.Server
-	err := s.inTx(ctx, func(tx *sql.Tx) error {
+	err := s.inWritableTx(ctx, func(tx *sql.Tx) error {
 		cur, err := scanServer(tx.QueryRowContext(ctx, `SELECT `+serverCols+` FROM servers WHERE id = $1 FOR UPDATE`, id))
 		if err != nil {
 			return err
@@ -229,8 +232,11 @@ func (s *Store) GetTemplate(ctx context.Context, id string) (*domain.Template, e
 }
 
 func (s *Store) CreateTemplate(ctx context.Context, v *domain.Template) (*domain.Template, error) {
-	if _, err := s.DB.ExecContext(ctx, `INSERT INTO templates (id,name,format,content,description,version,created_at,updated_at)
-		VALUES ($1,$2,$3,$4,$5,1,now(),now())`, v.ID, v.Name, v.Format, encodeObject(v.Content), v.Description); err != nil {
+	if err := s.inWritableTx(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `INSERT INTO templates (id,name,format,content,description,version,created_at,updated_at)
+		VALUES ($1,$2,$3,$4,$5,1,now(),now())`, v.ID, v.Name, v.Format, encodeObject(v.Content), v.Description)
+		return dbErr(err)
+	}); err != nil {
 		return nil, dbErr(err)
 	}
 	return s.GetTemplate(ctx, v.ID)
@@ -238,7 +244,7 @@ func (s *Store) CreateTemplate(ctx context.Context, v *domain.Template) (*domain
 
 func (s *Store) UpdateTemplate(ctx context.Context, id string, expectedVersion int64, fn func(*domain.Template) error) (*domain.Template, error) {
 	var out *domain.Template
-	err := s.inTx(ctx, func(tx *sql.Tx) error {
+	err := s.inWritableTx(ctx, func(tx *sql.Tx) error {
 		cur, err := scanTemplate(tx.QueryRowContext(ctx, `SELECT `+templateCols+` FROM templates WHERE id=$1 FOR UPDATE`, id))
 		if err != nil {
 			return err
@@ -262,14 +268,16 @@ func (s *Store) UpdateTemplate(ctx context.Context, id string, expectedVersion i
 }
 
 func (s *Store) DeleteTemplate(ctx context.Context, id string) error {
-	res, err := s.DB.ExecContext(ctx, `DELETE FROM templates WHERE id=$1`, id)
-	if err != nil {
-		return dbErr(err)
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return domain.NotFound("template not found")
-	}
-	return nil
+	return s.inWritableTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `DELETE FROM templates WHERE id=$1`, id)
+		if err != nil {
+			return dbErr(err)
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return domain.NotFound("template not found")
+		}
+		return nil
+	})
 }
 
 // ─── node groups ───────────────────────────────────────────────────────────
@@ -370,7 +378,7 @@ func setGroupNodes(ctx context.Context, tx *sql.Tx, groupID string, nodeIDs []st
 }
 
 func (s *Store) CreateNodeGroup(ctx context.Context, v *domain.NodeGroup) (*domain.NodeGroup, error) {
-	err := s.inTx(ctx, func(tx *sql.Tx) error {
+	err := s.inWritableTx(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO node_groups (id,name,description,version,created_at,updated_at)
 			VALUES ($1,$2,$3,1,now(),now())`, v.ID, v.Name, v.Description); err != nil {
 			return dbErr(err)
@@ -389,7 +397,7 @@ func (s *Store) CreateNodeGroup(ctx context.Context, v *domain.NodeGroup) (*doma
 
 func (s *Store) UpdateNodeGroup(ctx context.Context, id string, expectedVersion int64, fn func(*domain.NodeGroup) error) (*domain.NodeGroup, error) {
 	var out *domain.NodeGroup
-	err := s.inTx(ctx, func(tx *sql.Tx) error {
+	err := s.inWritableTx(ctx, func(tx *sql.Tx) error {
 		cur, err := s.loadNodeGroup(ctx, tx, id)
 		if err != nil {
 			return err
@@ -421,7 +429,7 @@ func (s *Store) UpdateNodeGroup(ctx context.Context, id string, expectedVersion 
 }
 
 func (s *Store) DeleteNodeGroup(ctx context.Context, id string) error {
-	return s.inTx(ctx, func(tx *sql.Tx) error {
+	return s.inWritableTx(ctx, func(tx *sql.Tx) error {
 		var subs int
 		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM subscription_node_groups WHERE node_group_id=$1`, id).Scan(&subs); err != nil {
 			return dbErr(err)
@@ -575,7 +583,7 @@ func (s *Store) CreateNode(ctx context.Context, v *domain.Node, coreInstanceID s
 	if err != nil {
 		return nil, err
 	}
-	err = s.inTx(ctx, func(tx *sql.Tx) error {
+	err = s.inWritableTx(ctx, func(tx *sql.Tx) error {
 		if err := lockExecutionHistoryTx(ctx, tx); err != nil {
 			return err
 		}
@@ -616,7 +624,7 @@ func (s *Store) CreateNode(ctx context.Context, v *domain.Node, coreInstanceID s
 // UpdateNode applies fn under a row lock and bumps the version.
 func (s *Store) UpdateNode(ctx context.Context, id string, expectedVersion int64, fn func(*domain.Node) error) (*domain.Node, error) {
 	var out *domain.Node
-	err := s.inTx(ctx, func(tx *sql.Tx) error {
+	err := s.inWritableTx(ctx, func(tx *sql.Tx) error {
 		if err := lockExecutionHistoryTx(ctx, tx); err != nil {
 			return err
 		}
@@ -703,7 +711,10 @@ func (s *Store) DeleteNode(ctx context.Context, id string) (*domain.Node, error)
 	}
 	// 关联清理单独一个事务：即便这里失败，节点本身已归档，不会出现
 	// "还能被授权"的半状态；残留关联由 nodeGroupNodeIDs 的 archived 过滤兜底。
-	if _, err := s.DB.ExecContext(ctx, `DELETE FROM node_group_members WHERE node_id=$1`, id); err != nil {
+	if err := s.inWritableTx(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `DELETE FROM node_group_members WHERE node_id=$1`, id)
+		return dbErr(err)
+	}); err != nil {
 		return node, dbErr(err)
 	}
 	return node, nil
@@ -868,7 +879,7 @@ func setSubscriptionGroups(ctx context.Context, tx *sql.Tx, subID string, groupI
 }
 
 func (s *Store) CreateSubscription(ctx context.Context, v *domain.Subscription) (*domain.Subscription, error) {
-	err := s.inTx(ctx, func(tx *sql.Tx) error {
+	err := s.inWritableTx(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO subscriptions (`+subscriptionCols+`)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,false,$10,$11,1,now(),now())`,
 			v.ID, v.Name, v.Description, nullableInt64(v.QuotaBytes), v.Timezone, v.AnchorDay,
@@ -890,7 +901,7 @@ func (s *Store) CreateSubscription(ctx context.Context, v *domain.Subscription) 
 
 func (s *Store) UpdateSubscription(ctx context.Context, id string, expectedVersion int64, fn func(*domain.Subscription) error) (*domain.Subscription, error) {
 	var out *domain.Subscription
-	err := s.inTx(ctx, func(tx *sql.Tx) error {
+	err := s.inWritableTx(ctx, func(tx *sql.Tx) error {
 		if err := lockMemberChangesTx(ctx, tx); err != nil {
 			return err
 		}
@@ -995,6 +1006,9 @@ func (s *Store) DeleteSubscription(ctx context.Context, id string) (*domain.Subs
 		return nil, dbErr(err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := requireWritableTx(ctx, tx); err != nil {
+		return nil, err
+	}
 
 	cur, err := scanSubscription(tx.QueryRowContext(ctx,
 		`SELECT `+subscriptionCols+` FROM subscriptions WHERE id=$1`, id))
@@ -1063,7 +1077,7 @@ func settingsQ(ctx context.Context, q querier) (*domain.Settings, error) {
 // UpdateSettings applies fn and encrypts the telegram token when provided.
 func (s *Store) UpdateSettings(ctx context.Context, expectedVersion int64, fn func(*domain.Settings) error) (*domain.Settings, error) {
 	var out *domain.Settings
-	err := s.inTx(ctx, func(tx *sql.Tx) error {
+	err := s.inWritableTx(ctx, func(tx *sql.Tx) error {
 		var v domain.Settings
 		var defaults []byte
 		var tokenEnc []byte

@@ -41,8 +41,10 @@ func TestSecurityInvitationBindingAndQuota(t *testing.T) {
 	e.mustCall(t, m, "POST", "/api/v1/me/credentials/rotations", map[string]any{"scope": "all_nodes"}).ok(t)
 	tok := e.mustCall(t, m, "GET", "/api/v1/me/subscription", nil).ok(t)
 	agent := e.registerAgent(t, a, sid)
+	// The registered identity's execution history starts at registration, not
+	// one second earlier. Keep the 2048-byte quota/revocation assertions intact.
 	now := time.Now().UTC()
-	batch := contracts.UsageBatch{SchemaVersion: contracts.SchemaVersion, BatchID: "invite-quota", Samples: []contracts.UsageSample{{NodeID: nid, MemberID: mid, CoreGeneration: "1", StartedAt: now.Add(-time.Second), EndedAt: now, UploadBytes: 2048}}}
+	batch := contracts.UsageBatch{SchemaVersion: contracts.SchemaVersion, BatchID: "invite-quota", Samples: []contracts.UsageSample{{NodeID: nid, MemberID: mid, CoreGeneration: "1", StartedAt: now, EndedAt: now.Add(time.Millisecond), UploadBytes: 2048}}}
 	e.mustCallWith(t, nil, "POST", "/api/v1/agent/usage", batch, map[string]string{"Authorization": "Bearer " + agent}).ok(t)
 	status := e.mustCall(t, m, "GET", "/api/v1/me/status", nil).ok(t)
 	if status["access"].(map[string]any)["access"] != false {

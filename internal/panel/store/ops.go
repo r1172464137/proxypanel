@@ -81,7 +81,7 @@ func (s *Store) bumpServerAgentsTx(ctx context.Context, tx *sql.Tx, serverID str
 // transaction that stores the change (see bumpRevisionsTx), never after it.
 func (s *Store) BumpRevisions(ctx context.Context, nodeIDs []string) (int64, error) {
 	var rev int64
-	err := s.inTx(ctx, func(tx *sql.Tx) error {
+	err := s.inWritableTx(ctx, func(tx *sql.Tx) error {
 		v, err := s.bumpRevisionsTx(ctx, tx, nodeIDs)
 		rev = v
 		return err
@@ -96,8 +96,11 @@ func (s *Store) CreateRegistrationCode(ctx context.Context, serverID, codeHash s
 		return "", err
 	}
 	id := newID(ids.Registration)
-	if _, err := s.DB.ExecContext(ctx, `INSERT INTO registration_codes (id, server_id, code_hash, expires_at, created_by)
-		VALUES ($1,$2,$3,$4,$5)`, id, serverID, codeHash, expiresAt.UTC(), createdBy); err != nil {
+	if err := s.inWritableTx(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `INSERT INTO registration_codes (id, server_id, code_hash, expires_at, created_by)
+		VALUES ($1,$2,$3,$4,$5)`, id, serverID, codeHash, expiresAt.UTC(), createdBy)
+		return dbErr(err)
+	}); err != nil {
 		return "", dbErr(err)
 	}
 	return id, nil
@@ -106,7 +109,7 @@ func (s *Store) CreateRegistrationCode(ctx context.Context, serverID, codeHash s
 // RegisterAgent consumes a one time registration code atomically.
 func (s *Store) RegisterAgent(ctx context.Context, codeHash, name, version, tokenHash, tokenPrefix string) (*domain.Agent, string, error) {
 	var agent *domain.Agent
-	err := s.inTx(ctx, func(tx *sql.Tx) error {
+	err := s.inWritableTx(ctx, func(tx *sql.Tx) error {
 		if err := lockExecutionHistoryTx(ctx, tx); err != nil {
 			return err
 		}
@@ -260,6 +263,9 @@ func (s *Store) RecordHeartbeat(ctx context.Context, agentID string, hb contract
 		return err
 	}
 	return s.inTx(ctx, func(tx *sql.Tx) error {
+		if _, err := recoveryModeTx(ctx, tx); err != nil {
+			return err
+		}
 		if err := lockExecutionHistoryTx(ctx, tx); err != nil {
 			return err
 		}
@@ -370,6 +376,9 @@ func (s *Store) RecordApplyReport(ctx context.Context, agentID string, report co
 		return err
 	}
 	return s.inTx(ctx, func(tx *sql.Tx) error {
+		if _, err := recoveryModeTx(ctx, tx); err != nil {
+			return err
+		}
 		if err := lockExecutionHistoryTx(ctx, tx); err != nil {
 			return err
 		}
@@ -560,7 +569,7 @@ func (s *Store) taskByIDQ(ctx context.Context, q querier, id string) (*domain.Ta
 // that was revoked in the meantime.
 func (s *Store) RetryTask(ctx context.Context, id string) (*domain.Task, error) {
 	var out *domain.Task
-	err := s.inTx(ctx, func(tx *sql.Tx) error {
+	err := s.inWritableTx(ctx, func(tx *sql.Tx) error {
 		// Lock order: the control_state row first (every writer that publishes a
 		// revision takes it), then the agent row, then the task and its items.
 		// This matches SubmitBatch (control_state -> agents -> tasks) and

@@ -357,17 +357,19 @@ func (s *Store) checkUpgradeReadinessQ(ctx context.Context, q querier, preflight
 		if a.Version == "" || input.ObservedAgentVersion != a.Version || x.ControlGeneration != fmt.Sprint(a.Generation) || x.AppliedRevision != a.Applied {
 			r.add("AGENT_STATE_MISMATCH", "blocked", 1, "Reconcile observed agent version, generation and revision against PostgreSQL.")
 		}
-		// The only exporter supported by this baseline is schema 1, which
-		// has no intent journal. A manifest boolean cannot upgrade that fact.
+		// Artifact v1/schema1 can contain D's durable apply_intent and
+		// applied_snapshot keys. Capability is not implied by schema version.
 		if x.StateSchemaVersion != "1" {
 			r.add("AGENT_SCHEMA_UNSUPPORTED", "unknown", 1, "Use a reviewed exporter for the actual agent state schema; do not relabel state.")
 		}
-		if x.StateSchemaVersion == "1" && x.ApplyIntentTrackingSupported {
-			r.add("AGENT_INTENT_CLAIM_INVALID", "blocked", 1, "Schema 1 cannot track apply intents; obtain truthful execution evidence.")
+		if !x.ApplyIntentTrackingSupported {
+			r.add("AGENT_INTENT_UNPROVEN", "unknown", 1, "Legacy exporter has no durable execution journal. Supply independent per-instance execution reconciliation and stop verification; do not manufacture an intent or relabel the artifact. Zero is not proof.")
 		}
-		if !x.ApplyIntentTrackingSupported || x.StateSchemaVersion == "1" {
-			r.add("AGENT_INTENT_UNPROVEN", "unknown", 1, "This state schema cannot prove execution completion; obtain explicit supported execution evidence. Zero is not proof.")
-		}
+		// LoadUpgradeEvidence authenticates attachment bytes, not their claim.
+		// Neither legacy count=0 nor D's committed snapshot proves OS/service
+		// quiescence. Until a reviewed external verifier consumes those facts,
+		// explicitly retain this gap even for supported=true/count=0.
+		r.add("AGENT_STOP_UNVERIFIED", "unknown", 1, "Stop attachment is hash-bound but not independently verified. Need Agent/server identity, service restart fence, observed exit/OS absence of every core, capture ordering, and per-instance execution reconciliation against PG generation/revision and owner windows. No legacy intent record is required.")
 		if x.PendingReportCount != 0 || x.PendingApplyIntentCount != 0 {
 			r.add("AGENT_EXECUTION_PENDING", "blocked", 1, "Complete and acknowledge execution/reporting with the old service before stopping it.")
 		}

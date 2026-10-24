@@ -141,6 +141,7 @@ func (s *Server) mountAdmin(mux *http.ServeMux) {
 		}
 		mux.HandleFunc(pattern, s.requireUser(s.requireAdmin(h)))
 	}
+	admin("GET /api/v1/admin/upgrade-readiness", s.handleGetUpgradeReadiness, false)
 	admin("GET /api/v1/admin/recovery-mode", s.handleGetRecovery, false)
 	admin("GET /api/v1/admin/overview", s.handleOverview, false)
 	admin("GET /api/v1/admin/agents", s.handleAdminAgents, false)
