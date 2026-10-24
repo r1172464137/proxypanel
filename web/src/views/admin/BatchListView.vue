@@ -4,7 +4,7 @@ import { api } from '@/api/http'
 import type { BatchDetail } from '@/api/types'
 import { usePagedList } from '@/lib/paged'
 import { formatDateTime } from '@/lib/format'
-import { BATCH_OPERATIONS } from '@/lib/batch'
+import { BATCH_OPERATIONS, batchResultCounts } from '@/lib/batch'
 import PageHeader from '@/components/PageHeader.vue'
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
@@ -23,6 +23,7 @@ function operationLabel(operation: string | undefined): string {
 }
 
 function memberCount(batch: BatchDetail): number | '—' {
+  if (typeof batch.member_count === 'number') return batch.member_count
   if (typeof batch.affected_count === 'number') return batch.affected_count
   if (Array.isArray(batch.results)) return batch.results.length
   return '—'
@@ -34,8 +35,17 @@ function succeededCount(batch: BatchDetail): number {
 }
 
 function summaryText(batch: BatchDetail): string {
+  if (Array.isArray(batch.results)) {
+    const counts = batchResultCounts(batch.results)
+    return `已更新 ${counts.updated} / 等待 ${counts.waiting} / 失败或需处理 ${counts.failed}`
+  }
   const summary = batch.summary
   if (!summary || typeof summary !== 'object') return '—'
+  if (typeof summary.succeeded === 'number' && typeof summary.pending === 'number' && typeof summary.failed === 'number') {
+    const updated = summary.succeeded + (typeof summary.rules_applied === 'number' ? summary.rules_applied : 0)
+    const failed = summary.failed + (typeof summary.timeout === 'number' ? summary.timeout : 0) + (typeof summary.superseded === 'number' ? summary.superseded : 0)
+    return `已更新 ${updated} / 等待 ${summary.pending} / 失败或需处理 ${failed}`
+  }
   const entries = Object.entries(summary as Record<string, unknown>)
     .filter(([, value]) => typeof value === 'number' || typeof value === 'string')
     .slice(0, 3)
@@ -61,7 +71,7 @@ const columns = [
 
 <template>
   <div class="space-y-6">
-    <PageHeader title="批量任务" description="批量修改的历史记录。提交后逐个成员下发到节点，全部生效才算完成。">
+    <PageHeader title="变更记录" description="批量修改的历史记录。提交后逐个成员下发到节点，全部生效才算完成。">
       <Button as-child size="sm" variant="outline">
         <router-link to="/admin/members">成员</router-link>
       </Button>
@@ -87,6 +97,7 @@ const columns = [
         <template v-else-if="columnIndex === 1">{{ operationLabel(item.operation) }}</template>
         <template v-else-if="columnIndex === 2">
           <StatusBadge :status="item.state ?? 'unknown'" />
+          <span v-if="item.idempotent_replay">这是之前那次提交的结果</span>
         </template>
         <template v-else-if="columnIndex === 3">{{ memberCount(item) }}</template>
         <template v-else-if="columnIndex === 4">

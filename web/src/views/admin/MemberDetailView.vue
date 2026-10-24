@@ -42,6 +42,18 @@ onMounted(async () => {
 
 const data = computed(() => member.data.value)
 const actionError = ref('')
+const actionNotice = ref('')
+const writeBlocked = ref(false)
+function reportWriteError(caught: unknown): string {
+  const failure = toApiError(caught)
+  if (failure.code === 'RECOVERY_MODE') writeBlocked.value = true
+  return failure.code === 'RECOVERY_MODE' ? '恢复核对中暂不可用；请稍后刷新确认维护状态。' : errorText(caught)
+}
+async function refreshMember(): Promise<void> {
+  await member.reload()
+  // A successful read alone does not prove maintenance has ended; retry actions may still be refused.
+  writeBlocked.value = false
+}
 const pending = ref(false)
 
 async function patch(body: Record<string, unknown>, message: string): Promise<void> {
@@ -50,10 +62,11 @@ async function patch(body: Record<string, unknown>, message: string): Promise<vo
   pending.value = true
   try {
     await adminApi.members.update(data.value.id, { ...body, version: data.value.version })
+    actionNotice.value = `${message}；规则已保存，节点分发异步，请查看任务与同步结果。`
     pushToast('success', message, '规则在面板立即生效；节点分发异步，见任务与同步结果。')
     await member.reload()
   } catch (caught) {
-    actionError.value = errorText(caught)
+    actionError.value = reportWriteError(caught)
   } finally {
     pending.value = false
   }
@@ -103,11 +116,12 @@ async function submitAdjust(): Promise<void> {
   adjustError.value = ''
   try {
     await adminApi.members.adjustQuota(data.value.id, { bytes: gib > 0 ? bytes : -bytes, reason: adjustReason.value.trim() })
+    actionNotice.value = '额度调整已记录，不修改原始用量；请核对最新授权判定。'
     pushToast('success', '额度调整已记录', '调整不修改原始用量；超额判定按账本重新计算。')
     adjustOpen.value = false
     await member.reload()
   } catch (caught) {
-    adjustError.value = errorText(caught)
+    adjustError.value = reportWriteError(caught)
   } finally {
     adjusting.value = false
   }
@@ -115,7 +129,8 @@ async function submitAdjust(): Promise<void> {
 
 /* 凭据轮换 */
 const credOpen = ref(false)
-const credScope = ref<'all_nodes' | 'single_node'>('all_nodes')
+const credScope = ref<'all_nodes' | 'single_node'>('single_node')
+const allNodesConfirmed = ref(false)
 const credNodeId = ref('')
 const credError = ref('')
 const credPending = ref(false)
@@ -126,6 +141,10 @@ async function submitCredential(): Promise<void> {
     credError.value = '请选择节点'
     return
   }
+  if (credScope.value === 'all_nodes' && !allNodesConfirmed.value) {
+    credError.value = '请额外确认全部节点的连接影响'
+    return
+  }
   credPending.value = true
   credError.value = ''
   try {
@@ -133,10 +152,11 @@ async function submitCredential(): Promise<void> {
       scope: credScope.value,
       ...(credScope.value === 'single_node' ? { node_id: credNodeId.value } : {}),
     })
+    actionNotice.value = `连接凭据重置已提交（${credScope.value === 'single_node' ? credNodeId.value : '全部节点'}）；旧凭据失效，可能中断连接。请查看任务回执，不代表连接已恢复。`
     pushToast('success', '凭据轮换已提交', '旧凭据按硬撤权策略失效；回执见任务页。')
     credOpen.value = false
   } catch (caught) {
-    credError.value = errorText(caught)
+    credError.value = reportWriteError(caught)
   } finally {
     credPending.value = false
   }
@@ -156,9 +176,10 @@ async function rotateToken(): Promise<void> {
   tokenLoading.value = true
   try {
     tokenResult.value = await adminApi.members.rotateSubscriptionToken(data.value.id)
+    actionNotice.value = '订阅链接已重置，旧链接已失效；连接凭据不变。请保存新链接。'
     pushToast('success', '订阅令牌已轮换', '旧链接失效；代理凭据与现有连接不受影响。')
   } catch (caught) {
-    tokenError.value = toApiError(caught).message
+    tokenError.value = reportWriteError(caught)
   } finally {
     tokenLoading.value = false
   }
@@ -174,21 +195,27 @@ async function rotateToken(): Promise<void> {
       <Button as-child variant="outline">
         <router-link to="/admin/members">返回成员列表</router-link>
       </Button>
-      <Button variant="outline" :disabled="member.loading.value" @click="member.reload()">刷新</Button>
+      <Button variant="outline" :disabled="member.loading.value" data-testid="member-refresh-button" @click="refreshMember">刷新</Button>
       <template v-if="data">
-        <Button variant="outline" :disabled="pending" @click="toggleActive">{{ data.active ? '停用账户' : '启用账户' }}</Button>
-        <Button variant="outline" :disabled="pending" @click="toggleProxy">
+        <Button data-testid="member-active-button" variant="outline" :disabled="pending || writeBlocked" @click="toggleActive">{{ data.active ? '停用账户' : '启用账户' }}</Button>
+        <Button data-testid="member-proxy-button" variant="outline" :disabled="pending || writeBlocked" @click="toggleProxy">
           {{ data.proxy_enabled ? '暂停代理访问' : '恢复代理访问' }}
         </Button>
-        <Button variant="outline" @click="openAdjust">额度调整</Button>
-        <Button variant="outline" @click="credOpen = true">轮换凭据</Button>
-        <Button variant="outline" @click="rotateToken">轮换订阅链接</Button>
+        <Button data-testid="member-quota-adjust-button" variant="outline" :disabled="writeBlocked" @click="openAdjust">额度调整</Button>
+        <Button variant="outline" data-testid="member-credentials-reset-button" @click="credOpen = true; allNodesConfirmed = false; credError = ''">重置连接凭据</Button>
+        <Button variant="outline" data-testid="member-link-reset-button" @click="tokenOpen = true; tokenResult = null; tokenError = ''">重置订阅链接</Button>
       </template>
     </PageHeader>
 
     <LoadingBlock v-if="member.loading.value && !data" label="正在读取成员" />
     <ErrorState v-else-if="member.error.value" :error="member.error.value" @retry="member.reload()" />
     <div v-else-if="data" class="space-y-4">
+      <p v-if="actionNotice" role="status" data-testid="member-action-result">{{ actionNotice }} <router-link :to="`/admin/tasks`">查看任务与同步</router-link></p>
+      <p v-if="writeBlocked" role="alert">恢复核对中：普通授权变更及两类重置暂不可用。请稍后刷新再核对；不会自动重试。</p>
+      <Alert v-if="data.data_complete === false">
+        <AlertTitle>部分资料待核对</AlertTitle>
+        <AlertDescription>已知字段继续显示真实值；未知字段不当作零或不限量。{{ data.data_issues?.join('、') }}</AlertDescription>
+      </Alert>
       <Alert v-if="actionError" variant="destructive">
         <AlertTitle>操作失败</AlertTitle>
         <AlertDescription class="break-all">{{ actionError }}</AlertDescription>
@@ -212,7 +239,7 @@ async function rotateToken(): Promise<void> {
               <dd><StatusBadge :status="data.active ? 'active' : 'suspended'" /></dd>
               <dt class="text-muted-foreground">代理访问</dt>
               <dd class="flex flex-wrap items-center gap-2">
-                <StatusBadge :status="data.proxy_access ?? (data.proxy_enabled ? 'enabled' : 'paused_by_admin')" />
+                <StatusBadge :status="data.proxy_access ?? 'unknown'" />
                 <Badge v-if="data.over_quota" variant="destructive">已超额</Badge>
               </dd>
               <dt class="text-muted-foreground">访问原因</dt>
@@ -227,7 +254,7 @@ async function rotateToken(): Promise<void> {
                     <span class="text-sm text-muted-foreground">{{ reason.action }}</span>
                   </div>
                 </template>
-                <span v-else class="text-muted-foreground">没有限制，权限正常</span>
+                <span v-else class="text-muted-foreground">{{ data.proxy_access === 'enabled' ? '服务端未报告限制原因' : '访问原因未提供，请刷新核对' }}</span>
               </dd>
               <dt class="text-muted-foreground">最后更新</dt>
               <dd>{{ formatDateTime(data.updated_at) }}</dd>
@@ -248,14 +275,14 @@ async function rotateToken(): Promise<void> {
                 <span :title="utcLabel(data.expires_at)">{{ formatDateTime(data.expires_at) }}</span>
               </dd>
               <dt class="text-muted-foreground">已用 / 额度</dt>
-              <dd class="tabular-nums">
-                {{ formatBytes(data.used_bytes) }} / {{ formatQuota(data.effective_quota_bytes) }}
+              <dd class="tabular-nums" data-testid="member-quota-fields">
+                {{ typeof data.used_bytes === 'number' ? formatBytes(data.used_bytes) : '—（用量未知）' }} / {{ data.effective_quota_bytes === undefined ? '—（额度未知）' : data.effective_quota_bytes === null ? '不限量' : formatQuota(data.effective_quota_bytes) }}
                 <span class="mt-0.5 block text-xs text-muted-foreground">额度来源：{{ describeQuotaSource(quotaSource(data)) }}</span>
               </dd>
               <dt class="text-muted-foreground">配额覆盖</dt>
               <dd>
                 <template v-if="data.quota_override_enabled">
-                  已启用（{{ formatQuota(data.quota_override_bytes) }}）· 原订阅默认 {{ formatQuota(data.effective_quota_bytes) }}
+                  已启用（{{ formatQuota(data.quota_override_bytes) }}）· 以上为服务端有效额度，不代表原方案默认值
                 </template>
                 <template v-else>未启用（继承订阅默认）</template>
               </dd>
@@ -305,15 +332,15 @@ async function rotateToken(): Promise<void> {
         </Alert>
       </div>
       <template #footer>
-        <Button variant="outline" :disabled="adjusting" @click="adjustOpen = false">取消</Button>
-        <Button :disabled="adjusting" @click="submitAdjust">
+        <Button data-testid="member-quota-adjust-cancel-button" variant="outline" :disabled="adjusting" @click="adjustOpen = false">取消</Button>
+        <Button data-testid="member-quota-adjust-submit-button" :disabled="adjusting || writeBlocked" @click="submitAdjust">
           <Loader2 v-if="adjusting" class="animate-spin" aria-hidden="true" />
           提交
         </Button>
       </template>
     </AppModal>
 
-    <AppModal :open="credOpen" title="代理凭据轮换" size="sm" @close="credOpen = false">
+    <AppModal :open="credOpen" title="重置连接凭据" size="sm" @close="credOpen = false">
       <div class="space-y-4">
         <p class="text-sm text-muted-foreground">旧凭据立即失效（硬撤权），可能中断连接。</p>
         <RadioGroup
@@ -340,21 +367,24 @@ async function rotateToken(): Promise<void> {
             <option v-for="node in nodes" :key="node.id" :value="node.id">{{ node.name }}</option>
           </select>
         </div>
+        <label v-if="credScope === 'all_nodes'" class="flex gap-2"><input v-model="allNodesConfirmed" type="checkbox" data-testid="member-all-nodes-confirm-checkbox" /> 我确认全部节点旧凭据失效，可能中断连接并需要重新导入</label>
         <Alert v-if="credError" variant="destructive">
           <AlertDescription>{{ credError }}</AlertDescription>
         </Alert>
       </div>
       <template #footer>
-        <Button variant="outline" :disabled="credPending" @click="credOpen = false">取消</Button>
-        <Button :disabled="credPending" @click="submitCredential">
+        <Button data-testid="member-credentials-cancel-button" variant="outline" :disabled="credPending" @click="credOpen = false">取消</Button>
+        <Button data-testid="member-credentials-reset-confirm-button" :disabled="credPending || writeBlocked" @click="submitCredential">
           <Loader2 v-if="credPending" class="animate-spin" aria-hidden="true" />
           确认轮换
         </Button>
       </template>
     </AppModal>
 
-    <AppModal :open="tokenOpen" title="订阅令牌轮换" size="md" @close="tokenOpen = false">
+    <AppModal :open="tokenOpen" title="重置订阅链接" size="md" @close="tokenOpen = false">
       <div class="space-y-4">
+        <p>仅重置个人订阅链接：旧链接立即失效；不重置连接凭据。断网时结果可能未确认，请读取当前信息核对，不要反复重置。</p>
+        <Button v-if="!tokenResult" data-testid="member-link-reset-confirm-button" :disabled="tokenLoading || writeBlocked" @click="rotateToken">确认重置订阅链接</Button>
         <p v-if="tokenLoading" class="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 class="animate-spin" aria-hidden="true" /> 轮换中…
         </p>
@@ -368,7 +398,7 @@ async function rotateToken(): Promise<void> {
         </template>
       </div>
       <template #footer>
-        <Button variant="outline" @click="tokenOpen = false">关闭</Button>
+        <Button data-testid="member-link-close-button" variant="outline" @click="tokenOpen = false">关闭</Button>
       </template>
     </AppModal>
   </div>

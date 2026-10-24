@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { toApiError } from '@/lib/errors'
 import { adminApi } from '@/api/endpoints'
 import { allPages } from '@/lib/allPages'
 import type { MemberRecord, NodeRecord, UsageItem } from '@/api/types'
@@ -33,6 +34,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 const items = ref<UsageItem[]>([])
 const referenceError = ref<unknown>(null)
 let loadedQuery = ''
+let generation = 0
 const nextCursor = ref<string | null>(null)
 const loading = ref(false)
 const error = ref<unknown>(null)
@@ -40,6 +42,13 @@ const members = ref<MemberRecord[]>([])
 const nodes = ref<NodeRecord[]>([])
 
 const filters = ref({ member_id: '', node_id: '', from_local: '', to_local: '' })
+watch(filters, () => {
+  generation++
+  items.value = []
+  nextCursor.value = null
+  loading.value = false
+  error.value = new Error('查询条件已变化，请点击查询读取第一页。')
+}, { deep: true, flush: 'sync' })
 
 // reka-ui 的 Select 用非空字符串作为选项值；空串表示“全部”，这里做一层映射，
 // 保证 requestParams() 仍然按原来的语义（空串 → undefined）发请求。
@@ -86,25 +95,31 @@ function requestParams() {
 async function query(append = false): Promise<void> {
   const scope = JSON.stringify(requestParams())
   if (append && scope !== loadedQuery) { error.value = new Error('查询条件已变化，请先重新查询，再加载更多。'); return }
+  if (append && loading.value) return
+  const current = ++generation
   loading.value = true
   error.value = null
+  if (!append) { items.value = []; nextCursor.value = null }
   try {
     const result = await adminApi.usage.query({
       ...requestParams(),
       limit: 100,
       cursor: append ? nextCursor.value : null,
     })
+    if (current !== generation) return
     items.value = append ? [...items.value, ...result.items] : result.items
     loadedQuery = scope
     nextCursor.value = result.next_cursor
   } catch (caught) {
-    error.value = caught
-    if (!append) {
+    if (current !== generation) return
+    const failure = toApiError(caught)
+    error.value = failure.code === 'CURSOR_INVALID' ? new Error('列表已过期，已清空范围。请重试读取第一页。') : failure
+    if (!append || failure.code === 'CURSOR_INVALID') {
       items.value = []
       nextCursor.value = null
     }
   } finally {
-    loading.value = false
+    if (current === generation) loading.value = false
   }
 }
 
@@ -113,8 +128,8 @@ function resetFilters(): void {
   void query()
 }
 
-function total(item: UsageItem): number {
-  return (item.up_bytes ?? 0) + (item.down_bytes ?? 0)
+function total(item: UsageItem): number | undefined {
+  return typeof item.up_bytes === 'number' && typeof item.down_bytes === 'number' ? item.up_bytes + item.down_bytes : undefined
 }
 
 function exportCsv(): void {
@@ -126,8 +141,8 @@ function exportCsv(): void {
     nodeNames.value.get(String(item.node_id)) ?? '',
     item.period_start ?? item.period?.start ?? '',
     item.period_end ?? item.period?.end ?? '',
-    String(item.up_bytes ?? 0),
-    String(item.down_bytes ?? 0),
+    String(item.up_bytes ?? ''),
+    String(item.down_bytes ?? ''),
     item.estimated ? 'true' : 'false',
   ])
   const csv = [header, ...rows]
@@ -149,8 +164,8 @@ function exportCsv(): void {
       title="用量"
       description="按成员、节点和时间查询用量账本。导出仅包含已加载的记录；估算、边界拆分与修正分别标记。"
     >
-      <Button variant="outline" :disabled="!items.length" @click="exportCsv">导出当前结果 CSV</Button>
-      <Button variant="outline" :disabled="loading" @click="query()">刷新</Button>
+      <Button data-testid="usage-export-button" variant="outline" :disabled="!items.length" @click="exportCsv">导出当前结果 CSV</Button>
+      <Button data-testid="usage-refresh-button" variant="outline" :disabled="loading" @click="query()">刷新</Button>
     </PageHeader>
 
     <ErrorState v-if="referenceError" :error="referenceError" :show-retry="false" />
@@ -196,8 +211,8 @@ function exportCsv(): void {
           <Input id="usage-to" v-model="filters.to_local" type="datetime-local" />
         </div>
         <div class="flex flex-wrap items-end gap-2 sm:col-span-2 lg:col-span-4">
-          <Button :disabled="loading" @click="query()">查询</Button>
-          <Button variant="outline" :disabled="loading" @click="resetFilters">重置</Button>
+          <Button data-testid="usage-query-button" :disabled="loading" @click="query()">查询</Button>
+          <Button data-testid="usage-reset-button" variant="outline" :disabled="loading" @click="resetFilters">重置</Button>
         </div>
       </CardContent>
     </Card>
@@ -270,7 +285,7 @@ function exportCsv(): void {
             <span class="text-xs text-muted-foreground">
               已加载 {{ items.length }} 条 · 计量方向 {{ items[0]?.direction ?? '未提供' }} · 算法 {{ items[0]?.algorithm_version ?? '未提供' }}
             </span>
-            <Button v-if="nextCursor" variant="outline" size="sm" :disabled="loading" @click="query(true)">
+            <Button v-if="nextCursor" data-testid="usage-next-button" variant="outline" size="sm" :disabled="loading" @click="query(true)">
               加载更多
             </Button>
           </div>
@@ -279,7 +294,7 @@ function exportCsv(): void {
 
       <Collapsible v-if="items.length">
         <CollapsibleTrigger as-child>
-          <Button variant="ghost" size="sm" class="text-muted-foreground">查看服务端原始字段</Button>
+          <Button data-testid="usage-detail-button" variant="ghost" size="sm" class="text-muted-foreground">查看服务端原始字段</Button>
         </CollapsibleTrigger>
         <CollapsibleContent>
           <pre class="mt-2 max-h-96 overflow-auto rounded-md border border-border bg-muted p-3 font-mono text-xs whitespace-pre-wrap break-all">{{ prettyJson(items) }}</pre>

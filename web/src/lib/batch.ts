@@ -136,6 +136,18 @@ export function submitRequest(preview: BatchPreview): { preview_id: string; rule
   return { preview_id: preview.id, rules_version: preview.rules_version, member_set_digest: preview.member_set_digest, confirm: true }
 }
 
+/** Applied rows are rule-only updates; do not call them verified connections. Unknown states remain waiting. */
+export function batchResultCounts(results: readonly { state?: string; status?: string }[]): { updated: number; waiting: number; failed: number } {
+  const counts = { updated: 0, waiting: 0, failed: 0 }
+  for (const item of results) {
+    const state = item.state ?? item.status
+    if (state === 'succeeded' || state === 'applied') counts.updated++
+    else if (['failed', 'timeout', 'superseded', 'conflict', 'skipped'].includes(state ?? '')) counts.failed++
+    else counts.waiting++
+  }
+  return counts
+}
+
 export function newIdempotencyKey(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
   const random = Math.random().toString(36).slice(2)

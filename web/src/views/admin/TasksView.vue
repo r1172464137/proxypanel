@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { Loader2 } from 'lucide-vue-next'
 import { adminApi } from '@/api/endpoints'
 import type { TaskRecord } from '@/api/types'
@@ -16,7 +17,12 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 
-const list = usePagedList<TaskRecord>((cursor) => adminApi.tasks.list({ limit: 50, cursor }))
+const route = useRoute()
+const filters = reactive({ state: '', batch_id: String(route.query.batch_id ?? ''), agent_id: String(route.query.agent_id ?? '') })
+const list = usePagedList<TaskRecord>((cursor) => {
+  const query = { limit: 50, cursor, ...filters }
+  return adminApi.tasks.list(query)
+})
 const retryTarget = ref<TaskRecord | null>(null)
 const retrying = ref(false)
 const retryError = ref('')
@@ -48,8 +54,8 @@ async function retry(): Promise<void> {
   retrying.value = true
   retryError.value = ''
   try {
-    await adminApi.tasks.retry(target.id)
-    retryNotice.value = `任务 ${target.id} 已重新排队，等待新回执；这不代表节点已恢复。`
+    const result = await adminApi.tasks.retry(target.id)
+    retryNotice.value = `任务 ${result.id} 已重新排队 · 尝试次数 ${result.attempts ?? '未提供'} · 新修订 ${result.revision ?? '未提供'}，等待匹配修订的新回执；这不代表节点已恢复。`
     pushToast('success', '重试已受理', '重试受版本检查限制，旧任务不会覆盖更新后的规则。')
     retryTarget.value = null
     await list.refresh()
@@ -77,13 +83,19 @@ const columns = [
       title="任务与同步"
       description="你改的配置要送到节点上才算真的生效。这里看每一条走到哪一步了；标红的可以点重试。"
     >
-      <Button variant="outline" :disabled="list.loading.value" @click="list.refresh()">刷新</Button>
-      <Button :variant="autoRefresh ? 'default' : 'outline'" @click="toggleAuto">
+      <Button data-testid="task-refresh-button" variant="outline" :disabled="list.loading.value" @click="list.refresh()">刷新</Button>
+      <Button data-testid="task-auto-refresh-button" :variant="autoRefresh ? 'default' : 'outline'" @click="toggleAuto">
         {{ autoRefresh ? '停止自动刷新' : '自动刷新（10s）' }}
       </Button>
     </PageHeader>
 
-    <p v-if="retryNotice" role="status" class="rounded border p-4">{{ retryNotice }}</p>
+    <form class="flex flex-wrap gap-2" @submit.prevent="list.refresh()">
+      <label>任务状态<select v-model="filters.state" data-testid="task-state-select"><option value="">全部</option><option value="pending">等待</option><option value="succeeded">成功</option><option value="failed">失败</option><option value="timeout">超时</option></select></label>
+      <label>批次 ID<input v-model="filters.batch_id" data-testid="task-batch-input" /></label>
+      <label>Agent ID<input v-model="filters.agent_id" data-testid="task-agent-input" /></label>
+      <Button type="submit" data-testid="task-filter-button">筛选任务</Button>
+    </form>
+    <p v-if="retryNotice" data-testid="task-retry-result" role="status" class="rounded border p-4">{{ retryNotice }}</p>
     <DataTable
       :list="list"
       :columns="columns"
@@ -105,7 +117,8 @@ const columns = [
           </div>
         </template>
         <template v-else-if="columnIndex === 3">
-          {{ item.attempts ?? item.retry_count ?? '—' }}
+          {{ item.attempts ?? '—' }} / {{ item.max_attempts ?? '—' }}
+          <span class="block text-xs">修订 {{ item.revision ?? '未提供' }}</span>
         </template>
         <template v-else-if="columnIndex === 4">
           <span class="break-all text-sm">{{ errorOf(item) }}</span>
@@ -124,13 +137,15 @@ const columns = [
               variant="outline"
               size="sm"
               :disabled="!['failed', 'timeout'].includes(String(item.state ?? item.status))"
-              @click="retryTarget = item"
+              :data-testid="`task-retry-${item.id}`"
+              :aria-label="`重试任务 ${item.id}`"
+              @click="retryTarget = item; retryError = ''"
             >
               重试
             </Button>
             <Collapsible>
               <CollapsibleTrigger as-child>
-                <Button variant="ghost" size="sm" class="text-muted-foreground">详情</Button>
+                <Button :data-testid="`task-detail-${item.id}`" variant="ghost" size="sm" class="text-muted-foreground">详情</Button>
               </CollapsibleTrigger>
               <CollapsibleContent>
                 <pre class="mt-2 max-h-80 min-w-60 overflow-auto rounded-md border border-border bg-muted p-3 font-mono text-xs whitespace-pre-wrap break-all">{{ prettyJson(item) }}</pre>
@@ -153,8 +168,8 @@ const columns = [
         </Alert>
       </div>
       <template #footer>
-        <Button variant="outline" :disabled="retrying" @click="retryTarget = null">取消</Button>
-        <Button :disabled="retrying" @click="retry">
+        <Button data-testid="task-retry-cancel-button" variant="outline" :disabled="retrying" @click="retryTarget = null">取消</Button>
+        <Button data-testid="task-retry-confirm-button" :disabled="retrying" @click="retry">
           <Loader2 v-if="retrying" class="animate-spin" aria-hidden="true" />
           {{ retrying ? '重试中…' : '确认重试' }}
         </Button>

@@ -78,6 +78,18 @@ describe('BatchListView', () => {
     wrapper.unmount()
   })
 
+  it('partial remains three distinct result counts and links to the same batch', async () => {
+    fixture.items = [{ id: 'partial-1', state: 'partial', idempotent_replay: true, results: [
+      { state: 'applied' }, { state: 'succeeded' }, { state: 'pending' }, { state: 'failed' }, { state: 'superseded' },
+    ] }]
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.text()).toContain('已更新 2 / 等待 1 / 失败或需处理 2')
+    expect(wrapper.text()).toContain('这是之前那次提交的结果')
+    expect(wrapper.find('a[href="/admin/batches/partial-1"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('未知 operation 原样展示，未知 state 降级为未知', async () => {
     fixture.items = [{ id: 'bat_02', operation: 'custom_op', state: undefined }]
     const wrapper = mountView()

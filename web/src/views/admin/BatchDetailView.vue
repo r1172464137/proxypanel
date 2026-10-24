@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, watch } from 'vue'
+import { batchResultCounts } from '@/lib/batch'
 import { useRoute } from 'vue-router'
 import { adminApi } from '@/api/endpoints'
 import type { BatchDetail, BatchResultItem } from '@/api/types'
@@ -29,6 +30,9 @@ const batch = useResource<BatchDetail>(() => adminApi.batches.get(batchId.value)
 const poll = usePolling(async () => { if (!batch.loading.value) await batch.reload() }, 5000)
 onMounted(() => { void batch.reload(); poll.start() })
 onUnmounted(poll.stop)
+watch(() => batch.data.value?.state, state => {
+  if (state && ['completed', 'succeeded', 'failed'].includes(state)) poll.stop()
+})
 
 const results = computed<BatchResultItem[]>(() => (Array.isArray(batch.data.value?.results) ? batch.data.value!.results : []))
 
@@ -41,10 +45,7 @@ const summary = computed(() => {
   return [...counts.entries()]
 })
 
-const achieved = computed(() => {
-  const succeeded = results.value.filter((item) => (item.state ?? item.status) === 'succeeded').length
-  return `${succeeded}/${results.value.length}`
-})
+const counts = computed(() => batchResultCounts(results.value))
 
 function errorTextOf(item: BatchResultItem): string {
   const error = item.error
@@ -57,11 +58,11 @@ function errorTextOf(item: BatchResultItem): string {
 <template>
   <div class="space-y-4">
     <PageHeader
-      :title="`批量任务 · ${batchId}`"
+      :title="`变更记录 · ${batchId}`"
       description="这里是这次批量修改的明细。每条都要等节点那边回报成功才算生效，失败的可以到「任务与同步」重试。"
     >
       <Button as-child variant="outline" size="sm">
-        <router-link to="/admin/tasks">任务与同步</router-link>
+        <router-link :to="`/admin/tasks?batch_id=${encodeURIComponent(batchId)}`">本批次任务与同步</router-link>
       </Button>
       <Button as-child variant="outline" size="sm">
         <router-link to="/admin/members">成员</router-link>
@@ -87,7 +88,9 @@ function errorTextOf(item: BatchResultItem): string {
             <dt class="text-muted-foreground">创建时间</dt>
             <dd>{{ formatDateTime(batch.data.value.created_at) }}</dd>
             <dt class="text-muted-foreground">逐对象结果</dt>
-            <dd class="tabular">{{ achieved }} 已生效</dd>
+            <dd class="tabular" data-testid="batch-result-counts">已更新 {{ counts.updated }} / 等待 {{ counts.waiting }} / 失败或需处理 {{ counts.failed }}</dd>
+            <dt v-if="batch.data.value.idempotent_replay">提交核对</dt>
+            <dd v-if="batch.data.value.idempotent_replay">这是之前那次提交的结果</dd>
           </dl>
           <div class="flex flex-wrap items-center gap-1">
             <Badge v-for="[status, count] in summary" :key="status" variant="secondary">
@@ -125,7 +128,7 @@ function errorTextOf(item: BatchResultItem): string {
                 <TableCell class="font-mono">{{ item.node_id ?? '—' }}</TableCell>
                 <TableCell class="font-mono">{{ item.agent_id ?? '—' }}</TableCell>
                 <TableCell><StatusBadge :status="item.state ?? item.status ?? 'unknown'" /></TableCell>
-                <TableCell><span class="break-all text-sm">{{ errorTextOf(item) }}</span></TableCell>
+                <TableCell><span class="break-all text-sm">{{ errorTextOf(item) }}</span><router-link v-if="item.task_id" :to="`/admin/tasks?batch_id=${encodeURIComponent(batchId)}`">任务 {{ item.task_id }}</router-link></TableCell>
                 <TableCell class="hidden md:table-cell">
                   <span :title="utcLabel(item.applied_at as string)">{{ formatDateTime(item.applied_at as string) }}</span>
                 </TableCell>

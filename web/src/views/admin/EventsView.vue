@@ -22,7 +22,19 @@ import {
 } from '@/components/ui/select'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 
-const list = usePagedList<EventRecord>((cursor) => adminApi.events.list({ limit: 50, cursor }))
+const state = ref('open')
+const queryText = ref('')
+const applied = ref({ state: 'open', q: '' })
+const ackNotice = ref('')
+const ackError = ref('')
+const list = usePagedList<EventRecord>((cursor) => {
+  const query = { limit: 50, cursor, ...applied.value }
+  return adminApi.events.list(query)
+})
+function searchEvents(): void {
+  applied.value = { state: state.value, q: queryText.value.trim() }
+  void list.refresh()
+}
 const severity = ref('')
 const acking = ref<string | null>(null)
 
@@ -177,12 +189,14 @@ function isAcked(event: EventRecord): boolean {
 
 async function ack(event: EventRecord): Promise<void> {
   acking.value = event.id
+  ackError.value = ''
   try {
     await adminApi.events.ack(event.id)
+    ackNotice.value = `事件 ${event.id} 已确认（仅表示已知悉，不等于故障已恢复）。可筛选“已确认”追踪。`
     pushToast('success', '告警已确认', '确认只表示已知悉，不等于故障已恢复。')
     await list.refresh()
   } catch (caught) {
-    pushToast('error', '确认失败', errorText(caught))
+    ackError.value = `事件 ${event.id} 确认未完成：${errorText(caught)}；请刷新核对状态后再操作。`
   } finally {
     acking.value = null
   }
@@ -195,9 +209,16 @@ async function ack(event: EventRecord): Promise<void> {
       title="事件与告警"
       description="这里记录节点异常、到期提醒、上报积压等问题。点「确认」只是标记你已看到，问题本身要等服务端再次上报恢复才会消失。"
     >
-      <Button variant="outline" :disabled="list.loading.value" @click="list.refresh()">刷新</Button>
+      <Button data-testid="event-refresh-button" variant="outline" :disabled="list.loading.value" @click="list.refresh()">刷新</Button>
     </PageHeader>
 
+    <form class="flex flex-wrap gap-2" @submit.prevent="searchEvents">
+      <label>事件状态<select v-model="state" data-testid="event-state-select"><option value="">全部</option><option value="open">未确认</option><option value="acked">已确认</option><option value="recovered">已恢复</option></select></label>
+      <label>搜索事件<input v-model="queryText" data-testid="event-q-input" /></label>
+      <Button type="submit" data-testid="event-filter-button">筛选事件</Button>
+    </form>
+    <p v-if="ackNotice" role="status" data-testid="event-ack-result">{{ ackNotice }}</p>
+    <p v-if="ackError" role="alert">{{ ackError }}</p>
     <div class="flex flex-wrap items-center gap-3">
       <Select v-model="severityFilter">
         <SelectTrigger class="w-full max-w-[220px]" aria-label="按级别过滤">
@@ -244,7 +265,7 @@ async function ack(event: EventRecord): Promise<void> {
             <p v-if="event.state" class="text-sm text-muted-foreground">
               状态：{{ stateLabel(String(event.state)) }}
             </p>
-            <p class="text-xs text-muted-foreground">对象：{{ subjectText(event) }}</p>
+            <p class="text-xs text-muted-foreground">事件 {{ event.id }} · 对象：{{ subjectText(event) }}</p>
             <details v-if="event.dedupe_key" class="text-xs text-muted-foreground">
               <summary class="cursor-pointer select-none">去重键</summary>
               <code class="mt-1 block break-all font-mono">{{ event.dedupe_key }}</code>
@@ -254,13 +275,15 @@ async function ack(event: EventRecord): Promise<void> {
                 variant="outline"
                 size="sm"
                 :disabled="isAcked(event) || acking === event.id"
+                :data-testid="`event-ack-${event.id}`"
+                :aria-label="`确认事件 ${event.id}`"
                 @click="ack(event)"
               >
                 {{ isAcked(event) ? '已确认' : acking === event.id ? '确认中…' : '确认告警' }}
               </Button>
               <Collapsible>
                 <CollapsibleTrigger as-child>
-                  <Button variant="ghost" size="sm" class="text-muted-foreground">原始数据</Button>
+                  <Button :data-testid="`event-detail-${event.id}`" variant="ghost" size="sm" class="text-muted-foreground">原始数据</Button>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   <pre class="mt-2 max-h-80 overflow-auto rounded-md border border-border bg-muted p-3 font-mono text-xs whitespace-pre-wrap break-all">{{ prettyJson(event) }}</pre>
@@ -272,8 +295,8 @@ async function ack(event: EventRecord): Promise<void> {
         <div class="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-3">
           <span class="text-xs text-muted-foreground">第 {{ list.page.value }} 页</span>
           <div class="flex items-center gap-2">
-            <Button variant="outline" size="sm" :disabled="list.page.value <= 1 || list.loading.value" @click="list.prev()">上一页</Button>
-            <Button variant="outline" size="sm" :disabled="!list.nextCursor.value || list.loading.value" @click="list.next()">下一页</Button>
+            <Button data-testid="event-prev-button" variant="outline" size="sm" :disabled="list.page.value <= 1 || list.loading.value" @click="list.prev()">上一页</Button>
+            <Button data-testid="event-next-button" variant="outline" size="sm" :disabled="!list.nextCursor.value || list.loading.value" @click="list.next()">下一页</Button>
           </div>
         </div>
       </template>
