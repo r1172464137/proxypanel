@@ -1,6 +1,6 @@
 {
   "feature": "product-readiness",
-  "current_phase": "frontend",
+  "current_phase": "web-demo",
   "active_phases": [
     "backend",
     "frontend",
@@ -107,7 +107,7 @@
       "validation_revision": 2
     },
     "frontend": {
-      "status": "in_progress",
+      "status": "completed",
       "plan": ".ai/super-run/product-readiness/frontend.md",
       "validation_revision": 0,
       "tasks": {
@@ -160,7 +160,7 @@
           ]
         },
         "accept": {
-          "status": "in_progress",
+          "status": "completed",
           "agent_spec": "/home/compile/code/t-tools/agents/frontend-accept.md",
           "references": [
             ".ai/design/product-readiness.md",
@@ -171,6 +171,52 @@
             ".ai/decision-log/product-readiness.md",
             ".ai/super-run/product-readiness/frontend.md",
             "/home/compile/code/t-tools/guides/frontend/quality.md"
+          ],
+          "evidence": [
+            ".ai/quality/frontend-accept-product-readiness-frontend-r0-20261024-074320-75294ba0.md",
+            ".ai/quality/frontend-accept-product-readiness-frontend-r0-output-correction-20261024-075829-4c1e9d7b.md"
+          ]
+        }
+      }
+    },
+    "web-demo": {
+      "status": "in_progress",
+      "plan": ".ai/super-run/product-readiness/web-demo.md",
+      "validation_revision": 0,
+      "tasks": {
+        "dev": {
+          "status": "in_progress",
+          "agent_spec": "/home/compile/code/t-tools/agents/web-demo-dev.md",
+          "references": [
+            ".ai/design/product-readiness.md",
+            ".ai/design/product-readiness/frontend.md",
+            ".ai/design/product-readiness/backend.md",
+            ".ai/user-stories/core/product-readiness.md",
+            ".ai/prd/core/product-readiness.md",
+            ".ai/decision-log/product-readiness.md",
+            ".ai/super-run/product-readiness/web-demo.md",
+            "/home/compile/code/t-tools/agents/web-demo-diagnose.md",
+            "/home/compile/code/t-tools/guides/web-demo/index.md",
+            "/home/compile/code/t-tools/guides/web-demo/e2e-testing.md",
+            "/home/compile/code/t-tools/guides/web-demo/selector-strategy.md",
+            "/home/compile/code/t-tools/protocols/diagnostic-report-contract.md"
+          ],
+          "evidence": []
+        },
+        "accept": {
+          "status": "pending",
+          "agent_spec": "/home/compile/code/t-tools/agents/web-demo-accept.md",
+          "references": [
+            ".ai/design/product-readiness.md",
+            ".ai/design/product-readiness/frontend.md",
+            ".ai/design/product-readiness/backend.md",
+            ".ai/user-stories/core/product-readiness.md",
+            ".ai/prd/core/product-readiness.md",
+            ".ai/decision-log/product-readiness.md",
+            ".ai/super-run/product-readiness/web-demo.md",
+            "/home/compile/code/t-tools/protocols/acceptance-contract.md",
+            "/home/compile/code/t-tools/protocols/verification-evidence-contract.md",
+            "/home/compile/code/t-tools/guides/web-demo/quality.md"
           ],
           "evidence": []
         }

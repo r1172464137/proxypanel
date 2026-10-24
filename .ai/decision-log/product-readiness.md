@@ -18,6 +18,7 @@
 | DEC-product-readiness-013 | D2 | readiness.checksum.unknown | 新增 readiness 字段 checksum_ok 规范为 boolean/null 三态：已核验成功 true、已知不符 false、无法核验 null；同源 status/checks/blockers 仍阻止不安全升级 | 主会话作为设计/API责任人裁决未发布诊断字段的表示细化，避免把无法核验伪称已知结果；已知消费者已处理null，不改变业务、权限、安全门禁或既有legacy兼容承诺。影响后端、前端与验收，故跨阶段入账 | agent | R1独立报告R1-C1；backend设计§4.2；API与CLI既有unknown语义 | design/task/test/frontend | 出现已发布消费者的固定非空类型约束，或用户明确要求两态表示 | — |
 | DEC-product-readiness-015 | D2 | delivery.stage-preview | 每个阶段验收通过后部署到203供用户查看，报告入口/版本/验证结果；保持前后端同候选，部署前核对备份与只读升级门禁 | 用户希望及时看到阶段效果；新增部署授权不等于清库、丢队列或绕过迁移证明，需停流/破坏性恢复时先说明 | user | 最新“每完成一个阶段部署到203，我也想看看效果”明确建议 | task/test/delivery | 部署需要影响现有流量/资料且未具备安全前置，或用户改变预览环境 | — |
 | DEC-product-readiness-016 | D2 | delivery.preview203-isolation | 阶段预览选择203独立HTTPS 8445与独立新库，现有8443/数据库/Agent不动；不把空库预览当旧数据升级验证 | 用户在“独立预览8445/升级现有8443”结构化选择中明确选择前者，避免本次查看效果影响旧环境 | user | 本轮203部署方式明确回答 | task/test/delivery | 用户明确改选原环境升级或要求复用旧数据 | — |
+| DEC-product-readiness-017 | D2 | delivery.preview-before-accept | 用户允许先启动203独立8445“待验收体验预览”，正式验收继续；不标阶段完成，新库新口令、旧8443/Agent不动 | 用户在等待时间过长后明确选择先看待验收预览，覆盖DEC015的验收后才启动时点限制，不降低正式验收门禁 | user | 本轮“先启动待验收预览（推荐）”结构化回答 | task/delivery/test | 预览隔离/原环境保护无法保证，或用户要求等待验收 | DEC-product-readiness-015 的启动时点限制 |
 
 ## Resolved Questions
 

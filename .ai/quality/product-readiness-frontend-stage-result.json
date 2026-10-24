@@ -1,0 +1,17 @@
+{
+  "feature": "product-readiness",
+  "phase": "frontend",
+  "status": "completed",
+  "acceptance_result": "ACCEPTED_WITH_IMPROVEMENTS",
+  "runtime_candidate": "706f0ba8abe0d9193c12436509264670040f2852",
+  "tests": 300,
+  "ui_technical_scenarios": 17,
+  "open_p0_p1": 0,
+  "p2_improvements": 3,
+  "acceptance_report": ".ai/quality/frontend-accept-product-readiness-frontend-r0-20261024-074320-75294ba0.md",
+  "output_correction_report": ".ai/quality/frontend-accept-product-readiness-frontend-r0-output-correction-20261024-075829-4c1e9d7b.md",
+  "preview": "https://192.168.5.203:8445",
+  "preview_old_stack_unchanged": true,
+  "feature_business_acceptance_complete": false,
+  "remaining_phase": "web-demo"
+}

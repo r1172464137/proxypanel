@@ -104,3 +104,10 @@ DS README 1f8a042主核查：Runtime hash实际computed读取/写入route.hash�
 源码/test/fixture/lock/config当前与706一致，仅.ai元数据WIP；所有实现worker已结束。dev/test现在completed，accept in_progress，revision0。交接.ai/quality/product-readiness-frontend-candidate.md；正式accept必须独立只读、DS模型、不能代放行。验收前203只允许镜像/模板stage：DS预备会话01a16cd3-6388-75a9-8640-ad59d0619b74，禁止compose up/port8445绑定/原服务变更；用户明确选择独立预览，只有ACCEPTED后主授权start。整个feature仍待web-demo。
 
 正式frontend-accept只读DS会话 `01a16cd8-15ad-75a9-8640-ad5bcd81fa00`，revision0，代码706f0ba；只消费有效源码/原始300/17技术证据并独立判定，不代放行。当前另一DS `01a16cd3-6388-75a9-8640-ad59d0619b74` 仅构建203新8445候选image/模板stage，用户DEC016允许隔离新库，禁止启动直到frontend ACCEPTED。无其它活跃工作/源码写入；主当前非.ai源与706一致。
+
+## frontend完成与阶段预览实际交付
+
+独立DS正式报告frontend-accept-product-readiness-frontend-r0-20261024-074320-75294ba0.md结论ACCEPTED_WITH_IMPROVEMENTS，0P0/P1/3P2；补充报告r0-output-correction-20261024-075829-4c1e9d7b.md仅纠正change_scope九键，不改结论/未重跑。主核验报告、原始300/17以及源码适用性；证据索引一处lib/frontendContract.spec.ts手误以原报告及实际api/frontendContract.spec.ts为准，不伪造文件或改结论。状态dev/test/accept及phase均completed。
+DEC017新授权允许先运行待验收8445（独立新库/口令，原8443不动），现部署已实际running_verified，四容器healthy、readyz.data.status=ok、六迁移、仅gateway发布8445、原三容器身份前后完全一致。HTTPS真实表单/刷新/匿名401/secure+httponly cookie/只登出测试context已验证，证据.ai/evidence/preview-8445-deployment/result.json及browser-smoke/2026-10-24T08-03-49-608Z。原主监控先shell引用错误未执行远端，后readyz封包误判造成等待；原记录保留，不把它们混成产品失败。预览管理员密码仅本机.secrets，不Git。
+新增部署观察：匿名根入口经登录后admin落到/me/subscription（角色仍admin、管理页可用），不能把“我的服务”冒称工作台；web-demo US001必须从真实根入口核对预期默认，确认后按FRONTEND诊断修复并补相关验证，不改测试期望掩盖。其余3P2诚实更新时间/原码summary徽标/reason使额外preview不扩本轮实现。
+用户最新“继续按计划推进，加快”授权下一web-demo；当前phase切到web-demo，不用用户正在浏览的8445或旧8443做破坏性验收。完整业务验收未完成，最终phase责任矩阵继续承接。

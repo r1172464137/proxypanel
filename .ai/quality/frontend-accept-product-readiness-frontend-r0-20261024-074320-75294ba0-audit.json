@@ -1,0 +1,110 @@
+{
+  "agent": "frontend-accept",
+  "feature": "product-readiness",
+  "phase": "frontend",
+  "validation_revision": 0,
+  "acceptance_result": "ACCEPTED_WITH_IMPROVEMENTS",
+  "candidate": "706f0ba8abe0d9193c12436509264670040f2852",
+  "baseline": "c8af262",
+  "report_path": "/home/compile/Work/proxypanel/.ai/quality/frontend-accept-product-readiness-frontend-r0-20261024-074320-75294ba0.md",
+  "read_only": true,
+  "tools_used": ["read (via bash cat/sed)", "grep/rg", "git diff/show/rev-parse", "sha256sum", "python3 json parsing"],
+  "evidence_reused": {
+    "root": ".ai/evidence/frontend-phase/frozen-706f0ba/20261024T071857Z-1046d1af/",
+    "probe": ".ai/evidence/frontend-phase/frozen-706f0ba/20261024T071857Z-1046d1af/probe/2026-10-24T07-20-06-410Z/report.json",
+    "touch_review": ".ai/evidence/frontend-phase/frozen-706f0ba/20261024T071857Z-1046d1af/main-touch-review.json",
+    "not_rerun_reason": "verification-evidence-contract reuse conditions 1-3 satisfied: outputs readable and re-parseable, inputs unchanged (fingerprints + git diff 706f0ba..HEAD excl .ai is empty), no contradictory/failing evidence",
+    "independently_parsed": {
+      "vitest": {"numTotalTests": 300, "numPassedTests": 300, "numFailedTests": 0, "numPendingTests": 0, "numTodoTests": 0, "testResultFiles": 48},
+      "typecheck_exit": 0,
+      "build_exit": 0,
+      "npm_audit_total_vulnerabilities": 0,
+      "probe": {"scenarios": 17, "pass": 17, "fail": 0, "candidate": "706f0ba8abe0d9193c12436509264670040f2852"},
+      "source_tree_identical": true,
+      "cleanup_schema_dropped": true
+    },
+    "fingerprints_recomputed": {
+      "web/tests/frontend-phase-probe.mjs": "c31fe1b2e29a710ad7801d910f2b189b2682f6ce8c8bc0678a16add40de33938",
+      "web/tests/frontend-phase-fixtures.mjs": "45db9096c219064f46f3256a79266068ca9cd261db40756ab969248ba4f4ef8d",
+      "web/tests/product-readiness-env.sh": "f027d08e91d4d5211ef64ea074fbad36c193f396af48252330472ca22856e83b",
+      "web/tests/product-readiness-db.go": "c7f6e59dc18ea7ca1867952194f99447c5f40545993d4df3041e95aa4bcd36d1",
+      "web/package-lock.json": "1242c0823eec5fe4b62d1b0f195adbf740fb226783f08604b68af0e60bf4e038"
+    }
+  },
+  "candidate_applicability": {
+    "acceptance_worktree_head": "706f0ba8abe0d9193c12436509264670040f2852",
+    "acceptance_worktree_status": "clean",
+    "main_repo_head": "1b0e7e4ea6d5aeb825c0df0fabd4dc44696d0d96",
+    "main_repo_non_ai_diff_vs_candidate": "empty",
+    "main_repo_extra_commit_files": [".ai/decision-log/product-readiness.md", ".ai/quality/product-readiness-frontend-candidate.md", ".ai/super-run/product-readiness/.state.json", ".ai/super-run/product-readiness/frontend.md"],
+    "verdict": "non-.ai source/tests/fixtures/lock/config identical to candidate; evidence inputs applicable"
+  },
+  "touch_assertion_dispute": {
+    "conclusion": "worker note was a misread; key-action 44px assertions did execute",
+    "verified_in_source": "web/tests/frontend-phase-probe.mjs assertMobilePage (lines ~225-252): scrollIntoViewIfNeeded + toBeVisible + horizontal containment + box.height>=44 per passed testid",
+    "targets_in_admin_scenario": ["workbench-refresh", "overview-tasks-link", "setup-refresh-button", "runtime-refresh-button", "recovery-enter-button", "member-refresh-button", "member-q-input", "member-username-<memberId>"],
+    "testids_exist": {"overview-tasks-link": "web/src/views/admin/OverviewView.vue:202", "member-username-<id>": "web/src/views/admin/MembersView.vue:477"},
+    "navLinkHeight_note": "navLinkHeight is an optional, nullable metric for closed drawer (nav a); it is not one of the asserted key targets",
+    "severity": "not a finding"
+  },
+  "contract_checks": {
+    "endpoints_file": "web/src/api/endpoints.ts",
+    "verified": [
+      "listMembers q/subscription_id/include_archived/limit/cursor",
+      "listNodes q/server_id",
+      "listEvents state/q",
+      "listTasks state/batch_id/agent_id",
+      "getMeUsage object-shaped items {usage,adjustments} + next_cursor (lib/meUsage.ts)",
+      "getBatch envelope {batch,results,summary} unwrapped without losing id/state/created_at",
+      "submitBatch sends Idempotency-Key; recovery exit sends confirm=verified + agent_revisions_checked + ledger_checked",
+      "PATCH/PUT carry version; DELETE subscription returns retired",
+      "templates template_in_use reference_count consumed",
+      "csrf header on write methods, 401 global handler with suppressAuthRedirect for login/session/redeem/password"
+    ]
+  },
+  "gates": [
+    {"name": "G1 candidate/evidence input consistency", "result": "passed", "evidence": [".ai/evidence/frontend-phase/frozen-706f0ba/20261024T071857Z-1046d1af/source-tree-diff.txt", ".ai/evidence/frontend-phase/frozen-706f0ba/20261024T071857Z-1046d1af/git-state.txt"]},
+    {"name": "G2 typecheck", "result": "passed", "evidence": [".ai/evidence/frontend-phase/frozen-706f0ba/20261024T071857Z-1046d1af/summary.json", ".ai/evidence/frontend-phase/frozen-706f0ba/20261024T071857Z-1046d1af/typecheck.log"]},
+    {"name": "G3 full frontend unit tests", "result": "passed", "evidence": [".ai/evidence/frontend-phase/frozen-706f0ba/20261024T071857Z-1046d1af/vitest.json", ".ai/evidence/frontend-phase/frozen-706f0ba/20261024T071857Z-1046d1af/vitest-stdout.log"]},
+    {"name": "G4 production build", "result": "passed", "evidence": [".ai/evidence/frontend-phase/frozen-706f0ba/20261024T071857Z-1046d1af/build.log"]},
+    {"name": "G5 dependency audit", "result": "passed", "evidence": [".ai/evidence/frontend-phase/frozen-706f0ba/20261024T071857Z-1046d1af/audit.json"]},
+    {"name": "G6 setup/me-connect/aliases+hash/role guard/known-count/unknown-not-zero/workbench 20-item scope/whitelisted event links", "result": "passed", "evidence": ["web/src/router/index.ts", "web/src/lib/workbench.ts", "web/src/components/SetupChecklist.vue", "web/src/views/admin/OverviewView.vue", ".ai/evidence/frontend-phase/frozen-706f0ba/20261024T071857Z-1046d1af/probe/2026-10-24T07-20-06-410Z/report.json"]},
+    {"name": "G7 admin-only shared recovery, identity epoch, hidden-pause polling, member no-admin-probe, token readonly vs 409 local degrade", "result": "passed", "evidence": ["web/src/lib/recoveryMode.ts", "web/src/lib/recoveryMode.spec.ts", "web/src/views/me/MeSubscriptionView.vue", "web/src/components/AppShell.vue"]},
+    {"name": "G8 keyset q/filters, cross-page ID selection, preview/cursor invalidation, late-response isolation, persistent idempotent pending, batch envelope + three-way partial counts", "result": "passed", "evidence": ["web/src/lib/paged.ts", "web/src/lib/paged.spec.ts", "web/src/lib/selectionScope.ts", "web/src/lib/batchPending.ts", "web/src/components/ImpactPreviewDialog.vue", "web/src/api/endpoints.ts", "web/src/api/frontendContract.spec.ts"]},
+    {"name": "G9 node lossless/empty-array/multi-cert, masked empty preserved, paired key rotation + impact confirm, version conflict keeps draft; subscription pending read-only/impact preview/retire/template 409; invitation maxUses1 + one-time secret cleared", "result": "passed", "evidence": ["web/src/lib/nodeDraft.ts", "web/src/views/admin/NodeEditorView.vue", "web/src/views/admin/SubscriptionEditorView.vue", "web/src/views/admin/SubscriptionsView.vue", "web/src/views/admin/TemplatesView.vue", "web/src/views/admin/InvitationsView.vue"]},
+    {"name": "G10 member known/unknown/zero/unlimited per-field, no link without explicit available, no unverified one-click import, copy does not rotate, download does not claim connection verified, me usage object+adjustments first page+cursor invalid, node/session real cursor, two reset scopes, password 401 read-only check, session epoch/CSRF/new singleflight", "result": "passed", "evidence": ["web/src/lib/memberService.ts", "web/src/views/me/MeSubscriptionView.spec.ts", "web/src/lib/clientImport.ts", "web/src/components/ClientImportGuide.vue", "web/src/lib/meUsage.ts", "web/src/views/me/MeUsageView.vue", "web/src/views/me/MeCredentialsView.vue", "web/src/views/me/MeSecurityView.vue", "web/src/stores/session.ts", "web/src/stores/session.spec.ts"]},
+    {"name": "G11 status language not faked-normal, readiness three-state, non-contract bodies never echoed, 390px touch/no-overflow/theme/keyboard with real evidence", "result": "passed", "evidence": ["web/src/components/StatusBadge.vue", "web/src/lib/readiness.ts", "web/src/api/http.ts", "web/src/views/admin/RuntimeView.vue", ".ai/evidence/frontend-phase/frozen-706f0ba/20261024T071857Z-1046d1af/probe/2026-10-24T07-20-06-410Z/report.json", ".ai/evidence/frontend-phase/frozen-706f0ba/20261024T071857Z-1046d1af/main-touch-review.json"]},
+    {"name": "G12 API method/path/params/response/errors/auth consistent with backend.md §4; no manual edits to generated artifacts; no new framework", "result": "passed", "evidence": ["web/src/api/endpoints.ts", "web/src/api/http.ts", "web/src/api/frontendContract.spec.ts", ".ai/design/product-readiness/backend.md"]}
+  ],
+  "findings": [
+    {"severity": "P2", "location": "web/src/views/me/MeSubscriptionView.vue:49, web/src/views/me/MeUsageView.vue:87", "evidence": ["web/src/views/me/MeSubscriptionView.vue", "web/src/views/me/MeUsageView.vue"], "impact": "Design §4.10 asks for a data-updated time; current text is an honest placeholder, no incorrect value is shown.", "suggested_fix": "Wire a real sampling/ledger timestamp when the member contract exposes it; until then keep the honest placeholder."},
+    {"severity": "P2", "location": "web/src/views/admin/BatchDetailView.vue (summary badge list)", "evidence": ["web/src/views/admin/BatchDetailView.vue"], "impact": "Raw state codes like 'succeeded' rendered verbatim while the rest of the page uses Chinese StatusBadge; readability/consistency only.", "suggested_fix": "Reuse StatusBadge or the existing label map; do not change count semantics."},
+    {"severity": "P2", "location": "web/src/components/ImpactPreviewDialog.vue:57", "evidence": ["web/src/components/ImpactPreviewDialog.vue"], "impact": "Editable reason is part of the scope digest, so changing it after preview forces one extra read-only preview (more conservative than server PREVIEW_STALE; no unsafe submit).", "suggested_fix": "If reason is not part of server-side conclusion/digest, exclude it after confirming with backend contract."}
+  ],
+  "pending_verification": [
+    {"scenario": "18 full user stories end-to-end via scripts/web-demo-test-runner.py (whole-file final)", "owner": "web-demo", "location": ".ai/design/product-readiness.md §6; .ai/design/product-readiness/frontend.md §8.3/§8.4"},
+    {"scenario": "UI -> real Agent -> official client -> traffic ledger chain; real core apply/rollback/partial", "owner": "web-demo", "location": ".ai/design/product-readiness/frontend.md §4.8; backend.md §10"},
+    {"scenario": "dual Agent, offline/UDP, legacy Agent/SQLite, core cross-version", "owner": "web-demo", "location": ".ai/design/product-readiness/backend.md §6.10/§10"},
+    {"scenario": "both hosting modes (panel-served and host nginx static) login/refresh, HTTPS/TLS, real host nginx/DNS/public CA", "owner": "web-demo / deployment", "location": "frontend.md §4.1/§8.4; DEC007"},
+    {"scenario": "real DB backup/restore, upgrade-readiness blocked/unknown on real historical DB, upgrade rollback", "owner": "web-demo", "location": "backend.md §9.9; frontend.md §4.8"},
+    {"scenario": "screen-reader audit and screenshot visual regression", "owner": "web-demo", "location": "probe report .notRun"},
+    {"scenario": "all supported platforms/clients and Vision", "owner": "web-demo", "location": ".ai/design/product-readiness.md §1.3"},
+    {"scenario": "203 independent 8445 preview deployment and user-visible check", "owner": "main session (after ACCEPTED, DEC015/DEC016)", "location": ".ai/super-run/product-readiness/frontend.md"}
+  ],
+  "change_scope": {
+    "backend_source": false,
+    "frontend_source": false,
+    "tests": false,
+    "assertions": false,
+    "design_docs": false,
+    "generated_artifacts": false,
+    "deployment": false,
+    "state_file": false,
+    "private_raw_evidence_committed": false
+  },
+  "release_decision": {
+    "frontend_phase": "可以放行（ACCEPTED_WITH_IMPROVEMENTS）",
+    "feature_complete": false,
+    "downstream": "web-demo 承接上述 pending 场景；本验收不执行部署、不代做整改、不改 state"
+  }
+}
