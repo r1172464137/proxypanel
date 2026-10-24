@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math/rand"
 	"net"
 	"net/http/httptest"
 	"os"
@@ -39,21 +38,19 @@ func realCorePath(t *testing.T) string {
 	return path
 }
 
-// freeTCPPort returns a currently bindable port from a high range so
-// back-to-back real core tests cannot collide with a previous socket.
+// freeTCPPort asks the OS for a dynamic loopback port; no lab or business
+// listener is probed or reused by these tests.
 func freeTCPPort(t *testing.T) int {
 	t.Helper()
-	for attempt := 0; attempt < 200; attempt++ {
-		port := 20000 + rand.Intn(40000)
-		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
-		if err != nil {
-			continue
-		}
-		_ = ln.Close()
-		return port
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
 	}
-	t.Fatal("no free TCP port found")
-	return 0
+	port := ln.Addr().(*net.TCPAddr).Port
+	if err := ln.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return port
 }
 
 func realEchoServer(t *testing.T) int {
@@ -363,7 +360,29 @@ func startRealAgent(t *testing.T) (*Supervisor, *fakePanel, string) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	t.Cleanup(func() { _ = sup.Close() })
+	t.Cleanup(func() {
+		var exits []<-chan struct{}
+		for _, inst := range sup.Manager().Snapshot() {
+			if ch := sup.Manager().ExitSignal(inst.InstanceID); ch != nil {
+				exits = append(exits, ch)
+			}
+		}
+		if err := sup.Close(); err != nil {
+			t.Errorf("owned core cleanup: %v", err)
+		}
+		for _, ch := range exits {
+			select {
+			case <-ch:
+			case <-time.After(10 * time.Second):
+				t.Error("owned core exit not confirmed during cleanup")
+			}
+		}
+		left, err := filepath.Glob(filepath.Join(dir, "state", "instances", "*", "xray.pid"))
+		if err != nil || len(left) > 0 {
+			t.Errorf("owned pid recovery records remain: %v err=%v", left, err)
+		}
+		t.Log("cleanup: all owned exit events confirmed; no owned pid records remain")
+	})
 	return sup, panel, dir
 }
 

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -49,16 +50,63 @@ type stubRunner struct {
 	// testDelay and startDelay widen the lifecycle window so concurrency
 	// regressions expose lock contention deterministically.
 	testDelay  time.Duration
+	testBegin  chan struct{}
 	startDelay time.Duration
+	// testEndAt is the wall clock time (unix nano) at which the FIRST slow
+	// technical validation of a round returned (i.e. when the blocked node A was
+	// released).
+	testEndAt atomic.Int64
+	// crashOnStart makes Start return the process with a CLOSED Exited channel,
+	// i.e. a core that exits right after being reported as started.
+	crashOnStart bool
+	// startErr, when set, makes every Start fail (start gate tests).
+	startErr error
+	// stopAt records when each instance was stopped (unix nano), so a test can
+	// prove that a revocation was enforced BEFORE a peer's slow validation ended.
+	stopAt map[string]int64
+	// stopFailure makes every stop report a survivor: the process keeps its
+	// Exited channel open, i.e. the core could not be proven gone.
+	stopFailure bool
+	// procs records the started fake processes per instance id so a test can
+	// close an exit channel without going through Stop (a crash).
+	procs map[string]*stubProc
+}
+
+// stoppedAt returns when the first stop of one instance was requested.
+func (r *stubRunner) stoppedAt(id string) time.Time {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if v, ok := r.stopAt[id]; ok && v != 0 {
+		return time.Unix(0, v)
+	}
+	return time.Time{}
+}
+
+func (r *stubRunner) setStopFailure(v bool) {
+	r.mu.Lock()
+	r.stopFailure = v
+	r.mu.Unlock()
 }
 
 func (r *stubRunner) Test(ctx context.Context, configPath string) error {
 	r.mu.Lock()
 	delay, err := r.testDelay, r.testErr
 	r.mu.Unlock()
+	if r.testBegin != nil {
+		select {
+		case r.testBegin <- struct{}{}:
+		default:
+		}
+	}
 	// The delay is applied without holding the runner lock, like a real process
 	// spawn, so only the manager locks are exercised.
 	time.Sleep(delay)
+	if delay > 0 {
+		// Only the FIRST slow validation of the round is recorded: later ones (the
+		// reconciled peer) would overwrite the moment the blocked node was
+		// released.
+		r.testEndAt.CompareAndSwap(0, time.Now().UnixNano())
+	}
 	return err
 }
 
@@ -90,8 +138,20 @@ func (r *stubRunner) Start(ctx context.Context, spec xray.StartSpec) (xray.Proc,
 		r.lastStart = string(raw)
 		r.lastStartByID[spec.InstanceID] = string(raw)
 	}
+	if r.startErr != nil {
+		return nil, r.startErr
+	}
 	r.nextPID++
-	return &stubProc{runner: r, id: spec.InstanceID, pid: 900000 + r.nextPID, exited: make(chan struct{})}, nil
+	proc := &stubProc{runner: r, id: spec.InstanceID, pid: 900000 + r.nextPID, exited: make(chan struct{})}
+	if r.crashOnStart {
+		// Close through the Once so a later Stop can not close it twice.
+		proc.once.Do(func() { close(proc.exited) })
+	}
+	if r.procs == nil {
+		r.procs = map[string]*stubProc{}
+	}
+	r.procs[spec.InstanceID] = proc
+	return proc, nil
 }
 
 // countsFor reports how often one instance was started and stopped.
@@ -208,14 +268,25 @@ func (p *stubProc) Exited() <-chan struct{} { return p.exited }
 func (p *stubProc) ExitError() error        { return nil }
 func (p *stubProc) Output() []string        { return nil }
 func (p *stubProc) Stop(ctx context.Context) error {
+	p.runner.mu.Lock()
+	p.runner.stops++
+	if p.runner.stopsByID == nil {
+		p.runner.stopsByID = map[string]int{}
+	}
+	p.runner.stopsByID[p.id]++
+	survivor := p.runner.stopFailure
+	if p.runner.stopAt == nil {
+		p.runner.stopAt = map[string]int64{}
+	}
+	if _, ok := p.runner.stopAt[p.id]; !ok {
+		p.runner.stopAt[p.id] = time.Now().UnixNano()
+	}
+	p.runner.mu.Unlock()
+	if survivor {
+		// A stop that is not confirmed: the exit channel stays open.
+		return errors.New("injected stop failure: core survived the stop budget")
+	}
 	p.once.Do(func() {
-		p.runner.mu.Lock()
-		p.runner.stops++
-		if p.runner.stopsByID == nil {
-			p.runner.stopsByID = map[string]int{}
-		}
-		p.runner.stopsByID[p.id]++
-		p.runner.mu.Unlock()
 		close(p.exited)
 	})
 	return nil

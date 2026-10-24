@@ -330,9 +330,9 @@ func TestRollbackValidationGetsItsOwnBudgetAfterTheInstanceBudgetIsExhausted(t *
 }
 
 // TestRollbackIsValidatedBeforeTheOldCoreIsStopped proves requirement (a): the
-// old core keeps serving until a replacement configuration was validated. Before
-// the fix the core was stopped first, so a rejected rollback left the instance
-// with nothing running.
+// old core keeps serving during a technical-only replacement until rollback is
+// validated. Revocations instead stop before validation (independently covered
+// by TestRevocationStopsOldCoreBeforeRollbackValidation).
 func TestRollbackIsValidatedBeforeTheOldCoreIsStopped(t *testing.T) {
 	shortStopVerify(t)
 	mgr, runner := newScriptedManager(t, filepath.Join(t.TempDir(), "xray.exe"), t.TempDir())
@@ -342,12 +342,12 @@ func TestRollbackIsValidatedBeforeTheOldCoreIsStopped(t *testing.T) {
 	runner.setTestFn(func(ctx context.Context, configPath string) error {
 		return errors.New("xray -test failed: unknown field")
 	})
-	revoked := targetFor(t, "alice@example.test")
-	results := mgr.Apply(context.Background(), []Target{revoked}, ApplyOptions{})
+	technical := targetFor(t, "alice@example.test", "bob@example.test")
+	results := mgr.Apply(context.Background(), []Target{technical}, ApplyOptions{Force: true})
 	if len(results) != 1 || results[0].State != StateFailed {
 		t.Fatalf("both configurations are rejected, want failed, got %+v", results)
 	}
-	// The revocation contract is unchanged: no invented applied count.
+	// A technical failure must not invent an applied count.
 	if results[0].AppliedUserCount != 0 {
 		t.Fatalf("a failed apply must not report applied users: %+v", results[0])
 	}

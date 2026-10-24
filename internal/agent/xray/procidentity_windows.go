@@ -29,6 +29,9 @@ func processIdentity(pid int) (ProcessIdentity, bool, error) {
 	if err := windows.GetProcessTimes(h, &creation, &exit, &kernel, &user); err != nil {
 		return ProcessIdentity{PID: pid}, true, fmt.Errorf("process times of %d: %w", pid, err)
 	}
+	if exit.HighDateTime != 0 || exit.LowDateTime != 0 {
+		return ProcessIdentity{}, false, nil
+	}
 	image, imageErr := windowsProcessImage(h)
 	identity := ProcessIdentity{PID: pid, Executable: image, Created: strconv.FormatInt(creation.Nanoseconds(), 10)}
 	if imageErr != nil {

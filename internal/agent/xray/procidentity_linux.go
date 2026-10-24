@@ -28,6 +28,13 @@ func processIdentity(pid int) (ProcessIdentity, bool, error) {
 	if err != nil {
 		return ProcessIdentity{PID: pid}, true, err
 	}
+	// A zombie has exited and cannot hold listeners or proxy connections.
+	if idx := strings.LastIndex(string(stat), ")"); idx >= 0 {
+		fields := strings.Fields(string(stat)[idx+1:])
+		if len(fields) > 0 && fields[0] == "Z" {
+			return ProcessIdentity{}, false, nil
+		}
+	}
 	boot := bootTime()
 	exe, err := os.Readlink(base + "/exe")
 	if err != nil {

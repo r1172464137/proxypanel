@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -25,7 +26,7 @@ func main() {
 	}
 }
 
-func run() error {
+func run() (result error) {
 	configPath := flag.String("config", "", "path to the agent JSON configuration file")
 	showVersion := flag.Bool("version", false, "print the agent version and exit")
 	checkOnly := flag.Bool("check", false, "validate the configuration, print a summary and exit")
@@ -88,7 +89,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer sup.Close()
+	defer func() { result = errors.Join(result, sup.Close()) }()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

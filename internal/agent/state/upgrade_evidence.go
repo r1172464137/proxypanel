@@ -97,7 +97,7 @@ func ReadUpgradeEvidence(ctx context.Context, dir string) (*contracts.AgentState
 		return nil, err
 	}
 	local := &Store{db: db, dir: abs, path: path}
-	values, err := local.metaMany(ctx, MetaAgentID, MetaSchemaVersion, MetaControlGeneration, MetaAppliedRevision)
+	values, err := local.metaMany(ctx, MetaAgentID, MetaSchemaVersion, MetaControlGeneration, MetaAppliedRevision, MetaApplyIntent, MetaAppliedSnapshot)
 	if err != nil {
 		return nil, fmt.Errorf("read state metadata: %w", err)
 	}
@@ -116,6 +116,24 @@ func ReadUpgradeEvidence(ctx context.Context, dir string) (*contracts.AgentState
 		DatabaseSHA256: before, StateSchemaVersion: values[MetaSchemaVersion],
 		AgentID: values[MetaAgentID], ControlGeneration: values[MetaControlGeneration],
 		AppliedRevision: revision, PendingBatches: []contracts.UsageBatch{},
+	}
+	// Schema v1 predates intent tracking. Only the new durable keys establish
+	// capability; an old revision watermark alone never proves execution complete.
+	for _, key := range []string{MetaApplyIntent, MetaAppliedSnapshot} {
+		if values[key] == "" {
+			continue
+		}
+		snap, err := decodeSnapshot(values[key])
+		if err != nil || snap == nil || snap.SchemaVersion != contracts.SchemaVersion || snap.ControlGeneration == "" || snap.Revision < 0 {
+			return nil, fmt.Errorf("invalid persisted apply metadata")
+		}
+		if key == MetaAppliedSnapshot && (snap.ControlGeneration != out.ControlGeneration || snap.Revision != out.AppliedRevision) {
+			return nil, fmt.Errorf("committed snapshot does not match applied watermark")
+		}
+		out.ApplyIntentTrackingSupported = true
+	}
+	if values[MetaApplyIntent] != "" {
+		out.PendingApplyIntentCount = 1
 	}
 	var batches, samples, otherStates int64
 	if err := db.QueryRowContext(ctx, `SELECT count(*), COALESCE(sum(CASE WHEN state <> 'pending' THEN 1 ELSE 0 END),0) FROM batches`).Scan(&batches, &otherStates); err != nil {
@@ -252,7 +270,8 @@ func inspectKnownLayout(ctx context.Context, db *sql.DB) error {
 	}
 	knownKeys := map[string]bool{MetaAgentID: true, MetaToken: true, MetaControlGeneration: true,
 		MetaAppliedRevision: true, MetaGenerationHistory: true, MetaSchemaVersion: true,
-		MetaAcceptedGeneration: true, MetaPendingGeneration: true}
+		MetaAcceptedGeneration: true, MetaPendingGeneration: true,
+		MetaApplyIntent: true, MetaAppliedSnapshot: true, "write_probe": true}
 	rows, err = db.QueryContext(ctx, `SELECT key FROM meta`)
 	if err != nil {
 		return err

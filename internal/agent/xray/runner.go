@@ -74,6 +74,9 @@ func (r *CLIRunner) Test(ctx context.Context, configPath string) error {
 // Start launches `xray run -c <config>` with stdout/stderr captured into a
 // redacted per-instance log file.
 func (r *CLIRunner) Start(ctx context.Context, spec StartSpec) (Proc, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepathDir(spec.LogPath), 0o700); err != nil {
 		return nil, fmt.Errorf("create log directory: %w", err)
 	}
@@ -263,12 +266,16 @@ func (p *cliProc) Stop(ctx context.Context) error {
 	case <-timer.C:
 	case <-ctx.Done():
 	}
-	_ = p.cmd.Process.Kill()
+	killErr := p.cmd.Process.Kill()
 	select {
 	case <-p.exited:
+		return nil
 	case <-time.After(3 * time.Second):
+		if killErr != nil {
+			return fmt.Errorf("kill core: %w", killErr)
+		}
+		return fmt.Errorf("core exit not confirmed after kill")
 	}
-	return nil
 }
 
 // logSink redacts secrets, keeps the last lines in memory for error reports and

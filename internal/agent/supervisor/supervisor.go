@@ -35,6 +35,11 @@ const (
 	applyStateCoordination = "coordination_required"
 )
 
+// finalSampleGateBudget bounds how long a stop waits for the sampling gate before
+// it gives up on the final sample. A revocation must never be delayed by a slow
+// periodic sampling round.
+const finalSampleGateBudget = 2 * time.Second
+
 const (
 	// applyBudgetFloor is the minimum apply budget of one snapshot. The real
 	// budget is derived from the xray lifecycle budgets times the number of
@@ -116,7 +121,15 @@ type Supervisor struct {
 	// rewrite the persisted instance records and the applied watermark, so they
 	// must never interleave (a stale expiry target set could re-authorize a
 	// member that a newer snapshot already revoked).
-	applyMu sync.Mutex
+	applyMu  *ctxMutex
+	sampleMu *ctxMutex // orders periodic read+commit against final read+commit
+	closing  bool
+	recovery map[string]*failure
+	// expiryLockBudget bounds how long the local expiry pass waits for a snapshot
+	// apply. Past that bound the affected instances are stopped directly (a
+	// fail-closed stop that cannot be delayed by unrelated technical validation);
+	// the record update is retried by the next pass.
+	expiryLockBudget time.Duration
 	// expiryAfterReadHook is a test seam that runs inside the serialized section
 	// right after the instance records were read. nil in production.
 	expiryAfterReadHook func()
@@ -186,6 +199,9 @@ func New(opts Options) (*Supervisor, error) {
 		mgr:       mgr,
 		sampler:   reporting.NewSampler(store, mgr, logger),
 		failures:  map[string]*failure{},
+		recovery:  map[string]*failure{},
+		applyMu:   &ctxMutex{},
+		sampleMu:  &ctxMutex{},
 		metrics:   map[string]float64{},
 		startedAt: now(),
 		timeouts:  xray.DefaultTimeouts(),
@@ -194,8 +210,13 @@ func New(opts Options) (*Supervisor, error) {
 		values := []string{client.Token(), opts.Config.RegistrationCode}
 		return values
 	})
+	// One clock for the whole agent: the recovery budget, the expiry triggers and
+	// the sampling order are all derived from it.
+	mgr.SetNow(now)
+	mgr.SetStartGuard(s.CheckStart)
 	s.sampler.SetNow(now)
 	s.uploader = reporting.NewUploader(store, client, client, logger)
+	mgr.SetSampleHook(s.sampleHook())
 	return s, nil
 }
 
@@ -242,14 +263,32 @@ func (s *Supervisor) Client() *control.Client { return s.client }
 // Close stops every managed core process, then releases the state directory
 // lock and the local database.
 func (s *Supervisor) Close() error {
-	var errs []error
+	s.mu.Lock()
+	s.closing = true
+	s.mu.Unlock()
+	s.applyMu.lock()
+	var stopErrs []error
 	if s.mgr != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-		if results := s.mgr.StopAll(ctx); len(results) > 0 {
+		results := s.mgr.StopAll(ctx)
+		cancel()
+		if len(results) > 0 {
 			s.log.Printf("agent: stopped %d instance(s) on shutdown", len(results))
+		}
+		if serr := shutdownError(results); serr != nil {
+			stopErrs = append(stopErrs, serr)
+		}
+		// The records of a stop that was not confirmed must not claim the core
+		// is gone; record them before the database is closed.
+		ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+		if err := s.persistStoppedInstancesLocked(ctx, results); err != nil {
+			stopErrs = append(stopErrs, err)
 		}
 		cancel()
 	}
+	s.applyMu.unlock()
+	var errs []error
+	errs = append(errs, stopErrs...)
 	if s.lock != nil {
 		errs = append(errs, s.lock.Close())
 	}
@@ -286,44 +325,87 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	start("upload", s.cfg.PollInterval(), s.uploadOnce)
 	start("heartbeat", s.cfg.HeartbeatInterval(), s.heartbeatOnce)
 	start("expiry", time.Second, s.expiryOnce)
+	start("health", time.Second, s.healthOnce)
 	<-ctx.Done()
-	// Never leave an untracked core process behind on a normal shutdown.
+	s.mu.Lock()
+	s.closing = true
+	s.mu.Unlock()
 	stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	s.applyMu.lock()
+	// Never leave an untracked core process behind on a normal shutdown.
 	results := s.mgr.StopAll(stopCtx)
+	s.applyMu.unlock()
 	// A shutdown can interrupt a local expiry rebuild (or a snapshot apply) that
 	// was already narrowing the authorization. Persisting the stopped records
 	// under the same serialization lock, and applying the same expiry filter,
 	// guarantees a cancelled rebuild never leaves a WIDER authorization on disk
 	// than the local clock already proved.
-	s.persistStoppedInstances(stopCtx, results)
+	persistErr := s.persistStoppedInstances(stopCtx, results)
 	s.writeStatus()
 	s.log.Printf("agent: stopped %d instance(s)", len(results))
 	wg.Wait()
-	return nil
+	return errors.Join(shutdownError(results), persistErr)
+}
+
+// shutdownError reports the instances whose stop could not be confirmed during
+// shutdown. The runtime must not announce a clean shutdown when a core may still
+// be serving: the caller (cmd/agent) exits non zero and an operator sees it.
+func shutdownError(results []xray.Result) error {
+	var errs []error
+	for _, r := range results {
+		if r.State == xray.StateFailed {
+			errs = append(errs, fmt.Errorf("instance %s did not stop cleanly: %s", r.InstanceID, r.Error))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // persistStoppedInstances records the controlled-shutdown state of every stopped
 // instance. Already expired users are dropped with the same rule the snapshot
 // and local expiry paths use, so the persisted authorization is never wider
 // than what this node enforces, even if the shutdown cancelled the rebuild.
-func (s *Supervisor) persistStoppedInstances(ctx context.Context, results []xray.Result) {
-	s.applyMu.Lock()
-	defer s.applyMu.Unlock()
+func (s *Supervisor) persistStoppedInstances(ctx context.Context, results []xray.Result) error {
+	s.applyMu.lock()
+	defer s.applyMu.unlock()
+	return s.persistStoppedInstancesLocked(ctx, results)
+}
+
+// persistStoppedInstancesLocked is persistStoppedInstances for a caller that
+// already holds the serialization gate.
+func (s *Supervisor) persistStoppedInstancesLocked(ctx context.Context, results []xray.Result) error {
 	now := s.now()
+	var errs []error
 	for _, r := range results {
 		rec, ok, err := s.storedInstance(ctx, r.InstanceID)
-		if err != nil || !ok {
+		if err != nil {
+			errs = append(errs, fmt.Errorf("read record of %s: %w", r.InstanceID, err))
+			continue
+		}
+		if !ok {
 			continue
 		}
 		rec.Users, rec.NextExpiry = filterExpiredUsers(rec.Users, now)
-		rec.State = xray.StateStopped
-		rec.CoreGeneration = ""
-		rec.ConfigHash = ""
 		rec.AppliedUserCount = len(rec.Users)
 		rec.UpdatedAt = now
-		_ = s.store.RecordInstance(ctx, rec)
+		if r.State == xray.StateFailed {
+			// The stop was not confirmed: the core may still hold its listeners.
+			// Keep the recovery record (config, hash, core generation) and never
+			// claim it is stopped, so the next start can prove ownership and
+			// reclaim it instead of leaking a serving process.
+			rec.State = xray.StateFailed
+			rec.Error = r.Error
+		} else {
+			rec.State = xray.StateStopped
+			rec.CoreGeneration = ""
+			rec.ConfigHash = ""
+			rec.Error = ""
+		}
+		if err := s.store.RecordInstance(ctx, rec); err != nil {
+			errs = append(errs, fmt.Errorf("record stopped instance %s: %w", r.InstanceID, err))
+		}
 	}
+	return errors.Join(errs...)
 }
 
 func (s *Supervisor) loop(ctx context.Context, name string, interval time.Duration, fn func(context.Context) error) {
@@ -377,9 +459,19 @@ func (s *Supervisor) checkCoreBinary(ctx context.Context) error {
 // restore starts the instances that were running before the agent restarted,
 // with already expired users filtered out, before the first network round trip.
 func (s *Supervisor) restore(ctx context.Context) error {
+	if err := s.refreshProtection(ctx); err != nil {
+		return err
+	}
+	intent, err := s.store.ApplyIntent(ctx)
+	if err != nil {
+		return err
+	}
+	if intent != nil {
+		return s.applySnapshot(ctx, intent)
+	}
 	// Startup restore rewrites the same records the snapshot/expiry paths own.
-	s.applyMu.Lock()
-	defer s.applyMu.Unlock()
+	s.applyMu.lock()
+	defer s.applyMu.unlock()
 	records, err := s.store.Instances(ctx)
 	if err != nil {
 		return err
@@ -387,9 +479,15 @@ func (s *Supervisor) restore(ctx context.Context) error {
 	if len(records) == 0 {
 		return nil
 	}
+	if err := s.mgr.ReapUntracked(ctx); err != nil {
+		return err
+	}
 	now := s.now()
 	targets := make([]xray.Target, 0, len(records))
 	for _, rec := range records {
+		if rec.State == xray.StateStopping {
+			continue
+		}
 		target, err := s.targetFromRecord(rec, now)
 		if err != nil {
 			s.log.Printf("agent: cannot restore instance %s: %v", rec.NodeID, err)
@@ -421,7 +519,9 @@ func (s *Supervisor) restore(ctx context.Context) error {
 	for _, res := range results {
 		target := byID[res.InstanceID]
 		if res.State == xray.StateApplied || res.State == xray.StateUnchanged {
-			s.persistResult(ctx, res, target, now)
+			if err := s.persistResult(ctx, res, target, now); err != nil {
+				return err
+			}
 			s.log.Printf("agent: restored instance %s with %d authorized user(s)", res.InstanceID, res.AppliedUserCount)
 			continue
 		}
@@ -511,6 +611,15 @@ func (s *Supervisor) ensureIdentity(ctx context.Context) error {
 }
 
 func (s *Supervisor) syncOnce(ctx context.Context) error {
+	intent, ierr := s.store.ApplyIntent(ctx)
+	if ierr != nil {
+		return ierr
+	}
+	if intent != nil {
+		if err := s.applySnapshot(ctx, intent); err != nil {
+			s.log.Printf("agent: pending intent remains unresolved: %v", err)
+		}
+	}
 	if err := s.ensureIdentity(ctx); err != nil {
 		s.noteSyncError(err)
 		return err
@@ -551,8 +660,8 @@ func (s *Supervisor) applySnapshot(ctx context.Context, snapshot *contracts.Snap
 // applySnapshotSerialized performs the serialized decide-and-commit sequence.
 // needUpload reports that a report was persisted and should be delivered.
 func (s *Supervisor) applySnapshotSerialized(ctx context.Context, snapshot *contracts.Snapshot) (bool, error) {
-	s.applyMu.Lock()
-	defer s.applyMu.Unlock()
+	s.applyMu.lock()
+	defer s.applyMu.unlock()
 	// Re-read the watermark under the serialization lock: the value used to build
 	// the request is only a hint, because an earlier snapshot or a local expiry
 	// rebuild may have rewritten the records since.
@@ -585,6 +694,37 @@ func (s *Supervisor) applySnapshotSerialized(ctx context.Context, snapshot *cont
 		s.log.Printf("agent: ignoring snapshot revision %d (already applied %d)", snapshot.Revision, id.AppliedRevision)
 		return false, nil
 	}
+	if err := s.protectionError(); err != nil {
+		return false, err
+	}
+	// IssuedAt is transport metadata and changes when the panel reoffers the
+	// same revision. Preserve the fenced issue time; state still rejects any
+	// changed authorization or technical payload at that revision.
+	pending, err := s.store.ApplyIntent(ctx)
+	if err != nil {
+		return false, err
+	}
+	if pending != nil && pending.ControlGeneration == snapshot.ControlGeneration && pending.Revision == snapshot.Revision {
+		copy := *snapshot
+		copy.IssuedAt = pending.IssuedAt
+		snapshot = &copy
+	}
+	if err := s.store.SaveApplyIntent(ctx, *snapshot); err != nil {
+		s.setPersistenceError(err)
+		return false, err
+	}
+	if err := s.mgr.ReapUntracked(ctx); err != nil && !os.IsNotExist(err) {
+		return false, err
+	}
+	stored, err := s.store.Instances(ctx)
+	if err != nil {
+		s.setPersistenceError(err)
+		return false, err
+	}
+	previous := map[string]state.InstanceRecord{}
+	for _, rec := range stored {
+		previous[rec.NodeID] = rec
+	}
 	applyCtx, cancel := context.WithTimeout(ctx, s.snapshotBudget(len(snapshot.Instances)))
 	defer cancel()
 
@@ -600,6 +740,7 @@ func (s *Supervisor) applySnapshotSerialized(ctx context.Context, snapshot *cont
 				res = xray.Result{InstanceID: inst.ID, NodeID: inst.NodeID, State: xray.StateFailed, Error: perr.Error()}
 			} else {
 				res.Error = "configuration rejected: " + perr.Error()
+				res.State = xray.StateFailed // stopping safely is not applying successfully
 			}
 			rejected = append(rejected, res)
 			// The result loop below records this attempt exactly once. No target
@@ -631,22 +772,43 @@ func (s *Supervisor) applySnapshotSerialized(ctx context.Context, snapshot *cont
 	for _, t := range targets {
 		byID[t.InstanceID] = t
 	}
+	committed := map[string]state.InstanceRecord{}
+	wanted := map[string]bool{}
+	for _, inst := range snapshot.Instances {
+		wanted[inst.ID] = true
+	}
 	ok := true
 	for _, res := range results {
 		switch res.State {
 		case xray.StateApplied, xray.StateUnchanged:
-			s.persistResult(ctx, res, byID[res.InstanceID], now)
+			rec, rerr := s.resultRecord(res, byID[res.InstanceID], now)
+			if rerr != nil {
+				return false, rerr
+			}
+			committed[rec.NodeID] = rec
 			s.clearFailure(res.InstanceID)
 		case xray.StateRollback:
 			// The authorization is current but the new technical config could not
 			// be used: report it as a failure and keep retrying with backoff.
-			s.persistResult(ctx, res, byID[res.InstanceID], now)
+			rec, rerr := s.resultRecord(res, byID[res.InstanceID], now)
+			if rerr != nil {
+				return false, rerr
+			}
+			committed[rec.NodeID] = rec
 			s.recordFailure(res.InstanceID, byID[res.InstanceID].Hash, errors.New(res.Error))
 			ok = false
 		case xray.StateStopped:
-			_ = s.store.RemoveInstance(ctx, res.InstanceID)
 			s.clearFailure(res.InstanceID)
 		case xray.StateDeferred:
+			if rec, exists := previous[res.InstanceID]; exists {
+				committed[rec.NodeID] = rec
+			} else {
+				rec, rerr := s.resultRecord(res, byID[res.InstanceID], now)
+				if rerr != nil {
+					return false, rerr
+				}
+				committed[rec.NodeID] = rec
+			}
 			// This poll did not attempt anything: the instance is inside the retry
 			// backoff of the target that already failed. It is NOT a new failure, so
 			// the deadline and the failure count are left untouched (otherwise each
@@ -655,33 +817,37 @@ func (s *Supervisor) applySnapshotSerialized(ctx context.Context, snapshot *cont
 			// watermark is not advanced either: this revision was not applied.
 			ok = false
 		default:
-			_ = s.store.RecordInstance(ctx, state.InstanceRecord{
-				NodeID:    res.InstanceID,
-				State:     res.State,
-				Error:     res.Error,
-				UpdatedAt: now,
-			})
-			s.recordFailure(res.InstanceID, byID[res.InstanceID].Hash, errors.New(res.Error))
-			ok = false
-		}
-	}
-	// Remove records of instances that are no longer part of the snapshot.
-	stored, serr := s.store.Instances(ctx)
-	if serr == nil {
-		for _, rec := range stored {
-			if _, keep := byID[rec.NodeID]; keep {
-				continue
-			}
-			found := false
-			for _, res := range results {
-				if res.InstanceID == rec.NodeID {
-					found = true
-					break
+			rec := state.InstanceRecord{NodeID: res.InstanceID, State: res.State, Error: res.Error, UpdatedAt: now}
+			if target, exists := byID[res.InstanceID]; exists {
+				var rerr error
+				rec, rerr = s.resultRecord(res, target, now)
+				if rerr != nil {
+					return false, rerr
 				}
 			}
-			if !found {
-				_ = s.store.RemoveInstance(ctx, rec.NodeID)
+			if !res.OldConnectionsTerminated {
+				if prev, exists := previous[res.InstanceID]; exists {
+					rec = prev
+					rec.State, rec.Error, rec.UpdatedAt = xray.StateFailed, res.Error, now
+				}
 			}
+			if !wanted[res.InstanceID] {
+				// The instance was removed from the snapshot but its core could not
+				// be proven gone. Never claim it is stopped: keep the last known
+				// record (config, users, applied count) and turn it into a
+				// tombstone that health keeps retrying to clean up. Dropping the
+				// record - or writing an empty one - would lose the only recovery
+				// pointer to a core that may still serve the old connections.
+				if prev, exists := previous[res.InstanceID]; exists {
+					rec = prev
+					rec.UpdatedAt = now
+				}
+				rec.State = xray.StateStopping
+				rec.Error = res.Error
+			}
+			committed[rec.NodeID] = rec
+			s.recordFailure(res.InstanceID, byID[res.InstanceID].Hash, errors.New(res.Error))
+			ok = false
 		}
 	}
 
@@ -695,25 +861,26 @@ func (s *Supervisor) applySnapshotSerialized(ctx context.Context, snapshot *cont
 	if !ok {
 		report.State = applyStateFailed
 	}
+	s.log.Printf("agent: snapshot revision %d generation %s: %s (%d instance result(s))", snapshot.Revision, snapshot.ControlGeneration, report.State, len(results))
+	records := make([]state.InstanceRecord, 0, len(committed))
+	for _, rec := range committed {
+		records = append(records, rec)
+	}
+	// The reported apply state is published only after the ONE transaction that
+	// owns the instance set, the watermark and the outbox committed. A failed
+	// commit therefore never leaves "applied" in the local status while the
+	// durable records still describe the previous revision.
+	if err := s.store.CommitSnapshot(ctx, records, report, ok); err != nil {
+		s.mu.Lock()
+		s.lastApplyState = applyStateFailed
+		s.mu.Unlock()
+		s.setPersistenceError(err)
+		return false, err
+	}
 	s.mu.Lock()
 	s.lastApplyState = report.State
 	s.mu.Unlock()
-	s.log.Printf("agent: snapshot revision %d generation %s: %s (%d instance result(s))", snapshot.Revision, snapshot.ControlGeneration, report.State, len(results))
 	if ok {
-		if err := s.store.SetApplied(ctx, snapshot.ControlGeneration, snapshot.Revision); err != nil {
-			return false, err
-		}
-		if err := s.store.RecordGeneration(ctx, snapshot.ControlGeneration); err != nil {
-			return false, err
-		}
-		if generationChanged {
-			if err := s.store.ClearAcceptedGeneration(ctx); err != nil {
-				return false, err
-			}
-		}
-		if err := s.store.SetPendingGeneration(ctx, ""); err != nil {
-			return false, err
-		}
 		s.mu.Lock()
 		s.coordinationGeneration = ""
 		s.mu.Unlock()
@@ -721,9 +888,6 @@ func (s *Supervisor) applySnapshotSerialized(ctx context.Context, snapshot *cont
 	// Refresh the sanitized report after the instance records and reachability
 	// changes of this apply (including removed records and failed records).
 	s.writeStatus()
-	if err := s.enqueueReport(ctx, report); err != nil {
-		return false, err
-	}
 	return true, nil
 }
 
@@ -786,9 +950,22 @@ func contractResults(results []xray.Result) []contracts.InstanceResult {
 	return out
 }
 
-func (s *Supervisor) persistResult(ctx context.Context, res xray.Result, target xray.Target, now time.Time) {
+func (s *Supervisor) persistResult(ctx context.Context, res xray.Result, target xray.Target, now time.Time) error {
+	rec, err := s.resultRecord(res, target, now)
+	if err == nil {
+		err = s.store.RecordInstance(ctx, rec)
+	}
+	if err != nil {
+		s.setPersistenceError(err)
+		return err
+	}
+	s.writeStatus()
+	return nil
+}
+
+func (s *Supervisor) resultRecord(res xray.Result, target xray.Target, now time.Time) (state.InstanceRecord, error) {
 	users := res.Users
-	if len(users) == 0 {
+	if users == nil {
 		users = target.Users
 	}
 	doc := res.Document
@@ -797,8 +974,7 @@ func (s *Supervisor) persistResult(ctx context.Context, res xray.Result, target 
 	}
 	raw, err := json.Marshal(doc)
 	if err != nil {
-		s.log.Printf("agent: cannot persist instance %s: %v", res.InstanceID, err)
-		return
+		return state.InstanceRecord{}, err
 	}
 	rec := state.InstanceRecord{
 		NodeID:           res.InstanceID,
@@ -817,12 +993,7 @@ func (s *Supervisor) persistResult(ctx context.Context, res xray.Result, target 
 			rec.ConfigHash = hash
 		}
 	}
-	if err := s.store.RecordInstance(ctx, rec); err != nil {
-		s.log.Printf("agent: cannot persist instance %s: %v", rec.NodeID, err)
-		return
-	}
-	// Keep the sanitized report in step with every durable instance update.
-	s.writeStatus()
+	return rec, nil
 }
 
 func (s *Supervisor) enqueueReport(ctx context.Context, report contracts.ApplyReport) error {
@@ -837,12 +1008,32 @@ func (s *Supervisor) enqueueReport(ctx context.Context, report contracts.ApplyRe
 	return nil
 }
 
+// sampleHook is the final accounting of every stop path.
+//
+// It runs while the manager holds the instance lifecycle lock, i.e. exactly
+// between "this core is about to die" and "start the replacement", so it shares
+// the sampling gate with the periodic cycle. The wait for that gate is bounded by
+// the hook context: a revocation must never wait for a slow periodic sampling
+// round. Losing the race is safe because Measure keeps a per generation
+// high-water mark, and the periodic round either already collected this core or
+// will collect the (already replaced) one on its next run.
 func (s *Supervisor) sampleHook() xray.SampleHook {
 	return func(ctx context.Context, nodeID, coreGeneration, apiServer string, emailToMember map[string]string) {
-		qctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		counters, err := s.runner.StatsQuery(qctx, apiServer)
-		cancel()
+		gateCtx, gateCancel := context.WithTimeout(ctx, finalSampleGateBudget)
+		err := s.sampleMu.lockContext(gateCtx)
+		gateCancel()
 		if err != nil {
+			s.noteFinalSamplingError(nodeID, "sampling gate unavailable")
+			s.log.Printf("agent: instance %s: final sample skipped, the sampling gate is busy: %v", nodeID, err)
+			return
+		}
+		defer s.sampleMu.unlock()
+		qctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		counters, queryErr := s.runner.StatsQuery(qctx, apiServer)
+		cancel()
+		err = queryErr
+		if err != nil {
+			s.noteFinalSamplingError(nodeID, "final stats query failed")
 			s.log.Printf("agent: instance %s: final stats query failed: %v", nodeID, err)
 			return
 		}
@@ -853,6 +1044,7 @@ func (s *Supervisor) sampleHook() xray.SampleHook {
 		mctx, mcancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer mcancel()
 		if _, err := s.store.Measure(mctx, nodeID, coreGeneration, s.now(), items); err != nil {
+			s.noteFinalSamplingError(nodeID, "final sample persistence failed")
 			s.log.Printf("agent: CRITICAL: cannot persist the final sample of instance %s: %v", nodeID, err)
 			s.setPersistenceError(err)
 		}
@@ -863,7 +1055,9 @@ func (s *Supervisor) sampleOnce(ctx context.Context) error {
 	if s.queueOverCapacity() {
 		return fmt.Errorf("local upload queue exceeds its capacity; sampling is paused until it drains")
 	}
+	s.sampleMu.lock()
 	res, err := s.sampler.RunOnce(ctx)
+	s.sampleMu.unlock()
 	if err != nil {
 		s.setPersistenceError(err)
 		s.log.Printf("agent: sampling failed: %v", err)
@@ -958,6 +1152,16 @@ func (s *Supervisor) heartbeatOnce(ctx context.Context) error {
 		metrics[k] = v
 	}
 	instances := s.mgr.Snapshot()
+	metrics["health_degraded"] = 0
+	metrics["stop_unconfirmed"] = float64(s.mgr.UnconfirmedStops())
+	if s.protectionError() != nil || metrics["final_sampling_errors"] > 0 || metrics["sampling_errors"] > 0 {
+		metrics["health_degraded"] = 1
+	}
+	for _, inst := range instances {
+		if inst.State == xray.StateFailed || inst.State == xray.StateStopping {
+			metrics["health_degraded"] = 1
+		}
+	}
 	running, failed := 0, 0
 	for _, inst := range instances {
 		switch inst.State {
@@ -1018,8 +1222,6 @@ func (s *Supervisor) heartbeatOnce(ctx context.Context) error {
 
 // expiryOnce enforces already delivered expiry times locally, even when the
 // panel is unreachable.
-// expiryOnce enforces already delivered expiry times locally, even when the panel
-// is unreachable.
 //
 // The record read, the rebuild and the persist step run under applyMu so they
 // cannot interleave with a snapshot apply: the target set must reflect exactly the
@@ -1028,23 +1230,42 @@ func (s *Supervisor) heartbeatOnce(ctx context.Context) error {
 // authorization afterwards and - because the revision was already advanced - the
 // revoked member would stay authorized forever (the panel answers 204).
 func (s *Supervisor) expiryOnce(ctx context.Context) error {
-	if len(s.mgr.ExpiredInstances(s.now())) == 0 {
+	expiredNow := s.mgr.ExpiredInstances(s.now())
+	if len(expiredNow) == 0 {
 		return nil
 	}
-	s.applyMu.Lock()
-	defer s.applyMu.Unlock()
+	// A delivered expiry must not be held back by an unrelated technical apply:
+	// bounded wait, then a direct fail-closed stop of the expired instances.
+	lockCtx, cancel := context.WithTimeout(ctx, s.expiryLockBudgetValue())
+	err := s.applyMu.lockContext(lockCtx)
+	cancel()
+	if err != nil {
+		return s.stopExpiredWithoutLock(ctx, expiredNow, err)
+	}
+	defer s.applyMu.unlock()
 
+	// A failed/interrupted snapshot owns authorization until reconciled. Old
+	// committed records must never be used to rebuild a wider authorization in
+	// the meantime; expiry may only stop, not restore from those records.
+	intent, err := s.store.ApplyIntent(ctx)
+	if err != nil {
+		return err
+	}
+	if intent != nil {
+		return s.stopExpiredWithoutLock(ctx, expiredNow, fmt.Errorf("pending apply intent requires reconciliation"))
+	}
 	records, err := s.store.Instances(ctx)
 	if err != nil {
+		s.setPersistenceError(err)
+		s.mgr.StopAll(ctx)
 		return err
 	}
 	if hook := s.expiryAfterReadHook; hook != nil {
 		hook()
 	}
 	if len(records) == 0 {
-		// Nothing persisted to reconcile against: leave the manager untouched
-		// instead of stopping every tracked instance.
-		return nil
+		s.mgr.StopAll(ctx)
+		return fmt.Errorf("no committed records for running expired instances")
 	}
 	now := s.now()
 	expired := s.mgr.ExpiredInstances(now)
@@ -1061,8 +1282,10 @@ func (s *Supervisor) expiryOnce(ctx context.Context) error {
 	for _, rec := range records {
 		target, terr := s.targetFromRecord(rec, now)
 		if terr != nil {
-			// Abort the whole pass: omitting an instance would make Apply stop it.
-			return fmt.Errorf("local expiry rebuild aborted, instance %s cannot be planned: %w", rec.NodeID, terr)
+			// A bad record cannot hold other nodes' expiry hostage. Stop this
+			// instance too; omitting it from the full target set remains fail-closed.
+			s.mgr.Stop(ctx, rec.NodeID, "local expiry cannot plan committed record")
+			continue
 		}
 		targets = append(targets, target)
 	}
@@ -1085,10 +1308,14 @@ func (s *Supervisor) expiryOnce(ctx context.Context) error {
 		switch res.State {
 		case xray.StateUnchanged:
 			// Persist the refreshed expiry metadata so the local trigger advances.
-			s.persistResult(ctx, res, byID[res.InstanceID], now)
+			if err := s.persistResult(ctx, res, byID[res.InstanceID], now); err != nil {
+				return err
+			}
 			s.clearFailure(res.InstanceID)
 		case xray.StateApplied, xray.StateRollback:
-			s.persistResult(ctx, res, byID[res.InstanceID], now)
+			if err := s.persistResult(ctx, res, byID[res.InstanceID], now); err != nil {
+				return err
+			}
 			s.log.Printf("agent: instance %s rebuilt locally with %d authorized user(s)", res.InstanceID, res.AppliedUserCount)
 		case xray.StateDeferred:
 			s.log.Printf("agent: local expiry rebuild of %s deferred by retry backoff: %s", res.InstanceID, res.Error)
@@ -1106,8 +1333,11 @@ func (s *Supervisor) expiryOnce(ctx context.Context) error {
 			// takes the target's filtered users and clears next_expiry when none
 			// remain. The write must not inherit the cancelled apply context.
 			persistCtx, persistCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			s.persistResult(persistCtx, res, byID[res.InstanceID], now)
+			perr := s.persistResult(persistCtx, res, byID[res.InstanceID], now)
 			persistCancel()
+			if perr != nil {
+				return perr
+			}
 			s.log.Printf("agent: ALERT: local expiry rebuild of %s failed: %s", res.InstanceID, res.Error)
 			s.recordFailure(res.InstanceID, byID[res.InstanceID].Hash, errors.New(res.Error))
 		}
@@ -1153,15 +1383,26 @@ func (s *Supervisor) stopAllAsync(reason string) {
 	s.stopInFlight = true
 	s.mu.Unlock()
 	go func() {
+		s.applyMu.lock()
+		defer s.applyMu.unlock()
+		defer func() { s.mu.Lock(); s.stopInFlight = false; s.mu.Unlock() }()
+		if s.protectionError() == nil {
+			// The condition cleared while this goroutine waited: never kill the
+			// cores that a newer apply just started.
+			return
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		results := s.mgr.StopAll(ctx)
 		cancel()
 		if len(results) > 0 {
 			s.log.Printf("agent: ALERT: %s; stopped %d instance(s)", reason, len(results))
 		}
-		s.mu.Lock()
-		s.stopInFlight = false
-		s.mu.Unlock()
+		// The records must reflect the stop; the stop context is already spent.
+		persistCtx, persistCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if err := s.persistStoppedInstancesLocked(persistCtx, results); err != nil {
+			s.log.Printf("agent: cannot record the protection stop: %v", err)
+		}
+		persistCancel()
 	}()
 }
 

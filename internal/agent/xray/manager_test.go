@@ -53,7 +53,12 @@ func newFakeRunner() *fakeRunner {
 	return &fakeRunner{configs: map[string]string{}, nextPID: 100}
 }
 
+// record appends one lifecycle event. It takes the runner lock because the
+// manager may stop several instances concurrently (authorization tightening runs
+// the stops of one round in parallel).
 func (f *fakeRunner) record(kind string, pid int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.events = append(f.events, fmt.Sprintf("%s:%d", kind, pid))
 }
 
@@ -205,6 +210,7 @@ func TestApplyUnchangedRefreshesUserExpiries(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mgr, runner := newTestManager(t)
+			mgr.SetNow(func() time.Time { return now })
 			makeTarget := func(expiry *time.Time) Target {
 				plan, err := Prepare(contracts.Instance{
 					ID: "node-1", NodeID: "node-1",

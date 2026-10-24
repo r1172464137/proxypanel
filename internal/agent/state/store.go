@@ -366,6 +366,8 @@ type InstanceRecord struct {
 	Users            []contracts.AuthorizedUser
 	NextExpiry       time.Time
 	UpdatedAt        time.Time
+	// UsersBefore fences expiry narrowing against a concurrently committed authorization.
+	UsersBefore []contracts.AuthorizedUser
 }
 
 // RecordInstance upserts one instance record.

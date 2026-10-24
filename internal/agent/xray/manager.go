@@ -28,6 +28,7 @@ const (
 	StateFailed    = "failed"
 	StateStopped   = "stopped"
 	StateDeferred  = "deferred"
+	StateStopping  = "stopping"
 )
 
 // Default instance apply budget. The contract requires config validation plus
@@ -260,6 +261,11 @@ type instance struct {
 	state         string
 	err           string
 	startedAt     time.Time
+	pendingExpiry time.Time // lifecycle-lock owned deadline for every start/rollback
+	// healthOn marks a published view as a live core whose Exited channel is
+	// meaningful. It is false for a core that was already known to be dead, so
+	// recovery never defers to an already closed channel and never declares a
+	// dead core healthy again.
 	// published holds the reader visible state and is replaced atomically by
 	// publish, so readers never wait for a lifecycle operation.
 	published atomic.Pointer[instanceView]
@@ -267,6 +273,8 @@ type instance struct {
 
 // instanceView is an immutable copy of the fields readers need.
 type instanceView struct {
+	proc           Proc
+	healthOn       bool
 	instanceID     string
 	nodeID         string
 	state          string
@@ -291,6 +299,8 @@ func (inst *instance) publish() {
 		state:          inst.state,
 		err:            inst.err,
 		running:        inst.proc != nil,
+		proc:           inst.proc,
+		healthOn:       inst.proc != nil,
 		users:          inst.users,
 		apiPort:        inst.apiPort,
 		coreGeneration: inst.coreGen,
@@ -314,6 +324,14 @@ func (inst *instance) publish() {
 // view returns the last published reader visible state without blocking.
 func (inst *instance) view() *instanceView {
 	if v := inst.published.Load(); v != nil {
+		if v.running && v.healthOn && processExited(v.proc) {
+			dead := *v
+			dead.running = false
+			dead.reportState = StateFailed
+			dead.state = StateFailed
+			dead.err = "core exited unexpectedly"
+			return &dead
+		}
 		return v
 	}
 	return &instanceView{state: StateStopped, reportState: StateStopped}
@@ -327,14 +345,25 @@ func (inst *instance) view() *instanceView {
 // QueryStats, ExpiredInstances, NextExpiry or StopAll, and no lock cycle exists
 // between the two mutex levels.
 type Manager struct {
-	root     string
-	xrayPath string
-	certRoot string
-	runner   Runner
-	logger   *log.Logger
-	now      func() time.Time
-	portFn   func(reserved map[int]bool) (int, error)
-	secrets  func() []string
+	root       string
+	xrayPath   string
+	certRoot   string
+	runner     Runner
+	logger     *log.Logger
+	now        func() time.Time
+	portFn     func(reserved map[int]bool) (int, error)
+	secrets    func() []string
+	beforeStop SampleHook
+	// startGuard is an optional last moment veto right before a core process is
+	// started. The supervisor installs it so an overload/persistence protection
+	// that engages while this apply already holds the serialization lock can not
+	// be bypassed by starting a core first and stopping it asynchronously. nil
+	// means "no veto".
+	startGuard func() error
+	// inspectProcess resolves a pid to its process identity. It is the
+	// per-manager seam for the process ownership checks and lets tests prove the
+	// "stop was not confirmed" path without touching a real OS process.
+	inspectProcess func(pid int) (ProcessIdentity, bool, error)
 	// timeouts holds the independent lifecycle budgets (readiness, validation,
 	// stop, rollback). Set by NewManager from DefaultTimeouts and adjustable via
 	// SetTimeouts; never zero.
@@ -396,17 +425,59 @@ func NewManager(root, xrayPath string, runner Runner, logger *log.Logger) (*Mana
 		logger = log.New(os.Stderr, "agent ", log.LstdFlags|log.LUTC)
 	}
 	return &Manager{
-		root:      abs,
-		xrayPath:  xrayPath,
-		certRoot:  filepath.Join(abs, "certs"),
-		runner:    runner,
-		logger:    logger,
-		now:       time.Now,
-		portFn:    allocatePort,
-		timeouts:  DefaultTimeouts(),
-		instances: map[string]*instance{},
-		owned:     map[int]bool{},
+		root:           abs,
+		xrayPath:       xrayPath,
+		certRoot:       filepath.Join(abs, "certs"),
+		runner:         runner,
+		logger:         logger,
+		now:            time.Now,
+		portFn:         allocatePort,
+		timeouts:       DefaultTimeouts(),
+		instances:      map[string]*instance{},
+		owned:          map[int]bool{},
+		inspectProcess: processIdentity,
 	}, nil
+}
+
+// SetStartGuard installs a last moment veto that runs immediately before a core
+// process is started. It must be called before Apply/Stop run (startup wiring).
+//
+// Why this exists: overload/disk protection is evaluated by the supervisor, but
+// an apply can be in flight when the condition appears (a final sample hook that
+// fails to persist, an upload queue that crossed its limit). Without a check at
+// the last moment the apply would start a core first and only get stopped by the
+// asynchronous protection goroutine, i.e. the safety state would not really be a
+// start gate. A guard error turns the start into a failure, never into a start.
+func (m *Manager) SetStartGuard(fn func() error) {
+	m.startGuard = fn
+}
+
+// SetInspectProcess overrides the pid inspection used by the ownership checks
+// (tests only). It must be called before Apply/Stop run.
+func (m *Manager) SetInspectProcess(fn func(pid int) (ProcessIdentity, bool, error)) {
+	if fn != nil {
+		m.inspectProcess = fn
+	}
+}
+
+// inspect is processIdentity through the per-manager seam.
+func (m *Manager) inspect(pid int) (ProcessIdentity, bool, error) {
+	fn := m.inspectProcess
+	if fn == nil {
+		fn = processIdentity
+	}
+	return fn(pid)
+}
+
+// checkStartGuard runs the installed start gate, if any.
+func (m *Manager) checkStartGuard() error {
+	if m.startGuard == nil {
+		return nil
+	}
+	if err := m.startGuard(); err != nil {
+		return fmt.Errorf("core start blocked by the agent safety gate: %w", err)
+	}
+	return nil
 }
 
 // SetNow overrides the clock. It must be called before Apply/Stop run (tests and
@@ -492,6 +563,18 @@ func (m *Manager) lookup(id string) *instance {
 // Apply reconciles every tracked instance with the target list: instances that
 // disappeared from the snapshot are stopped, changed instances are tested then
 // restarted, unchanged instances are left alone.
+//
+// The AUTHORIZATION tightening of the whole round happens FIRST (phase 0, see
+// tightenAuthorization): every instance whose authorization is narrower than the
+// running core, or that is not part of the snapshot any more, is stopped before
+// any technical validation of any other instance can run.
+//
+// Why the ordering matters: `xray -test` is serialized process wide and can
+// stall for a whole validation budget. Without phase 0, instance B's revocation
+// would only be enforced when its turn in the sequential loop came, so a slow
+// validation of instance A could keep B's revoked users connected far beyond the
+// authorization deadline. Phase 0 is bounded per instance by the stop budget and
+// runs concurrently, so it costs the slowest stop of the round - not the sum.
 func (m *Manager) Apply(ctx context.Context, targets []Target, opts ApplyOptions) []Result {
 	if opts.PerInstanceTimeout <= 0 {
 		opts.PerInstanceTimeout = m.timeouts.withDefaults().InstanceBudget()
@@ -501,21 +584,167 @@ func (m *Manager) Apply(ctx context.Context, targets []Target, opts ApplyOptions
 		wanted[t.InstanceID] = true
 	}
 	results := make([]Result, 0, len(targets))
-	for _, id := range m.runningIDs() {
-		if wanted[id] {
-			continue
-		}
-		results = append(results, m.stopInstance(ctx, id, opts.BeforeStop, "instance is no longer part of the snapshot"))
+	tightened := m.tightenAuthorization(ctx, targets, wanted, opts)
+	for _, res := range tightened.removed {
+		results = append(results, res)
 	}
 	for _, t := range targets {
 		if opts.Skip[t.InstanceID] {
 			results = append(results, m.deferred(t))
 			continue
 		}
+		if res, ok := tightened.failed[t.InstanceID]; ok {
+			// The narrowed core could not be stopped: report that, and do not
+			// start a replacement on top of a surviving process.
+			results = append(results, res)
+			continue
+		}
 		results = append(results, m.applyOne(ctx, t, opts))
 	}
 	sort.Slice(results, func(i, j int) bool { return results[i].InstanceID < results[j].InstanceID })
 	return results
+}
+
+// tightenResult carries the two different outcomes of phase 0.
+type tightenResult struct {
+	// removed holds the results of instances that left the snapshot: they have no
+	// target, so phase 1 has nothing left to reconcile for them.
+	removed []Result
+	// failed holds the instances of THIS snapshot whose narrowed core could not be
+	// stopped. They keep their tracking record and must not get a new core started
+	// on top of the survivor.
+	failed map[string]Result
+}
+
+// tightenAuthorization is phase 0 of Apply: it stops every core whose
+// authorization must be narrowed (or that left the snapshot) BEFORE any
+// technical validation runs.
+//
+// It reuses the normal stop path, so nothing is bypassed: the final sample hook
+// runs, the stop must be confirmed, a survivor keeps its tracking record and the
+// pid file, and the returned StateFailed carries OldConnectionsTerminated=false.
+func (m *Manager) tightenAuthorization(ctx context.Context, targets []Target, wanted map[string]bool, opts ApplyOptions) tightenResult {
+	out := tightenResult{failed: map[string]Result{}}
+	type job struct {
+		id     string
+		reason string
+		// removed marks a job for an instance that is not part of the snapshot.
+		removed bool
+	}
+	var jobs []job
+	for _, id := range m.runningIDs() {
+		if wanted[id] {
+			continue
+		}
+		jobs = append(jobs, job{id: id, reason: "instance is no longer part of the snapshot", removed: true})
+	}
+	seen := make(map[string]bool, len(jobs))
+	for _, j := range jobs {
+		seen[j.id] = true
+	}
+	for _, t := range targets {
+		if seen[t.InstanceID] || opts.Skip[t.InstanceID] {
+			continue
+		}
+		inst := m.lookup(t.InstanceID)
+		if inst == nil || !needsStopForTightening(inst, t) {
+			continue
+		}
+		jobs = append(jobs, job{id: t.InstanceID, reason: "authorization narrowed by the snapshot"})
+	}
+	if len(jobs) == 0 {
+		return out
+	}
+	results := make([]Result, len(jobs))
+	var wg sync.WaitGroup
+	for i, j := range jobs {
+		wg.Add(1)
+		go func(i int, j job) {
+			defer wg.Done()
+			if j.removed {
+				results[i] = m.stopInstance(ctx, j.id, opts.BeforeStop, j.reason)
+				return
+			}
+			results[i] = m.stopForReconcile(ctx, j.id, opts.BeforeStop, j.reason)
+		}(i, j)
+	}
+	wg.Wait()
+	for i, j := range jobs {
+		res := results[i]
+		if j.removed {
+			out.removed = append(out.removed, res)
+			continue
+		}
+		// The core is now stopped (phase 1 reconciles it from scratch) or the stop
+		// could not be confirmed (phase 1 must not start a replacement).
+		if res.State == StateFailed {
+			out.failed[j.id] = res
+		}
+	}
+	return out
+}
+
+// stopForReconcile stops the core of an instance that STAYS in the snapshot.
+//
+// Unlike stopInstance it keeps the tracking record and the last known good
+// document: the caller is about to reconcile the same instance in phase 1, and a
+// technical rejection there must still be able to roll back to the last good
+// document under the CURRENT authorization. The instance is marked stopped with
+// an empty hash so phase 1 can never take the "unchanged" shortcut for a core that
+// no longer exists.
+func (m *Manager) stopForReconcile(ctx context.Context, id string, hook SampleHook, reason string) Result {
+	inst := m.lookup(id)
+	if inst == nil {
+		return Result{InstanceID: id, NodeID: id, State: StateFailed, Error: "instance vanished before it could be stopped"}
+	}
+	inst.mu.Lock()
+	defer inst.mu.Unlock()
+	if err := m.sampleAndStop(ctx, inst, hook); err != nil {
+		return Result{InstanceID: id, NodeID: inst.nodeID, State: StateFailed, Error: err.Error(), OldConnectionsTerminated: false}
+	}
+	inst.hash = ""
+	inst.err = reason
+	inst.publish()
+	return Result{
+		InstanceID:               id,
+		NodeID:                   inst.nodeID,
+		State:                    StateStopped,
+		Error:                    reason,
+		OldConnectionsTerminated: true,
+		CoreGeneration:           inst.coreGen,
+	}
+}
+
+// needsStopForTightening reports whether the running core of inst authorizes
+// something the target does not: a crashed core (it must be replaced anyway), a
+// revoked/remapped email, or a member that is no longer part of the target.
+//
+// It does not take the instance lifecycle lock: it reads the published view, which
+// is immutable. The actual decision is re-checked under the lock by applyOne, so a
+// stale read can only cost one extra (idempotent) stop and never a missed one.
+func needsStopForTightening(inst *instance, t Target) bool {
+	view := inst.view()
+	if !view.running {
+		return false
+	}
+	if processExited(view.proc) {
+		return true
+	}
+	for email, member := range view.emailToMember {
+		if t.EmailToMember[email] != member {
+			return true
+		}
+	}
+	allowed := make(map[string]bool, len(t.EmailToMember))
+	for _, member := range t.EmailToMember {
+		allowed[member] = true
+	}
+	for _, member := range view.emailToMember {
+		if !allowed[member] {
+			return true
+		}
+	}
+	return false
 }
 
 // StopAll stops every running instance; used on shutdown and when local
@@ -644,6 +873,12 @@ func (m *Manager) applyOne(ctx context.Context, t Target, opts ApplyOptions) Res
 	}
 	inst.mu.Lock()
 	defer inst.mu.Unlock()
+	inst.pendingExpiry = t.NextExpiry
+	if inst.proc != nil && (processExited(inst.proc) || authorizationTightened(inst, t)) {
+		if err := m.sampleAndStop(ctx, inst, opts.BeforeStop); err != nil {
+			return m.failLocked(inst, t, err)
+		}
+	}
 	if !opts.Force && inst.proc != nil && inst.hash == t.Hash && inst.state != StateFailed {
 		// Future user expiries are authorization metadata, not part of the Xray
 		// document hash. Commit the full list even if the earliest expiry did not
@@ -717,7 +952,9 @@ func (m *Manager) replace(ctx context.Context, inst *instance, t Target, opts Ap
 	}
 	// Controlled stop: collect the last usage, then terminate the old process so
 	// connections authorized by the previous snapshot cannot survive.
-	m.sampleAndStop(ctx, inst, opts.BeforeStop)
+	if err := m.sampleAndStop(ctx, inst, opts.BeforeStop); err != nil {
+		return m.failLocked(inst, t, err)
+	}
 	proc, gen, startErr := m.startInstance(ctx, inst, dir, cfgPath, t.Document, &port)
 	if startErr != nil {
 		return m.rollbackOrFail(ctx, inst, t, opts, fmt.Errorf("start instance: %w", startErr))
@@ -807,6 +1044,15 @@ func (m *Manager) startInstance(ctx context.Context, inst *instance, dir, cfgPat
 // stopped here must stay reclaimable by the next attempt instead of surviving as
 // an orphan that holds the inbound port.
 func (m *Manager) startAndWait(ctx context.Context, inst *instance, dir, cfgPath string, spec StartSpec, apiPort int) (Proc, string, error) {
+	// Last moment gate: an overload/disk protection that engaged while this
+	// apply was already running must not be bypassed by starting a core and
+	// stopping it asynchronously afterwards.
+	if err := m.checkStartGuard(); err != nil {
+		return nil, "", err
+	}
+	if !inst.pendingExpiry.IsZero() && !m.now().Before(inst.pendingExpiry) {
+		return nil, "", fmt.Errorf("authorization expired during validation; rebuild required")
+	}
 	proc, err := m.runner.Start(ctx, spec)
 	if err != nil {
 		return nil, "", err
@@ -815,6 +1061,10 @@ func (m *Manager) startAndWait(ctx context.Context, inst *instance, dir, cfgPath
 	if err := m.waitReady(ctx, proc, apiPort); err != nil {
 		m.abandonStarted(inst, dir, proc)
 		return nil, "", err
+	}
+	if !inst.pendingExpiry.IsZero() && !m.now().Before(inst.pendingExpiry) {
+		m.abandonStarted(inst, dir, proc)
+		return nil, "", fmt.Errorf("authorization expired during readiness; rebuild required")
 	}
 	return proc, gen, nil
 }
@@ -898,7 +1148,7 @@ func (m *Manager) reportStarted(inst *instance, dir, cfgPath string, proc Proc) 
 		CoreGeneration: gen,
 		RecordedAt:     m.now().UTC().Unix(),
 	}
-	if live, found, err := processIdentity(proc.PID()); err != nil {
+	if live, found, err := m.inspect(proc.PID()); err != nil {
 		// Without a provable identity a future leftover process must never be
 		// killed automatically.
 		m.logger.Printf("agent: instance %s: cannot record the core process identity (%v); leftover processes will need manual cleanup", inst.id, err)
@@ -928,7 +1178,9 @@ func (m *Manager) rollbackOrFail(ctx context.Context, inst *instance, t Target, 
 	} else {
 		// The replacement is verified: stop the old core now (this also enforces
 		// the current authorization) and start the rollback config immediately.
-		m.sampleAndStop(ctx, inst, opts.BeforeStop)
+		if err := m.sampleAndStop(ctx, inst, opts.BeforeStop); err != nil {
+			return m.failLocked(inst, t, err)
+		}
 		if res, ok := m.startRollback(ctx, inst, t, plan); ok {
 			res.Error = cause.Error()
 			m.logger.Printf("agent: instance %s: applied last known good technical config with current authorization: %v", inst.id, cause)
@@ -1045,14 +1297,15 @@ func (m *Manager) startRollback(ctx context.Context, inst *instance, t Target, p
 // hand. The reclaim is verified (creation identity, executable, instance
 // directory), so it can never kill a foreign or reused pid.
 func (m *Manager) failLocked(inst *instance, t Target, cause error) Result {
-	inst.proc = nil
 	inst.hash = ""
 	inst.state = StateFailed
 	inst.err = cause.Error()
-	inst.users = 0
-	inst.emailToMember = map[string]string{}
+	if inst.proc == nil {
+		inst.users = 0
+		inst.emailToMember = map[string]string{}
+	}
 	inst.publish()
-	if dir, err := m.instanceDir(inst.id); err == nil {
+	if dir, err := m.instanceDir(inst.id); err == nil && inst.proc == nil {
 		if rerr := m.reapStale(dir); rerr != nil {
 			m.logger.Printf("agent: instance %s: leftover core process could not be reclaimed: %v", inst.id, rerr)
 		}
@@ -1062,7 +1315,7 @@ func (m *Manager) failLocked(inst *instance, t Target, cause error) Result {
 		NodeID:                   t.NodeID,
 		State:                    StateFailed,
 		Error:                    cause.Error(),
-		OldConnectionsTerminated: true,
+		OldConnectionsTerminated: inst.proc == nil,
 		Hash:                     "",
 	}
 }
@@ -1089,17 +1342,18 @@ func (m *Manager) deferValidation(inst *instance, t Target, cause error) Result 
 	m.logger.Printf("agent: instance %s: config validation deferred, the serialized `xray -test` slot was not available in time: %v", inst.id, cause)
 	view := inst.view()
 	return Result{
-		InstanceID:       inst.id,
-		NodeID:           inst.nodeID,
-		State:            StateDeferred,
-		Error:            cause.Error(),
-		AppliedUserCount: view.users,
-		CoreGeneration:   view.coreGeneration,
-		Hash:             view.hash,
-		Document:         view.document,
-		EmailToMember:    copyMap(view.emailToMember),
-		Users:            copyUsers(view.usersList),
-		NextExpiry:       view.nextExpiry,
+		InstanceID:               inst.id,
+		NodeID:                   inst.nodeID,
+		State:                    StateDeferred,
+		OldConnectionsTerminated: inst.proc == nil,
+		Error:                    cause.Error(),
+		AppliedUserCount:         view.users,
+		CoreGeneration:           view.coreGeneration,
+		Hash:                     view.hash,
+		Document:                 view.document,
+		EmailToMember:            copyMap(view.emailToMember),
+		Users:                    copyUsers(view.usersList),
+		NextExpiry:               view.nextExpiry,
 	}
 }
 
@@ -1110,9 +1364,12 @@ func (m *Manager) deferValidation(inst *instance, t Target, cause error) Result 
 // record is only removed once the process is provably gone. A survivor keeps its
 // record so reapStale can prove ownership on the next attempt and reclaim it,
 // which is what makes a failed apply self healing instead of terminal.
-func (m *Manager) sampleAndStop(ctx context.Context, inst *instance, hook SampleHook) {
+func (m *Manager) sampleAndStop(ctx context.Context, inst *instance, hook SampleHook) error {
 	if inst.proc == nil {
-		return
+		return nil
+	}
+	if hook == nil {
+		hook = m.beforeStop
 	}
 	if hook != nil && inst.apiPort > 0 {
 		hctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -1120,20 +1377,26 @@ func (m *Manager) sampleAndStop(ctx context.Context, inst *instance, hook Sample
 		cancel()
 	}
 	proc := inst.proc
-	inst.proc = nil
 	gone := m.stopProc(inst, proc)
+	if !gone {
+		inst.state = StateFailed
+		inst.err = "core did not stop; cleanup remains pending"
+		inst.publish()
+		return errors.New(inst.err)
+	}
+	inst.proc = nil
 	inst.state = StateStopped
+	inst.users = 0
+	inst.emailToMember = map[string]string{}
+	inst.usersList = nil
+	inst.nextExpiry = time.Time{}
 	inst.apiPort = 0
 	inst.publish()
 	dir, derr := m.instanceDir(inst.id)
-	if derr != nil {
-		return
-	}
-	if gone {
+	if derr == nil {
 		removePidFile(dir)
-		return
 	}
-	m.logger.Printf("agent: ALERT: instance %s: keeping %s for the surviving core pid %d so the next attempt can reclaim it", inst.id, pidFileName, proc.PID())
+	return nil
 }
 
 // stopProc terminates one core process with the stop budget and reports whether
@@ -1157,8 +1420,17 @@ func (m *Manager) stopProc(inst *instance, proc Proc) bool {
 	}
 	// Secondary confirmation for a Proc whose exit signal is unreliable: a pid
 	// that no longer exists cannot be holding the inbound port.
-	if _, found, ierr := processIdentity(proc.PID()); ierr == nil && !found {
+	if _, found, ierr := m.inspect(proc.PID()); ierr == nil && !found {
 		return true
+	}
+	// A verified fallback kill is useful even when a Proc stop implementation
+	// failed. reapStale confirms exit before removing its recovery record.
+	if dir, err := m.instanceDir(inst.id); err == nil {
+		if err = m.reapStale(dir); err == nil {
+			if _, found, ierr := m.inspect(proc.PID()); ierr == nil && !found {
+				return true
+			}
+		}
 	}
 	if out := proc.Output(); len(out) > 0 {
 		m.logger.Printf("agent: instance %s: last core output: %s", inst.id, out[len(out)-1])
@@ -1280,7 +1552,9 @@ func (m *Manager) stopInstance(ctx context.Context, id string, hook SampleHook, 
 	}
 	inst.mu.Lock()
 	defer inst.mu.Unlock()
-	m.sampleAndStop(ctx, inst, hook)
+	if err := m.sampleAndStop(ctx, inst, hook); err != nil {
+		return Result{InstanceID: id, NodeID: inst.nodeID, State: StateFailed, Error: err.Error(), OldConnectionsTerminated: false}
+	}
 	inst.hash = ""
 	inst.users = 0
 	inst.emailToMember = map[string]string{}
@@ -1383,7 +1657,7 @@ func (m *Manager) reapStale(dir string) error {
 		// This process belongs to the running instance of this manager.
 		return nil
 	}
-	live, found, perr := processIdentity(rec.PID)
+	live, found, perr := m.inspect(rec.PID)
 	if perr != nil {
 		return fmt.Errorf("%w: cannot inspect pid %d (%v)", ErrUnverifiedProcess, rec.PID, perr)
 	}
@@ -1397,6 +1671,17 @@ func (m *Manager) reapStale(dir string) error {
 	}
 	if terr := terminateProcess(rec.PID); terr != nil {
 		return fmt.Errorf("stop leftover core process %d: %w", rec.PID, terr)
+	}
+	deadline := time.Now().Add(stopVerifyWindow)
+	for {
+		_, found, err := m.inspect(rec.PID)
+		if err == nil && !found {
+			break
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("leftover core pid %d exit is not confirmed", rec.PID)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	m.logger.Printf("agent: stopped leftover core process pid=%d in %s", rec.PID, dir)
 	removePidFile(dir)
