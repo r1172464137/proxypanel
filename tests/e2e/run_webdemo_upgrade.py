@@ -13,10 +13,17 @@ What it really does (no shared fixture, no 8443/8445, no remote host):
 
 1. takes the local runtime flock (600s wait) before the before-snapshot and
    holds it until its own cleanup has finished;
-2. builds/selects the OLD Agent binary from an explicit git commit (default
-   52bf44a, the commit the shipped build/ artifact records) or uses the saved
-   shipped artifact `build/linux-amd64/agent` after checking it against its own
-   SHA256SUMS; builds the NEW Agent from the current worktree candidate;
+2. builds the OLD Agent binary read-only from an explicit historical git
+   commit with `git archive` into a private directory (default 52bf44a), and
+   records Go SDK / module versions / go.sum sha / archive source sha / build
+   command / binary sha. The saved `build/linux-amd64/agent` artifact is NOT a
+   provenance anchor: its `.proxypanel-build` marker names no commit, its
+   buildinfo only bounds it (golang.org/x/sys v0.36.0, which both ec7ee10 and
+   52bf44a pin, so no commit can be singled out), and the sibling SHA256SUMS
+   proves only that the files were not corrupted together. If that artifact is
+   used explicitly via --old-agent the receipt records its provenance as
+   UNKNOWN and marks the old source as not proven;
+   builds the NEW Agent from the current worktree candidate;
 3. downloads the two official Xray releases named by the Agent whitelist
    (v26.3.23, v26.3.27) with their `.dgst` SHA2-256 files and re-verifies the
    digest before every use; no other internet binary is accepted;
@@ -58,6 +65,14 @@ PG_LIB = os.environ.get('PG_LIB', '/home/compile/sdk/pkg/usr/lib/x86_64-linux-gn
 ASSET_CACHE = Path(os.environ.get('PP_DEMO_UPGRADE_ASSET_CACHE', '/tmp/ppdemo-upgrade-assets'))
 OLD_COMMIT_DEFAULT = '52bf44a'
 SHIPPED_OLD = MAIN / 'build/linux-amd64/agent'
+# Artifact-provenance bounds, stated exactly as the repository supports them:
+# the shipped artifact's buildinfo resolves golang.org/x/sys v0.36.0.  In this
+# repository BOTH the initial commit ec7ee10 and 52bf44a pin v0.36.0; v0.47.0
+# only appears from 069adee (a later security commit).  So buildinfo bounds the
+# artifact to "before 069adee" and can never distinguish 52bf44a from ec7ee10 or
+# from an untracked tree: it is a bound, not an attribution.
+ARTIFACT_EXPECTED_X_SYS = 'v0.36.0'      # ec7ee10 .. 52bf44a
+CURRENT_X_SYS = 'v0.47.0'                # 069adee and later (current candidate)
 CORES = {'old': '26.3.23', 'new': '26.3.27'}
 
 
@@ -86,6 +101,33 @@ def acquire_lock(timeout=600):
                 os.close(fd)
                 raise RuntimeError(f'timed out waiting for {LOCK}')
             time.sleep(1)
+
+
+def listeners():
+    """TCP and UDP loopback listeners (tcp, tcp6, udp, udp6).
+
+    Identity protection must cover bound UDP sockets too: a process may hold a
+    UDP-only service with no TCP listener at all.
+    """
+    out = {}
+    for proto, path in (('tcp', '/proc/net/tcp'), ('tcp6', '/proc/net/tcp6'),
+                        ('udp', '/proc/net/udp'), ('udp6', '/proc/net/udp6')):
+        try:
+            lines = Path(path).read_text().splitlines()[1:]
+        except OSError:
+            continue
+        for line in lines:
+            f = line.split()
+            if len(f) < 10:
+                continue
+            local, state, inode = f[1], f[3], f[9]
+            # tcp listeners are 0A (LISTEN); udp sockets are 07 (unconnected bound).
+            if proto.startswith('tcp') and state != '0A':
+                continue
+            if proto.startswith('udp') and state not in ('07', '0A'):
+                continue
+            out[f'{proto}:{local}:{inode}'] = state
+    return out
 
 
 def snapshot_processes():
@@ -149,31 +191,204 @@ def official_core(version, cache, logs, env):
     return xray, geoip, geosite, 'download'
 
 
+def buildinfo_deps(binary):
+    """Extract `go version -m` module deps without trusting any external tool."""
+    try:
+        res = subprocess.run([str(GO), 'version', '-m', str(binary)], capture_output=True, text=True)
+    except OSError:
+        return {}
+    deps = {}
+    for line in res.stdout.splitlines():
+        parts = [p for p in line.split('\t') if p != '']
+        if len(parts) >= 3 and parts[0] == 'dep':
+            deps[parts[1]] = parts[2]
+    return deps
+
+
+def artifact_provenance(binary, recorded_sha=''):
+    """Describe what a saved artifact can and cannot prove.
+
+    The sibling SHA256SUMS is an integrity anchor inside the same writable
+    directory: it proves the copy was not corrupted on its own, never which
+    commit produced it. Only buildinfo module pins give a (weak) bound.
+    """
+    deps = buildinfo_deps(binary)
+    xsys = deps.get('golang.org/x/sys', '')
+    out = {
+        'origin': 'UNKNOWN: saved artifact, no verifiable commit attribution',
+        'artifact_sha256': sha(binary),
+        'artifact_recorded_sha256': recorded_sha,
+        'artifact_sibling_sha256sums': 'integrity anchor only, same writable dir, not provenance',
+        'artifact_marker_file': 'names no commit',
+        'artifact_buildinfo_x_sys': xsys,
+        'artifact_commit_attribution': 'unattributed',
+        'artifact_attribution_reason': (
+            'the build marker names no commit and SHA256SUMS is same-directory '
+            'self-consistency only, so no commit can be attributed'),
+    }
+    if xsys:
+        out['artifact_provenance_bound'] = (
+            f'buildinfo pins golang.org/x/sys {xsys}; in this repository that is a bound, not an '
+            f'attribution: ec7ee10 and 52bf44a both pin {ARTIFACT_EXPECTED_X_SYS}, '
+            f'{CURRENT_X_SYS} appears from 069adee. The artifact therefore cannot be attributed to a '
+            f'specific commit, and is not interchangeable with any git-archive build.')
+        out['artifact_predates_current_candidate'] = xsys != CURRENT_X_SYS
+    return out
+
+
 def build_agent(rev_or_path, out, logs, env, label):
+    """Build from a historical commit read-only (git archive into a private dir).
+
+    Never mutates the worktree, go.mod or the system Go SDK; no network fetch of
+    an arbitrary binary is involved - the toolchain builds from archived source.
+    """
     if Path(rev_or_path).is_file():
         shutil.copy2(rev_or_path, out)
-        return 'artifact'
+        return artifact_provenance(out)
     src = Path(tempfile.mkdtemp(prefix=f'ppdemo-upgrade-{label}-src-'))
     try:
         with (logs / f'old-source-{label}.log').open('wb') as log:
-            tar = subprocess.Popen(['git', 'archive', rev_or_path], cwd=str(ROOT), stdout=subprocess.PIPE)
-            untar = subprocess.run(['tar', '-x', '-C', str(src)], stdin=tar.stdout, stderr=log)
-            tar.wait()
-        if tar.returncode != 0 or untar.returncode != 0:
+            arch = subprocess.run(['git', 'archive', rev_or_path], cwd=str(ROOT),
+                                  capture_output=True)
+            log.write(arch.stdout)
+            log.write(arch.stderr)
+        if arch.returncode != 0:
             raise RuntimeError(f'git archive {rev_or_path} failed')
-        run([GO, 'build', '-trimpath', '-buildvcs=false', '-o', out, './cmd/agent'],
-            logs / f'old-build-{label}.log', env, timeout=900, cwd=src)
-        return f'git:{rev_or_path}'
+        archive_sha = hashlib.sha256(arch.stdout).hexdigest()
+        (src / '.archive.tar').write_bytes(arch.stdout)
+        untar = subprocess.run(['tar', '-x', '-f', '-', '-C', str(src)], input=arch.stdout,
+                               capture_output=True)
+        if untar.returncode != 0:
+            raise RuntimeError(f'tar extract of git archive {rev_or_path} failed')
+        (src / '.archive.tar').unlink(missing_ok=True)
+        commit_sha = subprocess.check_output(['git', 'rev-parse', rev_or_path], cwd=str(ROOT),
+                                             text=True).strip()
+        gomod = (src / 'go.mod').read_text() if (src / 'go.mod').is_file() else ''
+        go_sum = (src / 'go.sum').read_bytes() if (src / 'go.sum').is_file() else b''
+        sdk = subprocess.run([str(GO), 'version'], capture_output=True, text=True).stdout.strip()
+        cmd = [str(GO), 'build', '-trimpath', '-buildvcs=false', '-o', str(out), './cmd/agent']
+        run(cmd, logs / f'old-build-{label}.log', env, timeout=900, cwd=src)
+        deps = buildinfo_deps(out)
+        return {
+            'origin': f'git-archive:{rev_or_path}',
+            'commit': commit_sha,
+            'archive_source_sha256': archive_sha,
+            'go_sdk': sdk,
+            'go_mod_sha256': hashlib.sha256(gomod.encode()).hexdigest(),
+            'go_mod_requires': [line.strip() for line in gomod.splitlines()
+                                if line.strip().startswith(('golang.org/x/', 'modernc.org/', 'github.com/'))],
+            'go_sum_sha256': hashlib.sha256(go_sum).hexdigest(),
+            'build_command': ' '.join(cmd[:-1] + ['./cmd/agent']),
+            'build_dir': 'private tmp copy from git archive (worktree/go.mod/SDK untouched)',
+            'binary_sha256': sha(out),
+            'buildinfo_x_sys': deps.get('golang.org/x/sys', ''),
+        }
     finally:
         shutil.rmtree(src, ignore_errors=True)
+
+
+
+def render_report(receipt):
+    """Render REPORT.md from this run's receipt only (no hand-written numbers)."""
+    def g(*path, default='-'):
+        cur = receipt
+        for key in path:
+            if not isinstance(cur, dict) or key not in cur:
+                return default
+            cur = cur[key]
+        return cur
+
+    state = receipt.get('cleanup', {}).get('state_files', {})
+    core_procs = []
+    ident_path = receipt.get('evidence_dir', '') + '/state/demo-upgrade-core-identity.json'
+    try:
+        with open(ident_path) as fh:
+            core_procs = json.load(fh).get('core_processes', [])
+    except OSError:
+        core_procs = []
+    lines = [
+        '# web-demo D (US-PR-016) run report',
+        '',
+        'This file is generated by `run_webdemo_upgrade.py` from `receipt.json` of the SAME run.',
+        'Every number below is read from that receipt; nothing is typed by hand and nothing is',
+        'copied from an earlier run. A field shown as `-` was not produced by this run.',
+        '',
+        '## Run',
+        f'- run_id: `{g("run_id")}`',
+        f'- status: `{g("status")}` / exit_code `{g("exit_code")}`',
+        f'- worktree commit: `{g("base_commit")}`',
+        f'- evidence dir: `{g("evidence_dir")}`',
+        f'- lock: acquired at {g("lock_acquired_at")}, released `{g("cleanup", "lock_released")}`',
+        '',
+        '## Old source provenance (D-1)',
+        f'- old Agent origin: `{g("old_agent_origin", "origin")}`',
+        f'- provenance verdict: `{g("old_agent_provenance_verdict")}`, closed: `{g("old_source_provenance_closed")}`',
+        f'- old commit: `{g("old_agent_origin", "commit")}`',
+        f'- archive source sha256: `{g("old_agent_origin", "archive_source_sha256")}`',
+        f'- go.mod sha256: `{g("old_agent_origin", "go_mod_sha256")}`',
+        f'- go.sum sha256: `{g("old_agent_origin", "go_sum_sha256")}`',
+        f'- Go SDK: `{g("old_agent_origin", "go_sdk")}`',
+        f'- build command: `{g("old_agent_origin", "build_command")}`',
+        f'- old binary sha256: `{g("agent_old_sha256")}`',
+        f'- new binary sha256: `{g("agent_new_sha256")}`',
+        f'- shipped artifact attribution: `{(g("shipped_artifact_provenance", "artifact_commit_attribution"))}`',
+        f'- shipped artifact provenance bound: {g("shipped_artifact_provenance", "artifact_provenance_bound")}',
+        f'- shipped artifact == built old: `{g("shipped_artifact_matches_built_old")}`',
+        '',
+        '## Core switching (D-2)',
+        f'- old core: {g("core_old", "version")} sha256 `{g("core_old", "sha256")}`',
+        f'- new core: {g("core_new", "version")} sha256 `{g("core_new", "sha256")}`',
+        f'- probe (client) core: `{g("probe_core", "sha256")}` origin {g("probe_core", "origin")}',
+        '',
+        '| step | core pid | starttime | exe sha256 | official match | uid==agent | cgroup==agent | cfg under state |',
+        '| --- | --- | --- | --- | --- | --- | --- | --- |',
+    ]
+    for p in core_procs:
+        lines.append('| {step} | {pid} | {st} | `{sha}` | {m} | {u} | {c} | {cfg} |'.format(
+            step=p.get('step'), pid=p.get('pid'), st=p.get('starttime_ticks'),
+            sha=(p.get('exe_sha256') or '')[:16], m=p.get('exe_matches_expected'),
+            u=p.get('owner_matches_agent_uid'), c=p.get('cgroup_matches_agent'),
+            cfg=p.get('config_inside_state_dir')))
+    lines += ['', 'Per-step real transfers through the managed core (control member, fixed body):', '',
+              '| step | bytes | payload sha256 | elapsed ms | class | managed core pid |',
+              '| --- | --- | --- | --- | --- | --- |']
+    identity = {}
+    try:
+        with open(ident_path) as fh:
+            identity = json.load(fh)
+    except OSError:
+        identity = {}
+    for pr in identity.get('probes', []):
+        lines.append('| {s} | {b} | `{h}` | {e} | {c} | {p} |'.format(
+            s=pr.get('step'), b=pr.get('bytes'), h=(pr.get('payload_sha256') or '')[:16],
+            e=pr.get('elapsed_ms'), c=pr.get('outcome_class'), p=pr.get('managed_core_pid')))
+    lines += [
+        '',
+        '## Cleanup (D-4)',
+        f'- postgres pg_ctl stop exit code: `{g("cleanup", "postgres_pg_ctl_stop", "exit_code")}`',
+        f'- postgres graceful: `{g("cleanup", "postgres_graceful")}` (exit `{g("cleanup", "postgres_exit_code")}`)',
+        f'- postgres stopped: `{g("cleanup", "postgres_stopped")}`; caveat: {g("cleanup", "postgres_stopped_caveat")}',
+        f'- leftover processes recovered by SIGKILL: `{g("cleanup", "leftover_processes_recovered")}`',
+        f'- work dir removed: `{g("cleanup", "work_dir_removed")}`',
+        f'- protection_clean: `{g("after_snapshot", "protection_clean")}`; foreign_vanished: `{g("after_snapshot", "foreign_vanished")}`',
+        f'- listeners compared: {len(g("listeners_before", default={}) or {})} before / '
+        f'{len(g("after_snapshot", "listeners", default={}) or {})} after (TCP+UDP)',
+        '',
+        '## Evidence files (sha256 from this run)',
+    ]
+    for name, info in sorted(state.items()):
+        lines.append(f'- `{name}` sha256 `{info.get("sha256")}` bytes {info.get("bytes")}')
+    lines.append('')
+    return '\n'.join(lines)
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--evidence-dir', type=Path)
     ap.add_argument('--keep-work', action='store_true')
-    ap.add_argument('--old-agent')
-    ap.add_argument('--old-commit', default=OLD_COMMIT_DEFAULT)
+    ap.add_argument('--old-agent', help='use an unprovenanced saved artifact; its origin is recorded as UNKNOWN')
+    ap.add_argument('--old-commit', default=OLD_COMMIT_DEFAULT,
+                    help='historical commit the OLD Agent is built from (read-only git archive)')
     ap.add_argument('--new-agent')
     ap.add_argument('--old-core')
     ap.add_argument('--new-core')
@@ -224,6 +439,7 @@ def main():
         lock_fd = acquire_lock(args.lock_timeout)
         receipt['lock_acquired_at'] = time.strftime('%Y-%m-%dT%H:%M:%S%z')
         receipt['existing_owned_processes_before'] = snapshot_processes()
+        receipt['listeners_before'] = listeners()
         receipt['base_commit'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
         receipt['worktree'] = str(ROOT)
         receipt['main_root'] = str(MAIN)
@@ -240,34 +456,37 @@ def main():
         run([GO, 'version'], logs / 'go-version.log', env)
         run([PG_BIN / 'postgres', '--version'], logs / 'postgres-version.log', env)
 
-        # ---- OLD agent: saved shipped artifact, else explicit git commit ----
+        # ---- OLD agent: explicit historical commit is the default source ----
+        # The saved artifact is never the default and never yields a provenance
+        # claim: buildinfo shows x/sys v0.36.0, which contradicts 52bf44a.
         old_agent = out / 'agent-old'
         new_agent = out / 'agent-new'
         if args.old_agent:
             receipt['old_agent_origin'] = build_agent(args.old_agent, old_agent, logs, env, 'old')
-        elif SHIPPED_OLD.is_file():
-            sums = SHIPPED_OLD.parent / 'SHA256SUMS'
-            recorded = ''
-            if sums.is_file():
-                for line in sums.read_text().splitlines():
-                    if line.strip().endswith('  agent'):
-                        recorded = line.split()[0]
-            actual = sha(SHIPPED_OLD)
-            if recorded and recorded != actual:
-                raise RuntimeError(f'saved artifact {SHIPPED_OLD} does not match its SHA256SUMS ({recorded} != {actual})')
-            shutil.copy2(SHIPPED_OLD, old_agent)
-            receipt['old_agent_origin'] = f'artifact:{SHIPPED_OLD}'
-            receipt['old_artifact_recorded_sha256'] = recorded
-            receipt['old_artifact_marker'] = (SHIPPED_OLD.parent / '.proxypanel-build').read_text().strip() \
-                if (SHIPPED_OLD.parent / '.proxypanel-build').is_file() else ''
+            receipt['old_agent_provenance_verdict'] = 'unattributed-artifact'
+            receipt['old_agent_usable_as_source_proof'] = False
         else:
             receipt['old_agent_origin'] = build_agent(args.old_commit, old_agent, logs, env, 'old')
+            receipt['old_agent_provenance_verdict'] = 'git-archive'
+            receipt['old_agent_usable_as_source_proof'] = True
+            if SHIPPED_OLD.is_file():
+                shipped = artifact_provenance(SHIPPED_OLD)
+                receipt['shipped_artifact_provenance'] = shipped
+                receipt['shipped_artifact_matches_built_old'] = shipped['artifact_sha256'] == sha(old_agent)
+        # The old source is only usable as upgrade evidence when it came from an
+        # explicit commit archive; an unattributed artifact stays marked.
+        receipt['old_source_provenance_closed'] = receipt.get('old_agent_provenance_verdict') == 'git-archive'
         if args.new_agent:
             receipt['new_agent_origin'] = build_agent(args.new_agent, new_agent, logs, env, 'new')
         else:
             run([GO, 'build', '-trimpath', '-buildvcs=false', '-o', new_agent, './cmd/agent'],
                 logs / 'new-build.log', env, timeout=900)
-            receipt['new_agent_origin'] = f'worktree:{receipt["base_commit"]}'
+            receipt['new_agent_origin'] = {
+                'origin': f'worktree:{receipt["base_commit"]}',
+                'build_command': 'go build -trimpath -buildvcs=false -o <evidence>/agent-new ./cmd/agent',
+                'go_sdk': subprocess.run([str(GO), 'version'], capture_output=True, text=True).stdout.strip(),
+                'binary_sha256': sha(new_agent),
+            }
         old_agent.chmod(0o700)
         new_agent.chmod(0o700)
         if sha(old_agent) == sha(new_agent):
@@ -297,6 +516,21 @@ def main():
                 'digest_record': str(logs / f'official-digest-v{CORES[kind]}.txt')
                 if (logs / f'official-digest-v{CORES[kind]}.txt').is_file() else None,
             }
+        # The traffic client must be independent of whatever core the Agent
+        # manages: a separate copy of one official release, in its own dir.
+        probe_dir = out / 'core-probe'
+        probe_dir.mkdir(mode=0o700, exist_ok=True)
+        shutil.copy2(core_paths['new'][0], probe_dir / 'xray')
+        (probe_dir / 'xray').chmod(0o755)
+        for asset, path in (('geoip.dat', core_paths['new'][1]), ('geosite.dat', core_paths['new'][2])):
+            if path is not None:
+                shutil.copy2(path, probe_dir / asset)
+        receipt['probe_core'] = {
+            'path': str(probe_dir / 'xray'),
+            'origin': 'independent staged copy of the official new core (never the managed core path)',
+            'sha256': sha(probe_dir / 'xray'),
+            'version': CORES['new'],
+        }
         receipt['agent_old_sha256'] = sha(old_agent)
         receipt['agent_new_sha256'] = sha(new_agent)
         for kind, binary in (('old', old_agent), ('new', new_agent)):
@@ -350,6 +584,7 @@ def main():
             'PP_DEMO_UPGRADE_OLD_CORE': str(staged['old']),
             'PP_DEMO_UPGRADE_NEW_CORE': str(staged['new']),
             'PP_DEMO_UPGRADE_STATE_DIR': str(state_dir),
+            'PP_DEMO_UPGRADE_PROBE_CORE': str(probe_dir / 'xray'),
         })
         if args.agent_wait_seconds > 0:
             env['PP_DEMO_UPGRADE_AGENT_WAIT_SECONDS'] = str(args.agent_wait_seconds)
@@ -374,6 +609,41 @@ def main():
         if receipt['status'] == 'not_run' and 'error' in receipt:
             receipt['status'] = 'blocked'
     finally:
+        # Cleanup order matters: stop our own PostgreSQL gracefully first (via
+        # pg_ctl for this data dir, then the exact child), so the SIGKILL
+        # recovery sweep can never be the thing that "stops" it. Only then do
+        # we recover precisely-owned residue, and afterwards take an after
+        # snapshot to compare identities against the before snapshot.
+        if tmp is not None and pg_proc is not None:
+            pgdata = tmp / 'pgdata'
+            pgsock = tmp / 'socket'
+            stop = subprocess.run([str(PG_BIN / 'pg_ctl'), 'stop', '-D', str(pgdata), '-m', 'fast',
+                                   '-w', '-t', '60'], capture_output=True, text=True)
+            cleanup['postgres_pg_ctl_stop'] = {
+                'exit_code': stop.returncode,
+                'stdout': stop.stdout.strip()[-400:],
+                'stderr': stop.stderr.strip()[-400:],
+            }
+        if pg_proc is not None:
+            try:
+                pg_proc.wait(timeout=60)
+                cleanup['postgres_exit_code'] = pg_proc.returncode
+                cleanup['postgres_graceful'] = pg_proc.returncode in (0, -15)
+            except subprocess.TimeoutExpired:
+                cleanup['postgres_graceful'] = False
+                pg_proc.terminate()
+                try:
+                    pg_proc.wait(timeout=30)
+                    cleanup['postgres_exit_code'] = pg_proc.returncode
+                    cleanup['postgres_terminated'] = True
+                except subprocess.TimeoutExpired:
+                    pg_proc.kill()
+                    pg_proc.wait(timeout=10)
+                    cleanup['postgres_killed_after_timeout'] = True
+            cleanup['postgres_stopped'] = pg_proc.poll() is not None
+            if not cleanup['postgres_graceful']:
+                cleanup['postgres_stopped_caveat'] = 'stopped without a graceful pg_ctl exit; not a clean shutdown'
+
         # Recover only processes whose executable (or the Postgres data dir /
         # core config on its command line) belongs to this run. Never match the
         # runner's own process tree: its command line also names the evidence dir.
@@ -398,25 +668,63 @@ def main():
             owned = owned or any(root and f'-D {root}/pgdata' in cmd for root in owned_roots if root)
             owned = owned or any(root and f' run -c {root}/' in cmd for root in owned_roots if root)
             if owned:
+                reason = ('exe-under-owned-root' if any(root and exe.startswith(root + '/')
+                                                      for root in owned_roots if root)
+                          else 'owned-pgdata-or-core-config-on-cmdline')
                 try:
                     os.kill(int(pid.name), signal.SIGKILL)
-                    cleanup['leftover_processes'].append({'pid': pid.name, 'cmd': cmd[:160]})
+                    cleanup['leftover_processes'].append({'pid': pid.name, 'cmd': cmd[:160],
+                                                          'match_reason': reason})
+                    cleanup.setdefault('leftover_processes_recovered', []).append(pid.name)
                 except OSError:
                     pass
-        if pg_proc is not None:
-            pg_proc.terminate()
-            try:
-                pg_proc.wait(timeout=30)
-                cleanup['postgres_stopped'] = True
-            except subprocess.TimeoutExpired:
-                pg_proc.kill()
-                pg_proc.wait(timeout=10)
-                cleanup['postgres_stopped'] = 'killed'
         if tmp is not None:
             shutil.rmtree(tmp, ignore_errors=True)
             cleanup['work_dir_removed'] = not tmp.exists()
             cleanup['test_binary_removed'] = not Path(cleanup['test_binary']).exists() if cleanup.get('test_binary') else True
         cleanup['state_dir_retained'] = str(state_dir)
+        # ---- after-snapshot: identity + listener comparison -----------------
+        # Anything present before this run that is not ours must still be there
+        # (same pid/starttime/exe). Naming a freed port or a recycled pid as
+        # "still protected" would be a false claim, so listeners are compared as
+        # a set, and pid reuse is caught by starttime.
+        after_procs = snapshot_processes()
+        after_listeners = listeners()
+        before_procs = receipt.get('existing_owned_processes_before') or {}
+        before_listeners = receipt.get('listeners_before') or {}
+        own_pids = set(cleanup.get('leftover_processes_recovered') or [])
+        own_pids.update(str(cleanup.get('postgres_pid')) for _ in (0,) if cleanup.get('postgres_pid'))
+        vanished, changed = [], []
+        for pid, info in before_procs.items():
+            now = after_procs.get(pid)
+            if now is None:
+                vanished.append({'pid': pid, 'exe': info.get('exe'), 'owned_by_this_run': pid in own_pids})
+            elif now.get('starttime') != info.get('starttime') or now.get('exe') != info.get('exe'):
+                changed.append({'pid': pid, 'before': info, 'after': now})
+        lost_listeners = [k for k in before_listeners if k not in after_listeners]
+        new_listeners = [k for k in after_listeners if k not in before_listeners]
+        foreign_vanished = [v for v in vanished if not v['owned_by_this_run']]
+        receipt['after_snapshot'] = {
+            'processes': after_procs,
+            'listeners': after_listeners,
+            'vanished': vanished,
+            'changed_identity': changed,
+            'listeners_lost': lost_listeners,
+            'listeners_new': new_listeners,
+            'foreign_vanished': foreign_vanished,
+            'own_scope_clean': not [p for p in after_procs
+                                     if tmp and p not in before_procs and
+                                     any(root and after_procs[p].get('exe', '').startswith(root + '/')
+                                         for root in owned_roots if root)],
+            'protection_clean': not foreign_vanished,
+            'protection_scope': 'exact pid+starttime+exe identity for the pre-run inventory and full '
+                                'TCP/UDP listener set; no broad assertions',
+        }
+        if foreign_vanished:
+            receipt['after_snapshot']['protection_note'] = (
+                'pre-run non-owned processes disappeared during this run; recorded as foreign churn, '
+                'NOT attributed to this run and NOT claimed as protection success')
+
         cleanup['state_files'] = {
             p.name: {'sha256': sha(p), 'bytes': p.stat().st_size}
             for p in sorted(state_dir.iterdir()) if p.is_file()
@@ -431,6 +739,12 @@ def main():
         receipt['finished_at'] = time.strftime('%Y-%m-%dT%H:%M:%S%z')
         receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')
         os.chmod(receipt_path, 0o600)
+        # The human-readable summary is generated FROM this receipt, so it can
+        # never quote numbers from a different run.
+        report = render_report(receipt)
+        report_path = out / 'REPORT.md'
+        report_path.write_text(report)
+        os.chmod(report_path, 0o600)
 
     print(json.dumps({k: receipt.get(k) for k in ('run_id', 'status', 'exit_code', 'old_agent_origin',
                                                   'new_agent_origin', 'agent_old_sha256', 'agent_new_sha256',

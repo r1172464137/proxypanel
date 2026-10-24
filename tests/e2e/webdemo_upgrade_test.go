@@ -23,12 +23,24 @@ package e2e
 //   PP_DEMO_UPGRADE_NEW_CORE     official Xray 26.3.27 binary
 // Optional:
 //   PP_DEMO_UPGRADE_STATE_DIR    evidence output directory (default: t.TempDir)
+//   PP_DEMO_UPGRADE_PROBE_CORE   independent staged core used only as the traffic
+//                                client (default: the old core binary, recorded)
 //
-// Every switch is proven by (a) the exact process we started, (b) its sha256,
-// (c) a heartbeat strictly newer than the pre-action snapshot, (d) the core
-// version the Agent reports, and (e) the queue/ledger/authorization rows. The
-// version *string* alone is never used: both known commits label themselves
-// 0.1.1, so a string comparison would not be an upgrade proof.
+// Every switch is proven by (a) the exact Agent process we started, (b) its
+// sha256, (c) a heartbeat strictly newer than the pre-action snapshot, (d) the
+// core version the Agent reports, (e) the queue/ledger/authorization rows, and
+// (f) for every core stage: the Agent-owned pid record's managed core pid,
+// /proc starttime, exe path, exe sha256 versus the expected official binary sha,
+// owner uid, cgroup and config-under-state-dir, plus one real fixed-body transfer
+// through that managed core with a stage-independent client core. Version
+// *strings* alone are never used: both known commits label themselves 0.1.1, and
+// a changed version string without a changed core pid is treated as a failure.
+//
+// Provenance: PP_DEMO_UPGRADE_OLD_AGENT must come from run_webdemo_upgrade.py,
+// which builds it read-only from an explicit historical commit. The saved
+// build/linux-amd64/agent artifact cannot be attributed to 52bf44a (its
+// buildinfo pins golang.org/x/sys v0.36.0; 52bf44a pins v0.47.0), so using it
+// explicitly marks the run's old-source provenance as unattributed.
 
 import (
 	"bytes"
@@ -40,6 +52,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
@@ -89,6 +102,48 @@ type demoUpgradeEnv struct {
 	oldSHA, newSHA, oldCoreSHA, newCoreSHA string
 	oldCoreVersion, newCoreVersion         string
 	evidenceDir                            string
+	// probeCore is the fixed, stage-independent client core used to send real
+	// traffic through whichever core the Agent currently manages. It is never
+	// the process under test: the managed core is identified by its own pidfile
+	// pid/exe/starttime/sha, so naming is unambiguous in every stage.
+	probeCore string
+	// probeCoreOrigin records whether the traffic client is an independent
+	// staged copy (preferred) or a fallback reuse of a managed core binary.
+	probeCoreOrigin string
+}
+
+// demoUpgradeCoreProc is what the OS can prove about the managed core process.
+type demoUpgradeCoreProc struct {
+	Step               string `json:"step"`
+	PID                int    `json:"pid"`
+	StartTicks         string `json:"starttime_ticks"`
+	Exe                string `json:"exe"`
+	ExeSHA256          string `json:"exe_sha256"`
+	ExpectedSHA256     string `json:"expected_official_binary_sha256"`
+	SHA256Matches      bool   `json:"exe_matches_expected"`
+	OwnerUID           int    `json:"owner_uid"`
+	OwnerMatchesAgent  bool   `json:"owner_matches_agent_uid"`
+	Cgroup             string `json:"cgroup"`
+	CgroupMatchesAgent bool   `json:"cgroup_matches_agent"`
+	ConfigPath         string `json:"config_path"`
+	ConfigUnderState   bool   `json:"config_inside_state_dir"`
+	AgentPID           int    `json:"agent_pid"`
+	AgentExe           string `json:"agent_exe"`
+	Cmdline            string `json:"cmdline"`
+}
+
+// demoUpgradeProbe is one real payload transfer (or one expected refusal)
+// through the managed core using the fixed client core.
+type demoUpgradeProbe struct {
+	Step        string `json:"step"`
+	Expectation string `json:"expectation"`
+	Bytes       int    `json:"bytes"`
+	PayloadSHA  string `json:"payload_sha256"`
+	ElapsedMS   int64  `json:"elapsed_ms"`
+	Class       string `json:"outcome_class"`
+	Detail      string `json:"detail"`
+	ClientAlive bool   `json:"client_core_survived"`
+	ManagedPID  int    `json:"managed_core_pid"`
 }
 
 // demoUpgradeBlockProxy relays everything to the real panel except Agent usage
@@ -173,6 +228,15 @@ type demoUpgradeRun struct {
 	token    string
 	password string
 
+	// control member: never revoked, used only to obtain a complete fixed
+	// file/SHA through the managed core in every stage (a revoked member can
+	// only ever prove refusal, so it can never prove the core still serves).
+	controlMemberID string
+	controlUsername string
+
+	coreProcs []demoUpgradeCoreProc
+	probes    []demoUpgradeProbe
+
 	agents []*demoUpgradeAgent
 }
 
@@ -219,6 +283,14 @@ func demoUpgradeEnvRead(t *testing.T) demoUpgradeEnv {
 	}
 	e.oldSHA, e.newSHA = demoUpgradeFileSHA(t, e.oldAgent), demoUpgradeFileSHA(t, e.newAgent)
 	e.oldCoreSHA, e.newCoreSHA = demoUpgradeFileSHA(t, e.oldCore), demoUpgradeFileSHA(t, e.newCore)
+	e.probeCore = strings.TrimSpace(os.Getenv("PP_DEMO_UPGRADE_PROBE_CORE"))
+	e.probeCoreOrigin = "runner-staged-independent-copy"
+	if e.probeCore == "" {
+		// Fallback only: the client must still be a distinct process from the
+		// managed core; this is recorded instead of being implied.
+		e.probeCore = e.oldCore
+		e.probeCoreOrigin = "fallback-managed-old-core-binary (not an independent copy)"
+	}
 	if e.oldSHA == e.newSHA {
 		t.Fatalf("the old and the new Agent binary are identical (%s): a rebuild alone is not a cross-version upgrade", e.oldSHA)
 	}
@@ -352,6 +424,12 @@ func TestWebDemoUpgradeClosure(t *testing.T) {
 	r.subID = sub["id"].(string)
 	member := admin.request("POST", "/api/v1/admin/members", map[string]any{"username": "upgrade-member", "password": password, "role": "member", "subscription_id": r.subID})
 	r.memberID = member["id"].(string)
+	// A legitimate control member that is never revoked. Without it, "every
+	// member is revoked" would let a fully dead core look like a correct
+	// refusal, so the positive control needs its own retained authorization.
+	r.controlUsername = "upgrade-control"
+	control := admin.request("POST", "/api/v1/admin/members", map[string]any{"username": r.controlUsername, "password": password, "role": "member", "subscription_id": r.subID})
+	r.controlMemberID = control["id"].(string)
 	registration := admin.request("POST", "/api/v1/admin/servers/"+r.serverID+"/registration-codes", nil)
 
 	// ---- 1. old Agent binary creates the SQLite state itself ---------------
@@ -359,6 +437,7 @@ func TestWebDemoUpgradeClosure(t *testing.T) {
 	before := r.waitAgent("old Agent registered and applied", old, env.oldCoreVersion, time.Time{})
 	r.agentID = before.ID
 	t.Logf("old Agent state created by the real binary: agent=%s version=%s core=%s applied=%d generation=%d", before.ID, before.Version, before.XrayVersion, before.Applied, before.Generation)
+	oldCoreProc := r.coreProcessIdentity(t, "old-Agent/old-core-"+env.oldCoreVersion, old, env.oldCoreSHA)
 
 	// ---- 2. real traffic, then a queue that cannot drain -------------------
 	r.proxy.blocked.Store(true)
@@ -381,7 +460,8 @@ func TestWebDemoUpgradeClosure(t *testing.T) {
 	admin.request("POST", "/api/v1/admin/batches", map[string]any{"preview_id": preview["id"], "confirm": true})
 	waitFor(t, 90*time.Second, "the old Agent applied the revocation locally", func() bool {
 		row := r.agentRow()
-		return row.Applied == row.Desired && row.Applied > 0 && r.statusAppliedUsers() == 0
+		// 2 members existed, one is revoked: exactly the control member remains.
+		return row.Applied == row.Desired && row.Applied > 0 && r.statusAppliedUsers() == 1
 	})
 	// The revocation's final sample is appended only when the core still reports
 	// counters, so it is recorded, not required: the held set is whatever the
@@ -465,6 +545,10 @@ func TestWebDemoUpgradeClosure(t *testing.T) {
 		t.Fatalf("the applied revision regressed across the upgrade: %d -> %d", before.Applied, afterOpen.Applied)
 	}
 	t.Logf("new Agent opened the old SQLite state: agent=%s core=%s applied=%d (before %d) generation=%d", afterOpen.ID, afterOpen.XrayVersion, afterOpen.Applied, before.Applied, afterOpen.Generation)
+	openCoreProc := r.coreProcessIdentity(t, "new-Agent/old-core-"+env.oldCoreVersion, fresh, env.oldCoreSHA)
+	if _, _, err := r.probeViaClient(t, "new-Agent-old-core", "control"); err != nil {
+		t.Fatalf("the migrated state's managed core could not serve a real positive transfer: %v", err)
+	}
 
 	waitFor(t, 120*time.Second, "the new Agent drained the retained outbox", func() bool {
 		return r.stateCount(`SELECT count(*) FROM batches`) == 0
@@ -499,8 +583,8 @@ func TestWebDemoUpgradeClosure(t *testing.T) {
 	if got := r.baselineSum(); got != baselineBefore {
 		t.Fatalf("the Agent baseline changed across the upgrade: %d -> %d (a lost/rebuilt baseline would double count)", baselineBefore, got)
 	}
-	if users := r.statusAppliedUsers(); users != 0 {
-		t.Fatalf("the upgraded Agent re-applied %d user(s) after the revocation: the upgrade widened authorization", users)
+	if users := r.statusAppliedUsers(); users != 1 {
+		t.Fatalf("the upgraded Agent applied %d user(s); exactly the one never-revoked control member is expected (0 or 2+ would mean a lost or widened authorization)", users)
 	}
 	if code := r.subscriptionStatus(); code != http.StatusForbidden {
 		t.Fatalf("revoked subscription export returned %d after the upgrade, want 403", code)
@@ -515,8 +599,15 @@ func TestWebDemoUpgradeClosure(t *testing.T) {
 	if afterCore.ID != before.ID || afterCore.Generation != before.Generation {
 		t.Fatal("the core switch changed the Agent identity/control generation")
 	}
-	if users := r.statusAppliedUsers(); users != 0 {
-		t.Fatalf("the core switch re-applied %d revoked user(s)", users)
+	// The control member stays applied; the revoked member must never reappear.
+	if users := r.statusAppliedUsers(); users != 1 {
+		t.Fatalf("the core switch changed the applied authorization to %d user(s), the single control member is expected", users)
+	}
+	if code := r.subscriptionStatusFor(t, "upgrade-member"); code != http.StatusForbidden {
+		t.Fatalf("the revoked member's export returned %d after the core switch, want 403", code)
+	}
+	if code := r.subscriptionStatusFor(t, "upgrade-control"); code != http.StatusOK {
+		t.Fatalf("the control member's export returned %d after the core switch: the managed core lost a legitimate member", code)
 	}
 	if code := r.subscriptionStatus(); code != http.StatusForbidden {
 		t.Fatalf("revoked subscription export returned %d after the core switch, want 403", code)
@@ -525,16 +616,33 @@ func TestWebDemoUpgradeClosure(t *testing.T) {
 		t.Fatalf("the core switch left %d pending batch(es)", pending)
 	}
 	t.Logf("core switch observable: heartbeat core=%q applied=%d/%d generation=%d, revoked export=403, outbox empty", afterCore.XrayVersion, afterCore.Applied, afterCore.Desired, afterCore.Generation)
+	switchCoreProc := r.coreProcessIdentity(t, "new-Agent/new-core-"+env.newCoreVersion, switched, env.newCoreSHA)
+	if switchCoreProc.PID == openCoreProc.PID {
+		t.Fatalf("the core pid did not change across the %s -> %s switch (still %d): only a version string changed", env.oldCoreVersion, env.newCoreVersion, switchCoreProc.PID)
+	}
+	if _, _, err := r.probeViaClient(t, "new-Agent-new-core", "control"); err != nil {
+		t.Fatalf("the switched core could not serve a real positive transfer: %v", err)
+	}
 
 	// ---- 6. technical rollback: core back to 26.3.23, then the old binary --
 	preRollback := r.agentRow()
 	r.stopAgent(switched, "new Agent before core rollback")
 	rolled := r.startAgent("rollback-core", env.newAgent, env.oldCore, "")
 	afterRollback := r.waitAgent("core rolled back to the verified older release", rolled, env.oldCoreVersion, preRollback.Heartbeat)
-	if users := r.statusAppliedUsers(); users != 0 {
-		t.Fatalf("the core rollback re-applied %d revoked user(s)", users)
+	if users := r.statusAppliedUsers(); users != 1 {
+		t.Fatalf("the core rollback changed the applied authorization to %d user(s), the single control member is expected", users)
+	}
+	if code := r.subscriptionStatusFor(t, "upgrade-member"); code != http.StatusForbidden {
+		t.Fatalf("the revoked member's export returned %d after the core rollback, want 403", code)
 	}
 	t.Logf("core rollback observable: heartbeat core=%q applied=%d generation=%d", afterRollback.XrayVersion, afterRollback.Applied, afterRollback.Generation)
+	rollbackCoreProc := r.coreProcessIdentity(t, "new-Agent/rolled-back-core-"+env.oldCoreVersion, rolled, env.oldCoreSHA)
+	if rollbackCoreProc.PID == switchCoreProc.PID {
+		t.Fatalf("the core rollback reused pid %d: the core process was not actually replaced", rollbackCoreProc.PID)
+	}
+	if _, _, err := r.probeViaClient(t, "new-Agent-rolled-back-core", "control"); err != nil {
+		t.Fatalf("the rolled-back core could not serve a real positive transfer: %v", err)
+	}
 
 	preOld := r.agentRow()
 	r.stopAgent(rolled, "new Agent before software rollback")
@@ -546,14 +654,39 @@ func TestWebDemoUpgradeClosure(t *testing.T) {
 	if afterOld.Applied < afterOld.Desired || afterOld.Desired == 0 {
 		t.Fatalf("the rolled back Agent did not converge: applied=%d desired=%d", afterOld.Applied, afterOld.Desired)
 	}
-	if users := r.statusAppliedUsers(); users != 0 {
-		t.Fatalf("the software rollback restored %d revoked user(s) from old data", users)
+	if users := r.statusAppliedUsers(); users != 1 {
+		t.Fatalf("the software rollback left %d applied user(s); the single control member is expected, so the revoked member was not restored", users)
 	}
 	if code := r.subscriptionStatus(); code != http.StatusForbidden {
 		t.Fatalf("revoked subscription export returned %d after the software rollback, want 403", code)
 	}
 	t.Logf("software rollback: old binary sha256=%s on the same state, applied=%d/%d, revoked export=403 (database restore was never used as a rollback)", r.env.oldSHA, afterOld.Applied, afterOld.Desired)
+	r.coreProcessIdentity(t, "rolled-back-old-Agent/old-core-"+env.oldCoreVersion, back, env.oldCoreSHA)
+	if _, _, err := r.probeViaClient(t, "rolled-back-old-Agent", "control"); err != nil {
+		t.Fatalf("the rolled-back old Agent/core could not serve a real positive transfer: %v", err)
+	}
+	if code := r.subscriptionStatusFor(t, "upgrade-member"); code != http.StatusForbidden {
+		t.Fatalf("the revoked member was served (status %d) through the rolled-back core", code)
+	}
+	_ = oldCoreProc
 	r.stopAgent(back, "rolled back old Agent")
+	// Same-run, same-source evidence: the receipt is written by this run and
+	// carries the core process identities and every probe it actually made.
+	if raw, err := json.MarshalIndent(map[string]any{
+		"core_processes": r.coreProcs,
+		"probes":         r.probes,
+		"probe_core": map[string]any{
+			"path_origin": r.env.probeCoreOrigin,
+			"sha256":      demoUpgradeFileSHA(t, r.env.probeCore),
+		},
+		"control_member": "upgrade-control (never revoked; provides the positive control)",
+	}, "", "  "); err == nil {
+		if err := os.WriteFile(filepath.Join(r.stateDir, "demo-upgrade-core-identity.json"), append(raw, '\n'), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(r.stateDir, "demo-upgrade-receipt.json"), []byte(fmt.Sprintf(
 		"{\"status\":\"pass\",\"agent_id\":%q,\"old_agent_sha256\":%q,\"new_agent_sha256\":%q,\"old_core_sha256\":%q,\"new_core_sha256\":%q,\"retained_batches\":%d,\"retained_member_bytes\":%d,\"baseline\":%d}\n",
 		r.agentID, r.env.oldSHA, r.env.newSHA, r.env.oldCoreSHA, r.env.newCoreSHA, len(beforeIDs), queuedMemberBytes, baselineBefore)), 0o600); err != nil {
@@ -723,47 +856,198 @@ func (r *demoUpgradeRun) agentRow() demoUpgradeAgentRow {
 }
 
 func (r *demoUpgradeRun) memberClient() *dataPlaneAPI {
+	return r.memberClientFor(r.t, "upgrade-member")
+}
+
+// memberClientFor returns a session for a named member. "control" resolves to
+// the never-revoked control member created for positive transfers.
+func (r *demoUpgradeRun) memberClientFor(t *testing.T, member string) *dataPlaneAPI {
+	t.Helper()
+	username := member
+	if member == "control" {
+		username = r.controlUsername
+	}
 	jar, _ := cookiejar.New(nil)
 	c := &dataPlaneAPI{t: r.t, base: r.base, client: &http.Client{Jar: jar, Timeout: 20 * time.Second}}
-	c.login("upgrade-member", r.password)
+	c.login(username, r.password)
 	return c
+}
+
+// lastCoreProc returns the most recently captured managed-core identity.
+func (r *demoUpgradeRun) lastCoreProc() demoUpgradeCoreProc {
+	if len(r.coreProcs) == 0 {
+		return demoUpgradeCoreProc{}
+	}
+	return r.coreProcs[len(r.coreProcs)-1]
+}
+
+// coreProcessIdentity resolves the managed core from the Agent's own pid record
+// (never by scanning for anything named xray) and proves exe/starttime/owner/
+// cgroup/sha against the expected official binary.
+func (r *demoUpgradeRun) coreProcessIdentity(t *testing.T, step string, a *demoUpgradeAgent, expectedSHA string) demoUpgradeCoreProc {
+	t.Helper()
+	var rec struct {
+		PID        int    `json:"pid"`
+		Created    string `json:"created"`
+		Executable string `json:"executable"`
+		ConfigPath string `json:"config_path"`
+		InstanceID string `json:"instance_id"`
+		RecordedAt int64  `json:"recorded_at"`
+	}
+	root := filepath.Join(r.stateDir, "xray")
+	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || d.Name() != "xray.pid" {
+			return nil
+		}
+		raw, rerr := os.ReadFile(p)
+		if rerr != nil {
+			return nil
+		}
+		var candidate struct {
+			PID        int    `json:"pid"`
+			Created    string `json:"created"`
+			Executable string `json:"executable"`
+			ConfigPath string `json:"config_path"`
+			InstanceID string `json:"instance_id"`
+			RecordedAt int64  `json:"recorded_at"`
+		}
+		if json.Unmarshal(raw, &candidate) == nil && candidate.PID > 0 && candidate.RecordedAt >= rec.RecordedAt {
+			rec = candidate
+		}
+		return nil
+	})
+	if rec.PID <= 0 {
+		t.Fatalf("%s: the Agent left no pid record for its managed core under %s, so no core process identity can be proven", step, root)
+	}
+	proc := demoUpgradeCoreProc{
+		Step: step, PID: rec.PID, StartTicks: rec.Created, Exe: rec.Executable,
+		ConfigPath: rec.ConfigPath, ExpectedSHA256: expectedSHA, AgentPID: a.cmd.Process.Pid, AgentExe: a.bin,
+	}
+	proc.StartTicks = demoUpgradeProcStartTicks(t, rec.PID)
+	exe, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", rec.PID))
+	if err != nil {
+		t.Fatalf("%s: the recorded managed core pid %d is not a live process: %v", step, rec.PID, err)
+	}
+	proc.Exe = exe
+	if exe != rec.Executable {
+		t.Fatalf("%s: live core exe %q does not match the pid record %q", step, exe, rec.Executable)
+	}
+	proc.ExeSHA256 = demoUpgradeFileSHA(t, exe)
+	proc.SHA256Matches = len(expectedSHA) == 64 && proc.ExeSHA256 == expectedSHA
+	if !proc.SHA256Matches {
+		t.Fatalf("%s: the running core binary %s sha256=%s is not the expected official binary sha256=%s", step, exe, proc.ExeSHA256, expectedSHA)
+	}
+	if st, err := os.Stat(fmt.Sprintf("/proc/%d", rec.PID)); err == nil {
+		proc.OwnerUID = demoUpgradeOwnerUID(fmt.Sprintf("/proc/%d", rec.PID))
+		_ = st
+	}
+	if ast, err := os.Stat(fmt.Sprintf("/proc/%d", a.cmd.Process.Pid)); err == nil {
+		proc.OwnerMatchesAgent = proc.OwnerUID == demoUpgradeOwnerUID(fmt.Sprintf("/proc/%d", a.cmd.Process.Pid))
+		_ = ast
+	}
+	proc.Cgroup = strings.TrimSpace(demoUpgradeReadBestEffort(fmt.Sprintf("/proc/%d/cgroup", rec.PID)))
+	agentCgroup := strings.TrimSpace(demoUpgradeReadBestEffort(fmt.Sprintf("/proc/%d/cgroup", a.cmd.Process.Pid)))
+	proc.CgroupMatchesAgent = proc.Cgroup != "" && proc.Cgroup == agentCgroup
+	proc.ConfigUnderState = rec.ConfigPath != "" && strings.HasPrefix(rec.ConfigPath, r.stateDir+string(filepath.Separator))
+	proc.Cmdline = demoUpgradeCmdline(rec.PID)
+	r.coreProcs = append(r.coreProcs, proc)
+	t.Logf("managed core %s: pid=%d starttime=%s exe=%s sha256=%s (official match=%v) uid=%d uid==agent:%v cgroup==agent:%v cfg_under_state:%v",
+		step, proc.PID, proc.StartTicks, proc.Exe, proc.ExeSHA256, proc.SHA256Matches, proc.OwnerUID,
+		proc.OwnerMatchesAgent, proc.CgroupMatchesAgent, proc.ConfigUnderState)
+	return proc
+}
+
+func demoUpgradeProcStartTicks(t *testing.T, pid int) string {
+	t.Helper()
+	raw, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		t.Fatalf("read /proc/%d/stat: %v", pid, err)
+	}
+	fields := strings.Fields(string(raw))
+	if len(fields) < 22 {
+		t.Fatalf("/proc/%d/stat has %d fields", pid, len(fields))
+	}
+	return fields[21]
+}
+
+func demoUpgradeOwnerUID(path string) int {
+	st, err := os.Stat(path)
+	if err != nil {
+		return -1
+	}
+	if sys, ok := st.Sys().(*syscall.Stat_t); ok {
+		return int(sys.Uid)
+	}
+	return -1
+}
+
+func demoUpgradeReadBestEffort(path string) string {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return string(raw)
+}
+
+func demoUpgradeCmdline(pid int) string {
+	raw, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(strings.ReplaceAll(string(raw), "\x00", " "))
 }
 
 // transfer runs the exported member config through a real core and fetches a
 // fixed payload. The proxy path is loopback only; the response hash is checked.
 func (r *demoUpgradeRun) transfer(t *testing.T, name string) (int, [32]byte) {
 	t.Helper()
-	client := r.memberClient()
+	bytesN, digest, err := r.probeViaClient(t, name, "upgrade-member")
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	return bytesN, digest
+}
+
+// probeViaClient is the single transfer primitive: it starts the fixed
+// stage-independent client core, dials the managed core's inbound and fetches a
+// fixed-size payload. It is used for the positive control (control member, must
+// return the exact bytes) and can also be asked to expect a refusal.
+func (r *demoUpgradeRun) probeViaClient(t *testing.T, name, member string) (int, [32]byte, error) {
+	t.Helper()
+	client := r.memberClientFor(t, member)
 	subscription := client.request("GET", "/api/v1/me/subscription", nil)
 	token, _ := subscription["token"].(string)
+	if token == "" {
+		return 0, [32]byte{}, fmt.Errorf("%s: member subscription token missing", name)
+	}
 	res, err := http.Get(r.base + "/sub/" + token + "?format=xray")
 	if err != nil {
-		t.Fatalf("download member export: %v", err)
+		return 0, [32]byte{}, fmt.Errorf("%s: download member export: %v", name, err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		t.Fatalf("member export status %d", res.StatusCode)
+		return 0, [32]byte{}, fmt.Errorf("%s: member export status %d", name, res.StatusCode)
 	}
 	var cfg map[string]any
 	if err := json.NewDecoder(res.Body).Decode(&cfg); err != nil {
-		t.Fatalf("member export is not JSON: %v", err)
+		return 0, [32]byte{}, fmt.Errorf("%s: member export is not JSON: %v", name, err)
 	}
 	outbounds, _ := cfg["outbounds"].([]any)
 	if len(outbounds) == 0 {
-		t.Fatal("export missing outbound")
+		return 0, [32]byte{}, fmt.Errorf("%s: export missing outbound", name)
 	}
 	if outbounds[0].(map[string]any)["protocol"] != "vless" {
-		t.Fatal("export outbound is not the member proxy")
+		return 0, [32]byte{}, fmt.Errorf("%s: export outbound is not the member proxy", name)
 	}
 	socksPort := unusedPort(t)
 	cfg["inbounds"] = []any{map[string]any{"listen": "127.0.0.1", "port": socksPort, "protocol": "socks", "settings": map[string]any{"auth": "noauth"}}}
 	cfg["routing"] = map[string]any{"rules": []any{map[string]any{"type": "field", "network": "tcp,udp", "outboundTag": outbounds[0].(map[string]any)["tag"]}}}
 	cfgPath := writeConfig(t, r.work, name+"-client.json", cfg)
-	coreCmd := exec.Command(r.env.newCore, "run", "-c", cfgPath)
+	coreCmd := exec.Command(r.env.probeCore, "run", "-c", cfgPath)
 	var coreLog bytes.Buffer
 	coreCmd.Stdout, coreCmd.Stderr = &coreLog, &coreLog
 	if err := coreCmd.Start(); err != nil {
-		t.Fatalf("start client core: %v", err)
+		return 0, [32]byte{}, fmt.Errorf("%s: start client core: %v", name, err)
 	}
 	defer func() {
 		if coreCmd.ProcessState == nil {
@@ -771,6 +1055,14 @@ func (r *demoUpgradeRun) transfer(t *testing.T, name string) (int, [32]byte) {
 			_ = coreCmd.Wait()
 		}
 	}()
+	clientAlive := func() bool {
+		if coreCmd.ProcessState != nil && coreCmd.ProcessState.Exited() {
+			return false
+		}
+		// syscall.Kill(pid, 0) proves the pid is still there, not just that Wait
+		// has not run yet.
+		return syscall.Kill(coreCmd.Process.Pid, 0) == nil
+	}
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", socksPort), 200*time.Millisecond)
@@ -779,7 +1071,7 @@ func (r *demoUpgradeRun) transfer(t *testing.T, name string) (int, [32]byte) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("client core never listened: %s", coreLog.String())
+			return 0, [32]byte{}, fmt.Errorf("%s: client core never listened: %s", name, coreLog.String())
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -794,24 +1086,52 @@ func (r *demoUpgradeRun) transfer(t *testing.T, name string) (int, [32]byte) {
 	defer transport.CloseIdleConnections()
 	httpClient := &http.Client{Transport: transport, Timeout: 20 * time.Second}
 	var got []byte
-	waitFor(t, 45*time.Second, "real transfer through the exported credentials", func() bool {
+	var lastErr error
+	var elapsed time.Duration
+	start := time.Now()
+	waitFor(t, 45*time.Second, "real transfer through the managed core", func() bool {
 		transport.CloseIdleConnections()
+		attempt := time.Now()
 		res, err := httpClient.Get(target.URL)
+		elapsed = time.Since(attempt)
 		if err != nil {
+			lastErr = err
+			elapsed = time.Since(start)
 			return false
 		}
 		defer res.Body.Close()
 		body, err := io.ReadAll(res.Body)
 		if err != nil || res.StatusCode != 200 || len(body) != len(payload) {
+			lastErr = fmt.Errorf("status=%d bytes=%d err=%v", res.StatusCode, len(body), err)
 			return false
 		}
 		got = body
+		lastErr = nil
 		return true
 	})
-	if sha256.Sum256(got) != want {
-		t.Fatal("proxied payload digest mismatch")
+	managed := r.lastCoreProc()
+	probe := demoUpgradeProbe{
+		Step: name, Expectation: "control-member-full-body", Bytes: 0, ElapsedMS: elapsed.Milliseconds(),
+		ManagedPID: managed.PID, ClientAlive: clientAlive(),
 	}
-	return len(got), want
+	if sha256.Sum256(got) != want {
+		probe.Class = "body-mismatch"
+		probe.Detail = fmt.Sprintf("proxied payload digest mismatch: %v", lastErr)
+		r.probes = append(r.probes, probe)
+		return 0, [32]byte{}, fmt.Errorf("%s: proxied payload digest mismatch (%v)", name, lastErr)
+	}
+	probe.Bytes = len(got)
+	probe.PayloadSHA = hex.EncodeToString(want[:])
+	probe.Class = "served-fixed-body"
+	if !probe.ClientAlive {
+		probe.Class = "client-core-died"
+		r.probes = append(r.probes, probe)
+		return 0, [32]byte{}, fmt.Errorf("%s: the client core process exited during the transfer, so the result cannot be attributed to the managed core", name)
+	}
+	r.probes = append(r.probes, probe)
+	t.Logf("real transfer %s through the managed core pid=%d: %d bytes sha256=%s in %dms (client core stayed alive)",
+		name, managed.PID, len(got), probe.PayloadSHA, probe.ElapsedMS)
+	return len(got), want, nil
 }
 
 func (r *demoUpgradeRun) stateCount(query string) int64 {
@@ -858,6 +1178,23 @@ func (r *demoUpgradeRun) statusAppliedUsers() int {
 		total += inst.AppliedUsers
 	}
 	return total
+}
+
+func (r *demoUpgradeRun) subscriptionStatusFor(t *testing.T, username string) int {
+	t.Helper()
+	client := r.memberClientFor(t, username)
+	data := client.request("GET", "/api/v1/me/subscription", nil)
+	token, _ := data["token"].(string)
+	if token == "" {
+		return 0
+	}
+	res, err := http.Get(r.base + "/sub/" + token + "?format=xray")
+	if err != nil {
+		return 0
+	}
+	defer res.Body.Close()
+	_, _ = io.Copy(io.Discard, res.Body)
+	return res.StatusCode
 }
 
 func (r *demoUpgradeRun) subscriptionStatus() int {

@@ -4,17 +4,23 @@
   "runner": "tests/e2e/run_webdemo_upgrade.py",
   "manifest_version": 1,
   "case": "TestWebDemoUpgradeClosure",
-  "packages": ["./tests/e2e"],
+  "packages": [
+    "./tests/e2e"
+  ],
   "build_tags": [],
-  "requires": ["postgres", "unix"],
+  "requires": [
+    "postgres",
+    "unix"
+  ],
   "optional_requirements": [],
   "env": {
     "PANEL_TEST_DATABASE_URL": "owned PostgreSQL 17 on 127.0.0.1 with a database name prefixed dp_owned_; the runner creates it itself",
-    "PP_DEMO_UPGRADE_OLD_AGENT": "old Agent binary: saved shipped artifact build/linux-amd64/agent (SHA256SUMS-checked) or a build from git commit 52bf44a",
+    "PP_DEMO_UPGRADE_OLD_AGENT": "old Agent binary built read-only from a historical commit with `git archive` (default 52bf44a); the saved build/linux-amd64/agent artifact is only accepted via --old-agent and its provenance is recorded as UNKNOWN",
     "PP_DEMO_UPGRADE_NEW_AGENT": "new Agent binary built from the current worktree candidate",
     "PP_DEMO_UPGRADE_OLD_CORE": "official Xray v26.3.23 binary with geoip.dat/geosite.dat from the same release",
     "PP_DEMO_UPGRADE_NEW_CORE": "official Xray v26.3.27 binary with geoip.dat/geosite.dat from the same release",
-    "PP_DEMO_UPGRADE_STATE_DIR": "optional absolute 0700 state/evidence directory; never committed"
+    "PP_DEMO_UPGRADE_STATE_DIR": "optional absolute 0700 state/evidence directory; never committed",
+    "PP_DEMO_UPGRADE_PROBE_CORE": "independent staged copy of one official Xray release, used only as the traffic client so the managed core under test is never also the client"
   },
   "runtime_lock": "/home/compile/Work/.locks/proxypanel-webdemo-local-runtime.lock",
   "does_not": [
@@ -23,12 +29,19 @@
     "change production code, SQL, migrations, the shared runner or another owner's tests",
     "rewrite the Agent SQLite queue directly, clear it, or accept a version string as the switch proof"
   ],
-  "stories": ["US-PR-016"],
-  "expected_tests": ["TestWebDemoUpgradeClosure"],
+  "stories": [
+    "US-PR-016"
+  ],
+  "expected_tests": [
+    "TestWebDemoUpgradeClosure"
+  ],
   "notes": [
+    "Old-source provenance: the old Agent is built from an explicit commit with `git archive` in a private dir; the receipt records commit, archive sha, go SDK, go.mod/go.sum sha, requires, build command and binary sha. The shipped build/linux-amd64/agent cannot be attributed to 52bf44a: its .proxypanel-build records no commit, its buildinfo pins golang.org/x/sys v0.36.0 while 52bf44a pins v0.47.0 (only the initial ec7ee10 used v0.36.0), and the sibling SHA256SUMS is a same-directory integrity anchor, not provenance.",
     "Both known Agent commits label themselves 0.1.1, so the proof uses binary sha256 + a heartbeat newer than the pre-action snapshot + the reported core version.",
+    "Core switching is proven per step by the Agent-owned pid record: managed core pid, /proc starttime, exe path, exe sha256 against the expected official binary sha, owner uid, cgroup and config-under-state-dir, plus a real fixed-body transfer through that core with a stage-independent client core and a never-revoked control member. The core pid must change on switch/rollback and every stage writes raw per-step JSON.",
     "The old Agent's own SQLite state is the upgrade input; the case refuses an unmerged WAL or unknown table layout and never repairs it.",
-    "The retained outbox must be credited once per batch id with the identical payload sha256; a revoked member must stay revoked and the export must stay 403.",
-    "Technical rollback uses the old binary on the upgraded state; restoring an old database dump to regain access is explicitly not used."
+    "The retained outbox must be credited once per batch id with the identical payload sha256; a revoked member must stay revoked (403) while the control member stays served.",
+    "Technical rollback uses the old binary on the upgraded state; restoring an old database dump to regain access is explicitly not used.",
+    "Cleanup stops the owned PostgreSQL with pg_ctl -m fast before any recovery sweep, records pg_ctl/exit status and postgres_graceful separately from SIGKILL recovery, and takes an after process+TCP/UDP listener snapshot compared by exact pid/starttime/exe identity."
   ]
 }
