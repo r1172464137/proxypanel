@@ -354,10 +354,12 @@ func TestPanelFlow(t *testing.T) {
 			t.Fatalf("direct subscription edit = %d %v", direct.Status, direct.Body)
 		}
 
-		submit := e.doWith("POST", "/api/v1/admin/batches", map[string]any{
+		payload := map[string]any{
 			"preview_id": previewID, "confirm": true,
 			"rules_version": rulesVersion, "member_set_digest": digest,
-		}, map[string]string{"Idempotency-Key": "idem-" + previewID})
+		}
+		submit := e.doWith("POST", "/api/v1/admin/batches", payload,
+			map[string]string{"Idempotency-Key": "idem-" + previewID})
 		data := submit.data(t)
 		batchID = e.str(data, "id")
 		if data["state"] != "applied" {
@@ -375,11 +377,17 @@ func TestPanelFlow(t *testing.T) {
 		}
 
 		// Replaying the same idempotency key returns the stored result.
-		replay := e.doWith("POST", "/api/v1/admin/batches", map[string]any{
-			"preview_id": previewID, "confirm": true,
-		}, map[string]string{"Idempotency-Key": "idem-" + previewID}).data(t)
+		replay := e.doWith("POST", "/api/v1/admin/batches", payload,
+			map[string]string{"Idempotency-Key": "idem-" + previewID}).data(t)
 		if replay["id"] != batchID || replay["idempotent_replay"] != true {
 			t.Fatalf("replay = %v", replay)
+		}
+		// Omitting version preconditions changes the payload, not a valid retry.
+		changed := e.doWith("POST", "/api/v1/admin/batches", map[string]any{
+			"preview_id": previewID, "confirm": true,
+		}, map[string]string{"Idempotency-Key": "idem-" + previewID})
+		if changed.Status != http.StatusConflict || changed.errCode(t) != domain.CodeIdempotencyKeyReused {
+			t.Fatalf("changed retry = %d %v", changed.Status, changed.Body)
 		}
 		// A different key for the same consumed preview is rejected.
 		reuse := e.doWith("POST", "/api/v1/admin/batches", map[string]any{
@@ -444,7 +452,11 @@ func TestPanelFlow(t *testing.T) {
 		agentToken = e.str(reg, "token")
 		agentHeader := map[string]string{"Authorization": "Bearer " + agentToken}
 
-		now := time.Now().UTC()
+		// The real API has established authorization and binding history before
+		// the sample starts; advance only the reporting clock, not that history.
+		started := time.Now().UTC()
+		now := started.Add(time.Minute)
+		e.st.Now = func() time.Time { return now }
 		batch := contracts.UsageBatch{
 			SchemaVersion: contracts.SchemaVersion,
 			BatchID:       "batch-" + randomHex(t, 4),

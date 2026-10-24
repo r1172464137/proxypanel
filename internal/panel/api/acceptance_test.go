@@ -33,7 +33,6 @@ import (
 	"time"
 
 	"proxypanel/internal/contracts"
-	"proxypanel/internal/panel/period"
 )
 
 // ─── request plumbing ──────────────────────────────────────────────────────
@@ -955,7 +954,10 @@ func TestAcceptanceSwitchSubscriptionKeepsTokenUsageAndCycle(t *testing.T) {
 	}))
 	agentToken := e.registerAgent(t, admin, serverID)
 
-	now := time.Now().UTC()
+	// Freeze only after PostgreSQL has timestamped real authorization history.
+	started := time.Now().UTC()
+	now := started.Add(2 * time.Minute)
+	e.st.Now = func() time.Time { return now }
 	status, err := e.call(nil, "POST", "/api/v1/agent/usage", contracts.UsageBatch{
 		SchemaVersion: contracts.SchemaVersion, BatchID: "accept-switch-" + randomHex(t, 4),
 		Samples: []contracts.UsageSample{{
@@ -982,12 +984,23 @@ func TestAcceptanceSwitchSubscriptionKeepsTokenUsageAndCycle(t *testing.T) {
 	}
 	wantNumber(t, access0, "used_bytes", 1000)
 
+	// Traffic measured under A will arrive only after switching to B.
+	lateStart := now
+	now = now.Add(2 * time.Minute)
 	// The batch flow is the frozen way to change a bound member's plan.
 	e.previewAndSubmit(t, admin, map[string]any{
 		"operation": "assign_subscription", "member_ids": []string{memberID},
 		"values": map[string]any{"subscription_id": subB}, "reason": "plan change",
 	})
 
+	e.mustCallWith(t, nil, "POST", "/api/v1/agent/usage", contracts.UsageBatch{
+		SchemaVersion: contracts.SchemaVersion, BatchID: "accept-switch-late-" + randomHex(t, 4),
+		Samples: []contracts.UsageSample{{
+			NodeID: nodeID, MemberID: memberID, CoreGeneration: "1",
+			StartedAt: lateStart, EndedAt: lateStart.Add(time.Minute),
+			UploadBytes: 100, DownloadBytes: 200,
+		}},
+	}, map[string]string{"Authorization": "Bearer " + agentToken}).ok(t)
 	member1, access1 := e.memberDetail(t, admin, memberID)
 	wantString(t, member1, "subscription_id", subB)
 	if got, _ := member1["period_start"].(string); got != start0 {
@@ -996,7 +1009,7 @@ func TestAcceptanceSwitchSubscriptionKeepsTokenUsageAndCycle(t *testing.T) {
 	if got, _ := member1["period_end"].(string); got != end0 {
 		t.Fatalf("period_end moved on a subscription switch: %q -> %q", end0, got)
 	}
-	wantNumber(t, access1, "used_bytes", 1000)
+	wantNumber(t, access1, "used_bytes", 1300)
 	wantString(t, access1, "quota_source", "subscription")
 	wantNumber(t, access1, "effective_quota_bytes", float64(int64(2)<<30))
 
@@ -1024,18 +1037,21 @@ func TestAcceptanceSwitchSubscriptionKeepsTokenUsageAndCycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.st.Now = func() time.Time { return fakeNow }
+	// Product-status GET is read-only; agent snapshot is an authoritative
+	// production path that advances the cycle and publishes authorization.
+	e.agentSnapshot(t, agentToken)
 	member2, access2 := e.memberDetail(t, admin, memberID)
-	tokyo, err := period.LoadTimezone("Asia/Tokyo")
-	if err != nil {
-		t.Fatalf("timezone: %v", err)
-	}
-	want := period.Containing(15, tokyo, fakeNow)
+	// The first new-rule cycle is contiguous, never backdated into the closed
+	// cycle. Its end is the next Tokyo day-15 midnight, independently stated.
+	wantStart := fakeNow
+	wantEnd := time.Date(fakeNow.Year(), fakeNow.Month(), 14, 15, 0, 0, 0, time.UTC)
+	wantString(t, member2, "period_end", wantEnd.Format(time.RFC3339))
 	gotStart, err := time.Parse(time.RFC3339Nano, fieldString(t, member2, "period_start"))
 	if err != nil {
 		t.Fatalf("parse period_start: %v", err)
 	}
-	if !gotStart.Equal(want.Start) {
-		t.Fatalf("new cycle start = %s, want %s (new subscription rule)", gotStart, want.Start)
+	if !gotStart.Equal(wantStart) {
+		t.Fatalf("new cycle start = %s, want %s (new subscription rule)", gotStart, wantStart)
 	}
 	wantString(t, member2, "period_timezone", "Asia/Tokyo")
 	wantNumber(t, member2, "period_anchor_day", 15)
@@ -1048,8 +1064,11 @@ func TestAcceptanceSwitchSubscriptionKeepsTokenUsageAndCycle(t *testing.T) {
 		t.Fatalf("parse the previous period start: %v", err)
 	}
 	if n := e.scalar(t, `SELECT count(*) FROM usage_entries WHERE member_id=$1 AND period_start=$2`,
-		memberID, closedStart); n != 1 {
+		memberID, closedStart); n != 2 {
 		t.Fatalf("the closed cycle lost its ledger rows (%d)", n)
+	}
+	if n := e.scalar(t, `SELECT COALESCE(sum(up_bytes+down_bytes),0) FROM usage_entries WHERE member_id=$1 AND period_start=$2`, memberID, closedStart); n != 1300 {
+		t.Fatalf("subscription switch/rollover changed closed-cycle bytes: %d", n)
 	}
 }
 
@@ -1075,7 +1094,9 @@ func TestAcceptanceSubscriptionRuleEditKeepsRunningCycle(t *testing.T) {
 	}))
 	agentToken := e.registerAgent(t, admin, serverID)
 
-	now := time.Now().UTC()
+	started := time.Now().UTC()
+	now := started.Add(2 * time.Minute)
+	e.st.Now = func() time.Time { return now }
 	if res := e.mustCallWith(t, nil, "POST", "/api/v1/agent/usage", contracts.UsageBatch{
 		SchemaVersion: contracts.SchemaVersion, BatchID: "accept-rule-" + randomHex(t, 4),
 		Samples: []contracts.UsageSample{{
@@ -1129,6 +1150,7 @@ func TestAcceptanceSubscriptionRuleEditKeepsRunningCycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.st.Now = func() time.Time { return boundary }
+	e.agentSnapshot(t, agentToken)
 	member2, access2 := e.memberDetail(t, admin, memberID)
 	wantNumber(t, access2, "used_bytes", 0)
 	wantNumber(t, member2, "period_anchor_day", 1)
@@ -1136,14 +1158,14 @@ func TestAcceptanceSubscriptionRuleEditKeepsRunningCycle(t *testing.T) {
 	if member2["pending_period_rule"] != nil {
 		t.Fatalf("the first boundary did not consume the edited rule: %v", member2)
 	}
-	tokyo, err := period.LoadTimezone("Asia/Tokyo")
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := period.Containing(1, tokyo, boundary)
+	// First new-rule cycle starts exactly at the old end, ending at the next
+	// Tokyo month boundary; it must not overlap/rewrite the closed UTC cycle.
+	wantStart := boundary
+	wantEnd := boundary.AddDate(0, 1, 0).Add(-9 * time.Hour)
+	wantString(t, member2, "period_end", wantEnd.Format(time.RFC3339))
 	gotStart, err := time.Parse(time.RFC3339Nano, fieldString(t, member2, "period_start"))
-	if err != nil || !gotStart.Equal(want.Start) {
-		t.Fatalf("next cycle start = %s, %v; want %s", gotStart, err, want.Start)
+	if err != nil || !gotStart.Equal(wantStart) {
+		t.Fatalf("next cycle start = %s, %v; want %s", gotStart, err, wantStart)
 	}
 	closedStart, err := time.Parse(time.RFC3339Nano, start0)
 	if err != nil {
@@ -1151,6 +1173,9 @@ func TestAcceptanceSubscriptionRuleEditKeepsRunningCycle(t *testing.T) {
 	}
 	if n := e.scalar(t, `SELECT count(*) FROM usage_entries WHERE member_id=$1 AND period_start=$2`, memberID, closedStart); n != 1 {
 		t.Fatalf("rule edit lost the closed-cycle ledger rows: %d", n)
+	}
+	if n := e.scalar(t, `SELECT COALESCE(sum(up_bytes+down_bytes),0) FROM usage_entries WHERE member_id=$1 AND period_start=$2`, memberID, closedStart); n != 1000 {
+		t.Fatalf("rule edit/rollover changed closed-cycle bytes: %d", n)
 	}
 }
 
@@ -1161,16 +1186,9 @@ func TestAcceptanceSubscriptionRuleEditKeepsRunningCycle(t *testing.T) {
 // the accounted usage revokes access immediately while raising it restores it.
 func TestAcceptanceBoundarySplitAndQuotaChange(t *testing.T) {
 	e := newEnv(t)
+	e.srv.Cfg.SessionTTL = 90 * 24 * time.Hour
 	admin := e.adminSession(t)
-
-	now := time.Now().UTC()
-	// An anchor three days in the past keeps the boundary safely behind the
-	// allowed sample window whatever the calendar day is.
-	anchorDay := now.AddDate(0, 0, -3).Day()
-	boundary := period.Containing(anchorDay, time.UTC, now).Start
-	if now.Sub(boundary) < 90*time.Minute {
-		t.Skipf("cycle boundary %s is too recent for a past straddling sample", boundary)
-	}
+	const anchorDay = 1
 
 	serverID := e.createServer(t, admin, "srv-boundary")
 	nodeID := e.createNode(t, admin, serverID, "node-boundary", 20443)
@@ -1187,6 +1205,23 @@ func TestAcceptanceBoundarySplitAndQuotaChange(t *testing.T) {
 	memberSess := e.loginAs(t, "boundary-user", "boundary-password-1")
 	token := wantField(t, e.mustCall(t, memberSess, "GET", "/api/v1/me/subscription", nil).ok(t), "token")
 
+	// Freeze only after real authorization history exists. Never backdate a
+	// fixture ahead of PostgreSQL's creation timestamps.
+	recorded := time.Now().UTC()
+	boundary := time.Date(recorded.Year(), recorded.Month()+1, 1, 0, 0, 0, 0, time.UTC)
+	if boundary.Sub(recorded) < 2*time.Hour {
+		boundary = boundary.AddDate(0, 1, 0)
+	}
+	now := boundary.Add(-time.Hour)
+	e.st.Now = func() time.Time { return now }
+	// Snapshot drives rollover; product-status reads alone must not write.
+	e.agentSnapshot(t, agentToken)
+	// Materialize both cycles through the real API before accepting a late report.
+	closed, _ := e.memberDetail(t, admin, memberID)
+	wantString(t, closed, "period_start", boundary.AddDate(0, -1, 0).Format(time.RFC3339))
+	wantString(t, closed, "period_end", boundary.Format(time.RFC3339))
+	now = boundary.Add(2 * time.Hour)
+	e.agentSnapshot(t, agentToken)
 	member0, _ := e.memberDetail(t, admin, memberID)
 	start0, err := time.Parse(time.RFC3339Nano, fieldString(t, member0, "period_start"))
 	if err != nil {
@@ -1244,7 +1279,10 @@ func TestAcceptanceBoundarySplitAndQuotaChange(t *testing.T) {
 	if !ledger[0].split || !ledger[0].estimated || !ledger[0].correction {
 		t.Fatalf("the closed cycle slice is not flagged boundary_split/estimated/correction: %+v", ledger[0])
 	}
-	if ledger[0].periodStart.Equal(boundary) || !ledger[1].periodStart.Equal(boundary) {
+	if ledger[0].bytes != 600 || ledger[1].bytes != 600 {
+		t.Fatalf("duration split must conserve each slice: %+v", ledger)
+	}
+	if !ledger[0].periodStart.Equal(boundary.AddDate(0, -1, 0)) || !ledger[1].periodStart.Equal(boundary) {
 		t.Fatalf("the slices are not booked into their own cycles: %+v", ledger)
 	}
 
