@@ -269,6 +269,17 @@ func (s *Store) UpdateTemplate(ctx context.Context, id string, expectedVersion i
 
 func (s *Store) DeleteTemplate(ctx context.Context, id string) error {
 	return s.inWritableTx(ctx, func(tx *sql.Tx) error {
+		if _, err := scanTemplate(tx.QueryRowContext(ctx, `SELECT `+templateCols+` FROM templates WHERE id=$1 FOR UPDATE`, id)); err != nil {
+			return err
+		}
+		var references int
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM subscriptions WHERE template_id=$1 AND NOT archived`, id).Scan(&references); err != nil {
+			return dbErr(err)
+		}
+		if references > 0 {
+			return domain.Conflict(domain.CodeConflict, "template is referenced by %d unarchived subscription(s)", references).
+				WithDetail("reason", "template_in_use").WithDetail("reference_count", references)
+		}
 		res, err := tx.ExecContext(ctx, `DELETE FROM templates WHERE id=$1`, id)
 		if err != nil {
 			return dbErr(err)
@@ -983,71 +994,64 @@ func (s *Store) syncSubscriptionCyclesTx(ctx context.Context, tx *sql.Tx, subID 
 	return nil
 }
 
-// DeleteSubscription archives a subscription; bound members must be migrated
-// first (enforced by the handler via BoundMembers).
-// DeleteSubscription physically removes a subscription.
-//
-// 这里以前是"软删"（只把 Archived 置 true），导致三个问题：
-//   - 界面按钮叫"删除"、确认框也写"将删除"，但数据其实还在；
-//   - 归档的订阅仍出现在"目标订阅"下拉里，可以被选为新绑定的目标；
-//   - 归档订阅仍占用节点组引用，使节点组永远删不掉，且没有任何入口能清理。
-//
-// 现在改成真删除。两个引用关系由数据库保证：
-//   - subscription_node_groups.subscription_id 是 ON DELETE CASCADE，
-//     删除订阅会自动解除与节点组的关联，节点组随后可删；
-//   - members.subscription_id 没有级联，所以仍有成员绑定时删不掉 ——
-//     这正是我们要的行为：先解绑成员，再删订阅。
-//
-// 已归档的订阅同样适用（归档只是一种标记，不影响能否删除）。
+// DeleteSubscription retires subscriptions with binding history, preserving
+// history, ledger and group links. Only never-archived, history-free rows are
+// physically deleted. All reference writers serialize on the control row.
 func (s *Store) DeleteSubscription(ctx context.Context, id string) (*domain.Subscription, error) {
-	// 先取出快照用于返回，并在同一事务里校验引用。
-	tx, err := s.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, dbErr(err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	if err := requireWritableTx(ctx, tx); err != nil {
-		return nil, err
-	}
-
-	cur, err := scanSubscription(tx.QueryRowContext(ctx,
-		`SELECT `+subscriptionCols+` FROM subscriptions WHERE id=$1`, id))
-	if err != nil {
-		if de, ok := err.(*domain.Error); ok && de.Code == domain.CodeNotFound {
-			return nil, domain.NotFound("subscription not found")
+	var out *domain.Subscription
+	err := s.inWritableTx(ctx, func(tx *sql.Tx) error {
+		cur, err := scanSubscription(tx.QueryRowContext(ctx,
+			`SELECT `+subscriptionCols+` FROM subscriptions WHERE id=$1 FOR UPDATE`, id))
+		if err != nil {
+			if de, ok := err.(*domain.Error); ok && de.Code == domain.CodeNotFound {
+				return domain.NotFound("subscription not found")
+			}
+			return err
 		}
-		return nil, err
-	}
-	groupIDs, err := s.subscriptionGroupIDs(ctx, tx, id)
+		groupIDs, err := s.subscriptionGroupIDs(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		cur.NodeGroupIDs = groupIDs
+
+		var bound int
+		if err := tx.QueryRowContext(ctx,
+			`SELECT count(*) FROM members WHERE subscription_id = $1 AND NOT archived`, id).Scan(&bound); err != nil {
+			return dbErr(err)
+		}
+		if bound > 0 {
+			return domain.Conflict(domain.CodeNodeInUse,
+				"subscription still has %d bound member(s)", bound)
+		}
+		out = cur
+		if cur.Archived {
+			return nil // Idempotent: do not advance version or updated_at.
+		}
+		var history int
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM member_bindings WHERE subscription_id=$1`, id).Scan(&history); err != nil {
+			return dbErr(err)
+		}
+		if history > 0 {
+			cur.Archived = true
+			cur.Version++
+			// PostgreSQL stores microseconds; return the exact persisted snapshot.
+			cur.UpdatedAt = s.now().Truncate(time.Microsecond)
+			_, err := tx.ExecContext(ctx, `UPDATE subscriptions SET archived=true,version=$2,updated_at=$3 WHERE id=$1`, id, cur.Version, cur.UpdatedAt)
+			return dbErr(err)
+		}
+		// Only physical deletion detaches archived members; retirement preserves facts.
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE members SET subscription_id = NULL WHERE subscription_id = $1 AND archived`, id); err != nil {
+			return dbErr(err)
+		}
+
+		_, err = tx.ExecContext(ctx, `DELETE FROM subscriptions WHERE id = $1`, id)
+		return dbErr(err)
+	})
 	if err != nil {
 		return nil, err
 	}
-	cur.NodeGroupIDs = groupIDs
-
-	var bound int
-	if err := tx.QueryRowContext(ctx,
-		`SELECT count(*) FROM members WHERE subscription_id = $1 AND NOT archived`, id).Scan(&bound); err != nil {
-		return nil, dbErr(err)
-	}
-	if bound > 0 {
-		return nil, domain.Conflict(domain.CodeNodeInUse,
-			"subscription still has %d bound member(s)", bound)
-	}
-	// 归档成员不该再持有订阅引用：它们已经失去访问权，只是为审计/账本保留记录。
-	// 这里先解除关联，否则外键会永久阻止删除订阅 —— 而成员删除本身也是归档，
-	// 两者叠加就形成"谁都无法清理"的死循环。
-	if _, err := tx.ExecContext(ctx,
-		`UPDATE members SET subscription_id = NULL WHERE subscription_id = $1 AND archived`, id); err != nil {
-		return nil, dbErr(err)
-	}
-
-	if _, err := tx.ExecContext(ctx, `DELETE FROM subscriptions WHERE id = $1`, id); err != nil {
-		return nil, dbErr(err)
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, dbErr(err)
-	}
-	return cur, nil
+	return out, nil
 }
 
 // ─── settings & control state ──────────────────────────────────────────────

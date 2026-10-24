@@ -315,23 +315,17 @@ func (s *Server) handlePatchSubscription(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleDeleteSubscription(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	sub, err := s.Store.GetSubscription(r.Context(), id)
-	if err != nil {
-		s.writeError(w, r, err)
-		return
-	}
-	if sub.BoundMembers > 0 {
-		s.writeError(w, r, domain.Conflict(domain.CodeNodeInUse,
-			"subscription still has %d bound member(s)", sub.BoundMembers))
-		return
-	}
 	v, err := s.Store.DeleteSubscription(r.Context(), id)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
 	}
 	s.audit(r, "subscription.archive", "subscription", id, nil)
-	s.writeData(w, http.StatusOK, v)
+	// retired is a DELETE result, not a persisted/GET subscription field.
+	s.writeData(w, http.StatusOK, struct {
+		*domain.Subscription
+		Retired bool `json:"retired"`
+	}{v, v.Archived})
 }
 
 func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {

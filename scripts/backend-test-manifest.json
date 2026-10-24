@@ -1,5 +1,14 @@
 [
   {
+    "id": "contract/delete",
+    "packages": ["./internal/panel/store", "./internal/panel/api"],
+    "run": "^TestDelete(Contract.*|Subscription.*)$",
+    "expected_tests": ["TestDeleteContractStoreHistory", "TestDeleteContractControlSerialization", "TestDeleteContractHTTP", "TestDeleteSubscriptionRemovesTheRow", "TestDeleteSubscriptionCascadesNodeGroupLinks", "TestDeleteSubscriptionRefusesWhenMembersBound", "TestDeleteSubscriptionRemovesArchivedOne", "TestDeleteSubscriptionDetachesArchivedMembers", "TestDeleteSubscriptionStillBlockedByActiveMember"],
+    "stories": ["US-PR-010", "US-PR-016"],
+    "requires": ["postgres"],
+    "timeout_seconds": 120
+  },
+  {
     "id": "maintenance/batch-retention",
     "packages": ["./internal/panel/maintenance"],
     "run": "^(TestMaintenanceIntegrationPass|TestMaintenanceIntegrationSingleExecutor)$",

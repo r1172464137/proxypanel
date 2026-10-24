@@ -166,6 +166,11 @@ export interface SubscriptionRecord {
   [key: string]: unknown
 }
 
+/** DELETE-only result; retired is not persisted or returned by GET. */
+export interface SubscriptionDeleteResult extends SubscriptionRecord {
+  retired: boolean
+}
+
 export interface SubscriptionWrite {
   name: string
   description?: string | null

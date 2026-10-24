@@ -38,6 +38,7 @@ import type {
   SessionPayload,
   SessionRecord,
   SubscriptionRecord,
+  SubscriptionDeleteResult,
   SubscriptionWrite,
   TaskRecord,
   TemplateRecord,
@@ -182,8 +183,8 @@ export const adminApi = {
     create: (body: SubscriptionWrite) => api.post<SubscriptionRecord>(`${ADMIN}/subscriptions`, body),
     update: (id: string, body: SubscriptionWrite & { version: number }) =>
       api.patch<SubscriptionRecord>(`${ADMIN}/subscriptions/${encodeURIComponent(id)}`, body),
-    remove: (id: string, version: number) =>
-      api.delete<SubscriptionRecord>(`${ADMIN}/subscriptions/${encodeURIComponent(id)}`, { version }),
+    remove: (id: string, version?: number) =>
+      api.delete<SubscriptionDeleteResult>(`${ADMIN}/subscriptions/${encodeURIComponent(id)}`, { version }),
   },
 
   members: {

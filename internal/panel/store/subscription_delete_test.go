@@ -2,15 +2,14 @@ package store
 
 // 订阅删除的语义回归。
 //
-// DeleteSubscription 以前是软删（只置 Archived=true），造成三个问题：
-//   - 界面按钮叫"删除"、确认框也写"将删除"，但数据还在；
-//   - 归档订阅仍出现在"目标订阅"下拉里，可被选为新绑定目标；
-//   - 归档订阅仍占用节点组引用，使节点组永远删不掉且无入口清理。
-//
-// 现在改为真删除，由数据库外键保证级联与拒绝语义。
+// Product-readiness §4.3 supersedes the earlier blanket physical-delete policy.
+// History-free unarchived subscriptions still physically delete and cascade;
+// archived subscriptions now return an idempotent snapshot even without history.
+// History/ledger conservation is asserted in delete_contract_test.go.
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -96,6 +95,8 @@ func TestDeleteSubscriptionRefusesWhenMembersBound(t *testing.T) {
 	}
 }
 
+// Historical test name retained for existing runner selections. Its old physical
+// deletion assertion is intentionally superseded by the §4.3 idempotent contract.
 func TestDeleteSubscriptionRemovesArchivedOne(t *testing.T) {
 	st := newRegStore(t)
 	ctx := context.Background()
@@ -108,16 +109,23 @@ func TestDeleteSubscriptionRemovesArchivedOne(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("archive: %v", err)
 	}
-	// 归档的订阅同样应能被真正删除，否则旧数据永远清不掉
-	if _, err := st.DeleteSubscription(ctx, sub.ID); err != nil {
-		t.Fatalf("归档订阅应可删除: %v", err)
+	before, err := st.GetSubscription(ctx, sub.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := st.DeleteSubscription(ctx, sub.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before, after) {
+		t.Fatalf("archived snapshot changed: %+v != %+v", before, after)
 	}
 	var n int
 	if err := st.DB.QueryRowContext(ctx, `SELECT count(*) FROM subscriptions WHERE id=$1`, sub.ID).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 0 {
-		t.Fatal("归档订阅删除后行仍在")
+	if n != 1 {
+		t.Fatal("archived DELETE must preserve the row")
 	}
 }
 

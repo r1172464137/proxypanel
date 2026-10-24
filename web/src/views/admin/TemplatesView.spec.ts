@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import type { TemplateRecord } from '@/api/types'
 import TemplatesView from './TemplatesView.vue'
+import { ApiError } from '@/api/http'
 
 const fixture = vi.hoisted(() => ({ items: [] as TemplateRecord[] }))
 
@@ -174,6 +175,22 @@ describe('TemplatesView', () => {
     expect(mocks.update).toHaveBeenCalledTimes(1)
     expect(mocks.update.mock.calls[0]![0]).toBe('tpl_01')
     expect(mocks.update.mock.calls[0]![1]).toMatchObject({ name: '改名后', version: 3 })
+    wrapper.unmount()
+  })
+
+  it('模板引用冲突明确提示，保留对话框且不刷新为成功', async () => {
+    fixture.items = [template]
+    mocks.remove.mockRejectedValueOnce(new ApiError(409, {
+      code: 'CONFLICT', message: 'template in use',
+      details: { reason: 'template_in_use', reference_count: 2 },
+    }))
+    const wrapper = mountView()
+    await flushPromises()
+    await click(wrapper.findAll('button').find((button) => button.text() === '删除')!.element)
+    await clickModalFooterButton('删除')
+    expect(document.body.textContent).toContain('模板仍被 2 个未归档方案引用，请先解除引用后再删除。')
+    expect(document.querySelector('.modal')).not.toBeNull()
+    expect(mocks.list).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
 

@@ -45,7 +45,7 @@ async function confirmDelete(): Promise<void> {
 }
 
 /* ---------- 行选择 ---------- */
-// 跨页选择保存记录本身：批量删除时要带上各自的 version 发起真实 DELETE。
+// 跨页选择保存记录本身；DELETE 不要求 version。
 const selected = reactive(new Map<string, SubscriptionRecord>())
 
 const selectedOnCurrentPage = computed(() => list.items.value.filter((sub) => selected.has(sub.id)))
@@ -95,6 +95,7 @@ const batch = reactive({
   current: 0,
   currentName: '',
   successes: [] as string[],
+  retired: 0,
   failures: [] as BatchFailure[],
 })
 
@@ -112,6 +113,7 @@ function openBatch(): void {
   batch.current = 0
   batch.currentName = ''
   batch.successes = []
+  batch.retired = 0
   batch.failures = []
   batch.open = true
 }
@@ -128,6 +130,7 @@ async function runBatch(): Promise<void> {
   batch.current = 0
   batch.currentName = ''
   batch.successes = []
+  batch.retired = 0
   batch.failures = []
 
   for (let index = 0; index < targets.length; index += 1) {
@@ -136,7 +139,8 @@ async function runBatch(): Promise<void> {
     batch.currentName = target.name
     await nextTick()
     try {
-      await adminApi.subscriptions.remove(target.id, target.version)
+      const result = await adminApi.subscriptions.remove(target.id, target.version)
+      if (result.retired) batch.retired += 1
       batch.successes.push(target.name)
       selected.delete(target.id)
     } catch (caught) {
@@ -153,7 +157,7 @@ async function runBatch(): Promise<void> {
       '失败项已保留选择，可按原因处理后重试。',
     )
   } else {
-    pushToast('success', '批量删除完成', `成功 ${batch.successes.length} 条，列表已刷新。`)
+    pushToast('success', '批量删除完成', `已退役 ${batch.retired} 条（历史保留），已删除 ${batch.successes.length - batch.retired} 条，列表已刷新。`)
   }
 }
 
@@ -309,7 +313,7 @@ const columns = [
         <template v-else>
           <Alert :variant="batch.failures.length ? 'destructive' : 'default'">
             <AlertDescription>
-              批量删除完成：成功 {{ batch.successes.length }} / 失败 {{ batch.failures.length }}
+              批量删除完成：成功 {{ batch.successes.length }} / 失败 {{ batch.failures.length }}；已退役 {{ batch.retired }} 条（历史保留），已删除 {{ batch.successes.length - batch.retired }} 条
               （共 {{ batch.total }} 条）。列表已刷新。
             </AlertDescription>
           </Alert>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { Loader2 } from 'lucide-vue-next'
-import { api } from '@/api/http'
+import { api, ApiError } from '@/api/http'
 import { adminApi } from '@/api/endpoints'
 import { TEMPLATE_FORMATS, type TemplateFormat, type TemplateRecord } from '@/api/types'
 import { usePagedList } from '@/lib/paged'
@@ -133,7 +133,9 @@ async function confirmDelete(): Promise<void> {
     pushToast('success', '模板已删除', '模板已删除。历史审计保留。')
     await list.refresh()
   } catch (caught) {
-    deleteError.value = errorText(caught)
+    deleteError.value = caught instanceof ApiError && caught.code === 'CONFLICT' && isRecord(caught.details) && caught.details.reason === 'template_in_use'
+      ? `模板仍被 ${caught.details.reference_count ?? ''} 个未归档方案引用，请先解除引用后再删除。`
+      : errorText(caught)
   } finally {
     deleting.value = false
   }
