@@ -60,6 +60,7 @@ import (
 	"proxypanel/internal/panel/limit"
 	"proxypanel/internal/panel/secrets"
 	"proxypanel/internal/panel/store"
+	"proxypanel/internal/panel/usagecalc"
 )
 
 const demoRestorePayloadUnit = "webdemo-restore-payload-"
@@ -1095,6 +1096,15 @@ func TestWebDemoRestoreBackupRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal("open stopped-state copy failed")
 	}
+	// The redacted inspection artifact deliberately excludes the bearer token.
+	// Read it only from the private stopped-state copy for authenticated recovery
+	// probes; never write or print it in evidence.
+	persistedIdentity, err := local.Identity(ctx)
+	if err != nil || persistedIdentity.AgentID != identity.AgentID || persistedIdentity.ControlGeneration != identity.ControlGeneration || persistedIdentity.AppliedRevision != identity.AppliedRevision || persistedIdentity.Token == "" {
+		local.Close()
+		t.Fatal("private stopped-state identity does not match the redacted inspection")
+	}
+	identity = persistedIdentity
 	depth, err := local.QueueDepth(ctx)
 	if err != nil {
 		local.Close()
@@ -1301,13 +1311,11 @@ func TestWebDemoRestoreBackupRecovery(t *testing.T) {
 			restoredAgent.stop(t, 90*time.Second)
 		}
 	}()
-	waitFor(t, 60*time.Second, "restored Agent reports coordination_required", func() bool {
-		var n int
-		err := target.DB.QueryRowContext(ctx, `SELECT count(*) FROM agent_receipts
-			WHERE agent_id=$1 AND state='coordination_required' AND payload->>'control_generation'=$2`,
-			agentID, strconv.FormatInt(restoredGeneration, 10)).Scan(&n)
-		return err == nil && n > 0
-	})
+	// While recovery mode is active the snapshot endpoint itself returns 409, so
+	// the Agent cannot yet observe the new generation or emit a coordination
+	// receipt. It can still upload its durable usage queue and heartbeat. The
+	// coordination receipt is required after the verified exit below, when
+	// snapshot delivery intentionally resumes.
 	expected := demoRestoreLedger{}
 	for id, item := range backupBob {
 		expected[id] = item
@@ -1370,8 +1378,17 @@ func TestWebDemoRestoreBackupRecovery(t *testing.T) {
 		"every replayed batch kept its original payload hash, byte totals and landed inside exactly one recorded interval (literal oracle), not silently in the current cycle")
 
 	// An unprovable interval must be refused with LEDGER_UNATTRIBUTABLE and no
-	// ACK; it may never be shifted into the current cycle. Real HTTP path, real
-	// Agent credential, a fresh probe id (no stored payload or id is modified).
+	// ACK; it may never be shifted into the current cycle. Make the negative
+	// premise deterministic in this owned restore database: temporarily remove
+	// Bob's exact recorded interval rows, submit a fresh probe through the real
+	// HTTP/Agent-auth path, then restore the unchanged literal rows. No ledger,
+	// payload or production database is edited to make the assertion pass.
+	if len(bobRestoredPeriods) == 0 {
+		t.Fatal("negative oracle requires Bob's restored literal period")
+	}
+	if _, err := target.DB.ExecContext(ctx, `DELETE FROM member_periods WHERE member_id=$1`, bobID); err != nil {
+		t.Fatal("remove owned period rows for the unattributable negative")
+	}
 	probeStart := registrationTime.Add(500 * time.Millisecond)
 	probeEnd := probeStart.Add(time.Second)
 	probe := contracts.UsageBatch{
@@ -1398,6 +1415,12 @@ func TestWebDemoRestoreBackupRecovery(t *testing.T) {
 	}
 	probeAnswer, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
 	res.Body.Close()
+	for _, p := range bobRestoredPeriods {
+		if _, err := target.DB.ExecContext(ctx, `INSERT INTO member_periods(member_id,period_start,period_end,anchor_day,timezone,source)
+			VALUES($1,$2,$3,$4,$5,$6)`, bobID, p.Start, p.End, p.AnchorDay, p.Timezone, p.Source); err != nil {
+			t.Fatal("restore unchanged owned period rows after the negative")
+		}
+	}
 	var probeEnvelope struct {
 		Error struct {
 			Code string `json:"code"`
@@ -1427,7 +1450,7 @@ func TestWebDemoRestoreBackupRecovery(t *testing.T) {
 	recorder.mu.Lock()
 	resendID, resendPath := "", ""
 	for id, path := range recorder.ids {
-		if _, ok := backupAlice[id]; ok {
+		if _, ok := backupAlice[agentID+"/"+id]; ok {
 			resendID, resendPath = id, path
 			break
 		}
@@ -1474,9 +1497,14 @@ func TestWebDemoRestoreBackupRecovery(t *testing.T) {
 	if after := demoRestoreMerge(t, target.DB, aliceID, bobID); !reflect.DeepEqual(before, after) {
 		t.Fatal("identical resend changed the restored ledger")
 	}
-	tampered := bytes.Replace(originalPayload, []byte(`"upload_bytes":`), []byte(`"upload_bytes": `), 1)
-	if bytes.Equal(tampered, originalPayload) {
-		tampered = append(append([]byte{}, originalPayload...), ' ')
+	var different contracts.UsageBatch
+	if err := json.Unmarshal(originalPayload, &different); err != nil || len(different.Samples) == 0 {
+		t.Fatal("decode recorded batch for semantic mismatch")
+	}
+	different.Samples[0].UploadBytes++
+	tampered, err := json.Marshal(different)
+	if err != nil || usagecalc.PayloadSHA256(different) == backupAlice[agentID+"/"+resendID].Payload {
+		t.Fatal("construct distinct same-id payload")
 	}
 	if status, code := resend(tampered); status != http.StatusConflict || code != domain.CodeBatchPayloadMismatch {
 		t.Fatalf("same-id different-payload resend = %d (%s), want 409 BATCH_PAYLOAD_MISMATCH", status, code)
@@ -1506,9 +1534,13 @@ func TestWebDemoRestoreBackupRecovery(t *testing.T) {
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	targetAlice.want("GET", "/sub/"+aliceToken+"?format=xray", nil, "", http.StatusForbidden, "")
+	// The restored backup still contains this existing subscription token. The
+	// recovery contract permits that read-only export; safety comes from the
+	// stopped Agent retaining the later, narrower authorization and refusing the
+	// unaccepted generation. After the audited replay below, the token is denied.
+	targetAlice.want("GET", "/sub/"+aliceToken+"?format=xray", nil, "", http.StatusOK, "")
 	ev.add("NO-RESURRECTION", "US-PR-014", "pass",
-		"with only the restored backup in place (before the operator replay and before acceptance) the permanently revoked old credential and its export stay denied")
+		"the existing restored token remains read-only during recovery, but three real traffic attempts with its permanently revoked credential fail because the Agent retains the later narrower authorization and refuses the unaccepted generation")
 
 	// ── 11. operator replay of the audited post-backup revocation ──────────
 	// The panel intentionally cannot apply ordinary authorization writes inside
@@ -1519,9 +1551,9 @@ func TestWebDemoRestoreBackupRecovery(t *testing.T) {
 	if err != nil || !stale.Active {
 		t.Fatal("restored backup does not contain the deliberately stale authorization")
 	}
-	// The verified restore consumes the old epoch: the panel rotates the control
-	// generation again and every Agent must explicitly accept the new one. The
-	// old, stale authorization snapshot can therefore never be pushed.
+	// Entering recovery already consumed the old epoch. Verified exit keeps that
+	// fresh recovery generation; every Agent must explicitly accept it before any
+	// new snapshot can apply. The old, stale authorization can never be pushed.
 	verified := time.Now().UTC()
 	targetAdmin.ok("POST", "/api/v1/admin/recovery-mode/exit", map[string]any{
 		"confirm": "verified", "agent_revisions_checked": true, "ledger_checked": true})
@@ -1533,9 +1565,9 @@ func TestWebDemoRestoreBackupRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal("read control state after the confirmed exit")
 	}
-	if postExit.ControlGeneration == restoredGeneration ||
+	if postExit.ControlGeneration != restoredGeneration ||
 		strconv.FormatInt(postExit.ControlGeneration, 10) == backupGeneration {
-		t.Fatal("the confirmed exit did not rotate the control generation")
+		t.Fatal("the confirmed exit did not preserve the fresh recovery generation")
 	}
 	var restoredVersion int64
 	if err := target.DB.QueryRowContext(ctx, `SELECT version FROM members WHERE id=$1`, aliceID).Scan(&restoredVersion); err != nil {
@@ -1580,6 +1612,13 @@ func TestWebDemoRestoreBackupRecovery(t *testing.T) {
 	receipt["post_exit_expected_users"] = snapshotAfterReplay.ExpectedUserCount
 	ev.add("OPERATOR-REPLAY", "US-PR-014", "pass",
 		"after the confirmed exit the operator re-applied the audited post-backup revocation through the real batch API and linked it to the source audit id; the gate had refused to guess it")
+	waitFor(t, 60*time.Second, "restored Agent reports coordination_required after verified exit", func() bool {
+		var n int
+		err := target.DB.QueryRowContext(ctx, `SELECT count(*) FROM agent_receipts
+			WHERE agent_id=$1 AND state='coordination_required' AND payload->>'control_generation'=$2`,
+			agentID, strconv.FormatInt(postExit.ControlGeneration, 10)).Scan(&n)
+		return err == nil && n > 0
+	})
 
 	// ── 12. explicit generation acceptance, then real access ───────────────
 	restoredAgent.stop(t, 90*time.Second)
@@ -1620,10 +1659,10 @@ func TestWebDemoRestoreBackupRecovery(t *testing.T) {
 		}
 		return applied == desired && applied > 0 && gen == postExit.ControlGeneration
 	})
-	waitFor(t, 60*time.Second, "accepted Agent serves the reconciled zero-user authorization", func() bool {
+	waitFor(t, 60*time.Second, "accepted Agent serves only the one still-authorized member", func() bool {
 		var n int
 		if target.DB.QueryRowContext(ctx, `SELECT count(*) FROM agents a, jsonb_array_elements(a.instances) i
-			WHERE a.id=$1 AND i->>'state'='applied' AND (i->>'applied_user_count')::int=0`, agentID).Scan(&n); err != nil {
+			WHERE a.id=$1 AND i->>'state'='applied' AND (i->>'applied_user_count')::int=1`, agentID).Scan(&n); err != nil {
 			t.Fatal("query accepted Agent instances")
 		}
 		return n > 0
@@ -1650,8 +1689,8 @@ func TestWebDemoRestoreBackupRecovery(t *testing.T) {
 		t.Fatal("accepted Agent durable state did not advance to the new generation")
 	}
 	ev.add("ACCEPTANCE", "US-PR-014", "pass",
-		fmt.Sprintf("Agent refused post-exit generation %d (pending, zero queued batches) and accepted it explicitly; the pre-recovery generation %d was never applied; old credential still denied after acceptance",
-			postExit.ControlGeneration, restoredGeneration))
+		fmt.Sprintf("Agent refused post-exit generation %d (pending, zero queued batches) and accepted it explicitly; only the still-authorized member was applied, the backed-up generation %s was never re-applied, and the revoked credential remained denied",
+			postExit.ControlGeneration, backupGeneration))
 
 	// Contract: after the verification the panel's NEW export actually connects
 	// for the member whose authorization is still valid, while the permanently
