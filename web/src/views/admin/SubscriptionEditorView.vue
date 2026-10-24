@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { adminApi } from '@/api/endpoints'
+import { ApiError } from '@/api/http'
 import { allPages } from '@/lib/allPages'
 import type { BatchOperation, NodeGroupRecord, SubscriptionRecord, TemplateRecord } from '@/api/types'
 import { buildSubscriptionWrite, draftFromSubscription, emptySubscriptionDraft, type SubscriptionDraft } from '@/lib/subscriptionDraft'
@@ -34,6 +35,7 @@ const loadError = ref<unknown>(null)
 const referenceError = ref<unknown>(null)
 const saving = ref(false)
 const saveError = ref('')
+const versionConflict = ref(false)
 
 const impact = reactive<{ open: boolean; operation: BatchOperation; values: Record<string, unknown> }>({
   open: false,
@@ -47,6 +49,8 @@ const zoneSuggestions = ['Asia/Shanghai', 'Asia/Tokyo', 'Asia/Singapore', 'Europ
 async function load(): Promise<void> {
   loading.value = true
   loadError.value = null
+  referenceError.value = null
+  versionConflict.value = false
   try {
     const [groupPage, templatePage] = await Promise.all([
       allPages(cursor => adminApi.nodeGroups.list({ limit: 200, cursor })).then(items => ({ items })),
@@ -80,6 +84,7 @@ function toggleGroup(id: string): void {
 }
 
 async function save(): Promise<void> {
+  if (loading.value || saving.value || loadError.value) return
   saveError.value = ''
   if (!build.value.payload) {
     saveError.value = build.value.errors.join('；')
@@ -89,6 +94,11 @@ async function save(): Promise<void> {
   try {
     if (isEdit.value && record.value) {
       const payload = { ...build.value.payload, version: record.value.version }
+      if ((record.value.bound_members ?? 0) > 0) {
+        impact.values = { id: record.value.id, version: record.value.version, patch: { ...build.value.payload } }
+        impact.open = true
+        return
+      }
       try {
         await adminApi.subscriptions.update(record.value.id, payload)
         pushToast('success', '订阅规则已保存', '规则已在面板生效；节点分发为异步，请在任务与同步结果中确认回执。')
@@ -108,6 +118,7 @@ async function save(): Promise<void> {
       await router.push('/admin/subscriptions')
     }
   } catch (caught) {
+    versionConflict.value = caught instanceof ApiError && caught.status === 409 && caught.code === 'CONFLICT'
     saveError.value = errorText(caught)
   } finally {
     saving.value = false
@@ -116,7 +127,7 @@ async function save(): Promise<void> {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-6" data-testid="subscription-form">
     <PageHeader
       :title="isEdit ? '编辑服务方案' : '新建服务方案'"
       description="配额、周期与访问开关分别生效：配额立即影响当前周期；anchor_day / timezone 仅对下一周期生效，当前周期与已用量保留。"
@@ -124,17 +135,18 @@ async function save(): Promise<void> {
       <Button as-child variant="outline">
         <router-link to="/admin/subscriptions">返回列表</router-link>
       </Button>
-      <Button :disabled="saving" @click="save">
+      <Button data-testid="subscription-impact-preview-button" :disabled="saving || loading || !!loadError" @click="save">
         <Loader2 v-if="saving" class="animate-spin" aria-hidden="true" />
         {{ saving ? '保存中…' : '保存服务方案' }}
       </Button>
     </PageHeader>
 
-    <section class="rounded border p-4 space-y-2" aria-label="成员将获得什么">
+    <section v-if="!loading && !loadError" class="rounded border p-4 space-y-2" aria-label="成员将获得什么">
       <h2 class="font-semibold">成员将获得什么</h2>
-      <p>节点组：{{ groups.filter(group => draft.node_group_ids.includes(group.id)).map(group => group.name).join('、') || '尚未选择，成员将没有可用节点' }}</p>
+      <p>节点组：{{ draft.node_group_ids.map(id => groups.find(group => group.id === id)?.name ?? `未读取名称（${id}）`).join('、') || '尚未选择，成员将没有可用节点' }}</p>
       <p>每人额度：{{ draft.unlimited ? '不限量' : `${draft.quota_gib} GiB` }} · 默认有效期：{{ draft.default_valid_days ? `${draft.default_valid_days} 天` : '未设置' }}</p>
-      <p>周期时区：{{ draft.timezone }} · 锚定日：{{ draft.anchor_day }}。修改周期规则仅在下一周期生效，当前周期和已用量保留。</p>
+      <p v-if="record">当前保存的周期规则：{{ record.timezone }} · 锚定日 {{ record.anchor_day }}（已绑定成员当前周期以其绑定记录为准）。</p>
+      <p>拟保存的周期时区：{{ draft.timezone }} · 锚定日：{{ draft.anchor_day }}。修改周期规则仅在下一周期生效，当前周期和已用量保留。</p>
       <p v-if="record?.pending_period_rule">已有下一周期规则待生效，请核对后再修改。<details><summary>查看待生效规则</summary><pre class="whitespace-pre-wrap break-all text-xs">{{ record.pending_period_rule }}</pre></details></p>
       <router-link class="underline" to="/admin/invitations">下一步：按方案邀请成员</router-link>
     </section>
@@ -143,7 +155,13 @@ async function save(): Promise<void> {
     <div v-else class="space-y-4">
       <Alert v-if="saveError" variant="destructive">
         <AlertTitle>保存失败</AlertTitle>
-        <AlertDescription class="break-all">{{ saveError }}</AlertDescription>
+        <AlertDescription class="break-all">
+          {{ saveError }}
+          <template v-if="versionConflict">
+            <p>他人已修改该方案；我的改动仍保留在下方。重新载入会替换草稿。</p>
+            <Button variant="outline" @click="load">重新载入最新版本（替换草稿）</Button>
+          </template>
+        </AlertDescription>
       </Alert>
       <ErrorState v-if="referenceError" :error="referenceError" @retry="load" />
       <Alert v-if="record">
@@ -200,6 +218,7 @@ async function save(): Promise<void> {
               >
                 <Checkbox
                   class="mt-0.5"
+                  :aria-label="`授权节点组 ${group.name}`"
                   :model-value="draft.node_group_ids.includes(group.id)"
                   @update:model-value="toggleGroup(group.id)"
                   @click.stop
@@ -341,7 +360,7 @@ async function save(): Promise<void> {
       :operation="impact.operation"
       :member-ids="[]"
       :values="impact.values"
-      title="订阅规则影响预览"
+      title="服务方案影响预览"
       description="该订阅已有绑定成员，规则变更需服务端预览影响范围后提交。预览包含每人前值/后值、超额与到期预测、受影响节点数。"
       @close="impact.open = false"
     />

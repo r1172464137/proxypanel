@@ -177,7 +177,7 @@ const columns = [
   <div class="space-y-6">
     <PageHeader title="服务方案" description="授权规则集合：节点组、每人配额、月周期与时区、默认有效期、访问开关。影响已有成员的修改需预览确认。">
       <Button as-child>
-        <router-link to="/admin/subscriptions/new">新建订阅</router-link>
+        <router-link to="/admin/subscriptions/new">新建服务方案</router-link>
       </Button>
     </PageHeader>
 
@@ -246,7 +246,7 @@ const columns = [
             <Button as-child size="sm" variant="outline">
               <router-link :to="`/admin/subscriptions/${item.id}`">编辑</router-link>
             </Button>
-            <Button size="sm" variant="destructive" @click="deleteTarget = item">删除</Button>
+            <Button size="sm" variant="destructive" :data-testid="`subscription-retire-button-${item.id}`" @click="deleteError = ''; deleteTarget = item">{{ item.bound_members ? '退役方案（先处理绑定）' : '退役 / 删除方案' }}</Button>
           </div>
         </template>
       </template>
@@ -259,8 +259,8 @@ const columns = [
 
     <ConfirmDialog
       :open="deleteTarget !== null"
-      title="退役服务方案"
-      confirm-label="退役方案"
+      title="退役 / 删除服务方案"
+      confirm-label="确认退役 / 删除方案"
       danger
       :pending="deleting"
       :error-text="deleteError"

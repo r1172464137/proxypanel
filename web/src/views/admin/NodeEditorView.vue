@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { adminApi } from '@/api/endpoints'
+import { ApiError } from '@/api/http'
 import { allPages } from '@/lib/allPages'
 import type { NodeRecord, ServerRecord } from '@/api/types'
 import { NODE_PROTOCOL_LABELS } from '@/api/types'
@@ -20,6 +21,7 @@ import {
   protocolKnownKeys,
   protocolView,
   removeSecurityBlock,
+  realityRotationError,
   streamKnownKeys,
   streamView,
   validateNodeDraft,
@@ -28,7 +30,7 @@ import {
   type ProtocolView,
   type StreamView,
 } from '@/lib/nodeDraft'
-import { unknownKeys, getPath, isRecord, type JsonObject } from '@/lib/json'
+import { unknownKeys, getPath, isRecord, setPath, type JsonObject } from '@/lib/json'
 import { errorText, fieldErrorsOf } from '@/lib/errors'
 import { formatDateTime } from '@/lib/format'
 import { NODE_TEMPLATES, TLS_PLACEHOLDER_DOMAIN, newRealityKeyPair, newShortId, type NodeTemplate } from '@/lib/nodeTemplates'
@@ -66,6 +68,8 @@ const saving = ref(false)
 const saveError = ref('')
 const saved = ref(false)
 const keyImpactConfirmed = ref(false)
+const rotateReality = ref(false)
+const versionConflict = ref(false)
 const jsonErrors = reactive({ stream: '', protocol: '', client: '' })
 const keepServerKey = ref(true)
 const tab = ref<'structured' | 'advanced'>('structured')
@@ -146,6 +150,10 @@ const backendErrorsById = computed<Record<string, string>>(() => {
 // REALITY 的密钥对需要 WebCrypto，异步生成；其他模板同步完成。
 // 生成一对 REALITY 密钥（私钥 + 公钥一起填），省掉用户去命令行跑 xray x25519。
 async function generateRealityKeys(): Promise<void> {
+  if (isEdit.value && !rotateReality.value) {
+    saveError.value = '请先勾选「更换 REALITY 密钥」'
+    return
+  }
   try {
     const pair = await newRealityKeyPair()
     streamState.realityPrivateKey = pair.privateKey
@@ -225,6 +233,10 @@ const preservedStream = computed(() => unknownKeys(draft.stream_settings, stream
 const preservedProtocol = computed(() => unknownKeys(draft.protocol_settings, [...protocolKnownKeys(draft.protocol), 'clients']))
 const preservedClient = computed(() => unknownKeys(draft.client_settings, clientKnownKeys()))
 const hasClientsInSettings = computed(() => 'clients' in draft.protocol_settings)
+const certificateCount = computed(() => {
+  const certificates = getPath(draft.stream_settings, 'tlsSettings.certificates')
+  return Array.isArray(certificates) ? certificates.length : 0
+})
 
 const previewDraft = computed<NodeDraft>(() => ({
   ...draft,
@@ -285,6 +297,9 @@ const showFallbacks = computed(() => draft.protocol === 'vless' || draft.protoco
 const security = computed(() => String(streamState.security || 'none'))
 
 function syncDraft(): void {
+  if (streamState.realityPublicKey && streamState.realityPublicKey !== streamView(draft.stream_settings).realityPublicKey) {
+    clientState.publicKey = streamState.realityPublicKey
+  }
   draft.stream_settings = applyStreamView(draft.stream_settings, streamState)
   draft.protocol_settings = applyProtocolView(draft.protocol_settings, draft.protocol, protocolState)
   draft.client_settings = applyClientView(draft.client_settings, clientState)
@@ -315,6 +330,9 @@ watch(
 )
 
 async function load(): Promise<void> {
+  versionConflict.value = false
+  rotateReality.value = false
+  keyImpactConfirmed.value = false
   loading.value = true
   loadError.value = null
   serversError.value = null
@@ -354,12 +372,22 @@ async function save(): Promise<void> {
     return
   }
   syncDraft()
-  const keyChanged = node.value && (JSON.stringify(draft.stream_settings.realitySettings) !== JSON.stringify(node.value.stream_settings.realitySettings) || (!keepServerKey.value && !!draft.server_key))
+  const privateKey = streamView(draft.stream_settings).realityPrivateKey.trim() || draft.server_key.trim()
+  const rotationError = realityRotationError(draft, node.value, rotateReality.value)
+  if (rotationError) {
+    saveError.value = rotationError
+    return
+  }
+  const keyChanged = node.value && (rotateReality.value || JSON.stringify(draft.stream_settings.realitySettings) !== JSON.stringify(node.value.stream_settings.realitySettings) || (!keepServerKey.value && !!draft.server_key))
   if (keyChanged && !keyImpactConfirmed.value) {
     saveError.value = '请先确认安全配置变更影响：旧客户端可能需要重新导入；共享此节点的连接可能短暂中断。'
     return
   }
-  const result = buildNodeWrite(draft, { omitServerKey: isEdit.value && keepServerKey.value })
+  // 私钥只写入服务端秘密字段；不将旧脱敏状态伪造成明文。
+  const writeDraft = privateKey && streamState.security === 'reality'
+    ? { ...draft, server_key: privateKey, stream_settings: setPath(draft.stream_settings, 'realitySettings.privateKey', undefined) }
+    : draft
+  const result = buildNodeWrite(writeDraft, { omitServerKey: isEdit.value && keepServerKey.value && !rotateReality.value })
   if (!result.payload || extraErrorItems.value.length) {
     saveError.value = [...result.errors, ...extraErrorItems.value.map((item) => item.message)].join('；')
     return
@@ -375,6 +403,7 @@ async function save(): Promise<void> {
     saved.value = true
     if (isEdit.value) await load()
   } catch (caught) {
+    versionConflict.value = caught instanceof ApiError && caught.status === 409 && (caught.code === 'CONFLICT' || !!fieldErrorsOf(caught).version)
     saveError.value = errorText(caught)
     // 后端会指出具体是哪个字段（details.field_errors），映射到对应输入框下方；
     // 映射不到的也会在顶部错误区按后端字段名列出。
@@ -419,14 +448,17 @@ const cipherValue = computed({
       <Button as-child variant="outline">
         <router-link to="/admin/nodes">返回列表</router-link>
       </Button>
-      <Button :disabled="saving || (saved && !isEdit)" @click="save">
+      <Button data-testid="node-save-button" :disabled="saving || loading || !!loadError || (saved && !isEdit)" @click="save">
         <Loader2 v-if="saving" class="animate-spin" aria-hidden="true" />
         {{ saving ? '保存中…' : '保存节点' }}
       </Button>
     </PageHeader>
 
-    <p v-if="saved" role="status" class="rounded border p-4">已保存，正在同步；真实连接尚未验证。<router-link class="underline" to="/admin/tasks">查看任务与异常</router-link> · <router-link class="underline" to="/admin/node-groups">下一步：组织节点组</router-link></p>
+    <p v-if="saved" data-testid="node-sync-panel" role="status" class="rounded border p-4">已保存，正在同步；真实连接尚未验证。<router-link class="underline" to="/admin/tasks">查看任务与异常</router-link> · <router-link class="underline" to="/admin/node-groups">下一步：组织节点组</router-link></p>
+    <label v-if="isEdit" class="flex items-center gap-2 text-sm"><input v-model="rotateReality" data-testid="node-reality-rotate-checkbox" type="checkbox" />更换 REALITY 密钥（必须填写新的配对私钥与公钥）</label>
+    <p v-if="node?.server_key_set" class="text-sm">服务端密钥已设置（不显示明文）；留空保持。只改名称时证书、传输参数与密钥保持不变。</p>
     <label v-if="isEdit" class="flex items-center gap-2 text-sm"><input v-model="keyImpactConfirmed" type="checkbox" />如更换密钥或安全配置，我已了解客户端须更新、共享节点连接可能中断的影响。</label>
+    <p v-if="certificateCount" class="text-sm">现有证书条目 {{ certificateCount }} 条；结构化编辑仅修改填写的字段，其余条目保留。</p>
     <LoadingBlock v-if="loading" label="正在读取节点" />
     <ErrorState v-else-if="loadError" :error="loadError" @retry="load" />
     <div v-else class="space-y-4">
@@ -434,6 +466,10 @@ const cipherValue = computed({
         <AlertTitle>保存失败</AlertTitle>
         <AlertDescription>
           <p class="whitespace-pre-wrap break-all">{{ saveError }}</p>
+          <div v-if="versionConflict" class="space-y-2">
+            <p>他人已修改该节点；我的草稿仍保留在下方，可先检查或复制原生 JSON，再重新载入（将替换草稿）。</p>
+            <Button variant="outline" :disabled="saving" @click="load">重新载入最新版本（替换草稿）</Button>
+          </div>
           <!-- 后端字段级错误：能映射到输入框的已在下面就地标注，映射不到的（或
                表单当前没展示的字段）在这里按后端字段名全部列出，不丢信息。 -->
           <div v-if="backendFieldErrorItems.length" class="mt-2 space-y-1">
@@ -627,7 +663,7 @@ const cipherValue = computed({
       <div class="flex flex-wrap items-center gap-3">
         <Tabs
           :model-value="tab"
-          @update:model-value="(value) => (tab = value === 'advanced' ? 'advanced' : 'structured')"
+          @update:model-value="(value) => { syncDraft(); tab = value === 'advanced' ? 'advanced' : 'structured' }"
         >
           <TabsList>
             <TabsTrigger value="structured">结构化参数</TabsTrigger>
@@ -886,6 +922,8 @@ const cipherValue = computed({
                       <Input
                         id="reality-private-key"
                         v-model="streamState.realityPrivateKey"
+                        :disabled="isEdit && !rotateReality"
+                        placeholder="留空保持已设置的私钥"
                         class="font-mono"
                         type="password"
                         autocomplete="off"
@@ -894,7 +932,7 @@ const cipherValue = computed({
                       />
                       <p v-if="errorFor('reality-private-key')" class="text-xs text-destructive">{{ errorFor('reality-private-key') }}</p>
                     </div>
-                    <Button type="button" variant="outline" size="sm" @click="generateRealityKeys">生成一对</Button>
+                    <Button type="button" variant="outline" size="sm" :disabled="isEdit && !rotateReality" @click="generateRealityKeys">生成一对</Button>
                   </div>
                   <p class="text-xs text-muted-foreground">
                     只有面板和节点自己知道，成员看不到。点「生成一对」会自动填好私钥和公钥。
@@ -945,7 +983,7 @@ const cipherValue = computed({
             </div>
 
             <p v-if="preservedStream.length" class="rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
-              以下 stream_settings 键不在结构化表单中，将原样保留：<span class="font-mono">{{ preservedStream.join(', ') }}</span>
+              未识别的 stream_settings 键共 {{ preservedStream.length }} 处，将原样保留：<span class="font-mono">{{ preservedStream.join(', ') }}</span>
             </p>
           </CardContent>
         </Card>

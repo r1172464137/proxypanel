@@ -22,6 +22,18 @@ function sub(overrides: Partial<SubscriptionRecord> = {}): SubscriptionRecord {
 }
 
 describe('订阅表单', () => {
+  it('新建不默认授权节点组；pending规则只读，不混入当前规则或写请求', () => {
+    expect(emptySubscriptionDraft().node_group_ids).toEqual([])
+    const record = sub({ pending_period_rule: { timezone: 'UTC', anchor_day: 20 } })
+    const draft = draftFromSubscription(record)
+    expect(draft.timezone).toBe('Asia/Shanghai')
+    expect(draft.anchor_day).toBe('1')
+    const built = buildSubscriptionWrite(draft)
+    expect(built.payload?.timezone).toBe('Asia/Shanghai')
+    expect(built.payload?.anchor_day).toBe(1)
+    expect(built.payload).not.toHaveProperty('pending_period_rule')
+    expect(record.pending_period_rule).toEqual({ timezone: 'UTC', anchor_day: 20 })
+  })
   it('不限量映射为 quota_bytes=null', () => {
     const draft = emptySubscriptionDraft()
     draft.name = 'A'

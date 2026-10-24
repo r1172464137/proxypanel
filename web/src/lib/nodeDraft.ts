@@ -36,6 +36,8 @@ export interface NodeDraft {
   flow: string
   cipher: string
   server_key: string
+  /** 只读的脱敏密钥状态，不进入写请求。 */
+  server_key_set?: boolean
   sort_order: string
   stream_settings: JsonObject
   protocol_settings: JsonObject
@@ -80,6 +82,7 @@ export function draftFromNode(node: NodeRecord): NodeDraft {
     cipher: node.cipher ?? '',
     // 服务端不返回明文 server_key（只返回 server_key_set）；默认保持现有密钥。
     server_key: '',
+    server_key_set: node.server_key_set === true,
     sort_order: String(node.sort_order ?? 0),
     stream_settings: cloneJson(node.stream_settings ?? {}),
     protocol_settings: cloneJson(node.protocol_settings ?? {}),
@@ -153,13 +156,19 @@ export function streamView(stream: JsonObject): StreamView {
  * 切换 security 不删除另一分支的配置块；需要清理时由 UI 显式调用 removeSecurityBlock。
  */
 export function applyStreamView(stream: JsonObject, view: StreamView): JsonObject {
+  const before = streamView(stream)
+  if (JSON.stringify(before) === JSON.stringify(view)) return cloneJson(stream)
   let next = cloneJson(stream)
-  next = setOrDelete(next, 'network', view.network)
-  next = setOrDelete(next, 'security', view.security === 'none' ? undefined : view.security)
+  const update = (field: keyof StreamView, path: string, value: unknown) => {
+    if (view[field] !== before[field]) next = setOrDelete(next, path, value)
+  }
+  update('network', 'network', view.network)
+  update('security', 'security', view.security)
 
   if (view.security === 'tls') {
-    next = setOrDelete(next, 'tlsSettings.serverName', view.tlsServerName)
-    next = setOrDelete(next, 'tlsSettings.alpn', view.tlsAlpn ? splitList(view.tlsAlpn) : undefined)
+    update('tlsServerName', 'tlsSettings.serverName', view.tlsServerName)
+    update('tlsAlpn', 'tlsSettings.alpn', view.tlsAlpn ? splitList(view.tlsAlpn) : undefined)
+    if (view.tlsCertFile === before.tlsCertFile && view.tlsKeyFile === before.tlsKeyFile) return next
     const existing = getPath(next, 'tlsSettings.certificates')
     const template = Array.isArray(existing) && isRecord(existing[0]) ? (existing[0] as JsonObject) : {}
     const cert: JsonObject = { ...template }
@@ -172,13 +181,13 @@ export function applyStreamView(stream: JsonObject, view: StreamView): JsonObjec
     else next = setPath(next, 'tlsSettings.certificates', remaining.length ? remaining : undefined)
   }
   if (view.security === 'reality') {
-    next = setOrDelete(next, 'realitySettings.dest', view.realityDest)
-    next = setOrDelete(next, 'realitySettings.serverNames', view.realityServerNames ? splitList(view.realityServerNames) : undefined)
-    next = setOrDelete(next, 'realitySettings.privateKey', view.realityPrivateKey)
-    next = setOrDelete(next, 'realitySettings.shortIds', splitShortIds(view.realityShortIds))
-    next = setOrDelete(next, 'realitySettings.settings.publicKey', view.realityPublicKey)
-    next = setOrDelete(next, 'realitySettings.settings.fingerprint', view.realityFingerprint)
-    next = setOrDelete(next, 'realitySettings.settings.spiderX', view.realitySpiderX)
+    update('realityDest', 'realitySettings.dest', view.realityDest)
+    update('realityServerNames', 'realitySettings.serverNames', view.realityServerNames ? splitList(view.realityServerNames) : undefined)
+    update('realityPrivateKey', 'realitySettings.privateKey', view.realityPrivateKey)
+    update('realityShortIds', 'realitySettings.shortIds', splitShortIds(view.realityShortIds))
+    update('realityPublicKey', 'realitySettings.settings.publicKey', view.realityPublicKey)
+    update('realityFingerprint', 'realitySettings.settings.fingerprint', view.realityFingerprint)
+    update('realitySpiderX', 'realitySettings.settings.spiderX', view.realitySpiderX)
   }
   return next
 }
@@ -215,6 +224,7 @@ export function applyProtocolView(
   protocol: NodeProtocol,
   view: ProtocolView,
 ): JsonObject {
+  if (JSON.stringify(protocolView(settings, protocol)) === JSON.stringify(view)) return cloneJson(settings)
   let next = cloneJson(settings)
   if (protocol === 'vless') {
     next = setOrDelete(next, 'decryption', view.decryption)
@@ -249,23 +259,31 @@ export interface ClientView {
 
 export function clientView(settings: JsonObject): ClientView {
   return {
-    serverName: String(settings.serverName ?? settings.sni ?? ''),
-    publicKey: String(settings.publicKey ?? ''),
-    shortId: String(settings.shortId ?? ''),
+    serverName: String(settings.server_name ?? settings.serverName ?? settings.sni ?? ''),
+    publicKey: String(settings.public_key ?? settings.publicKey ?? ''),
+    shortId: String(settings.short_id ?? settings.shortId ?? ''),
     fingerprint: String(settings.fingerprint ?? ''),
     alpn: joinList(settings.alpn),
-    allowInsecure: typeof settings.allowInsecure === 'boolean' ? String(settings.allowInsecure) : '',
+    allowInsecure: typeof (settings.allow_insecure ?? settings.allowInsecure) === 'boolean' ? String(settings.allow_insecure ?? settings.allowInsecure) : '',
   }
 }
 
 export function applyClientView(settings: JsonObject, view: ClientView): JsonObject {
+  const before = clientView(settings)
   let next = cloneJson(settings)
-  next = setOrDelete(next, 'serverName', view.serverName)
-  next = setOrDelete(next, 'publicKey', view.publicKey)
-  next = setOrDelete(next, 'shortId', view.shortId)
-  next = setOrDelete(next, 'fingerprint', view.fingerprint)
-  next = setOrDelete(next, 'alpn', view.alpn ? splitList(view.alpn) : undefined)
-  next = setOrDelete(next, 'allowInsecure', view.allowInsecure === '' ? undefined : view.allowInsecure === 'true')
+  const update = (field: keyof ClientView, keys: string[], value: unknown) => {
+    if (view[field] === before[field]) return
+    const key = keys.find(key => key in settings) ?? keys[keys.length - 1]!
+    next = setOrDelete(next, key, value)
+    // 删除冲突别名，否则后端可能优先读取旧值。
+    for (const alias of keys) if (alias !== key) next = setPath(next, alias, undefined)
+  }
+  update('serverName', ['server_name', 'sni', 'serverName'], view.serverName)
+  update('publicKey', ['public_key', 'publicKey'], view.publicKey)
+  update('shortId', ['short_id', 'shortId'], view.shortId)
+  update('fingerprint', ['fingerprint'], view.fingerprint)
+  update('alpn', ['alpn'], view.alpn ? splitList(view.alpn) : undefined)
+  update('allowInsecure', ['allow_insecure', 'allowInsecure'], view.allowInsecure === '' ? undefined : view.allowInsecure === 'true')
   return next
 }
 
@@ -354,9 +372,12 @@ export function validateNodeDraft(draft: NodeDraft): NodeValidation {
     const view = streamView(draft.stream_settings)
     if (!view.realityDest.trim()) err('reality-dest', 'REALITY 需要一个伪装目标，例如 www.microsoft.com:443')
     if (!view.realityServerNames.trim()) err('reality-server-names', 'REALITY 需要至少一个允许的域名')
-    if (!view.realityPrivateKey.trim()) err('reality-private-key', 'REALITY 需要私钥，可点「生成一对」自动生成')
+    if (!view.realityPrivateKey.trim() && !draft.server_key.trim() && !draft.server_key_set) err('reality-private-key', 'REALITY 需要私钥，可点「生成一对」自动生成')
+    if ((view.realityPrivateKey.trim() || draft.server_key.trim()) && !String(draft.client_settings.public_key ?? draft.client_settings.publicKey ?? view.realityPublicKey).trim()) {
+      err('reality-public-key', '更换 REALITY 密钥时私钥与公钥必须成对填写')
+    }
     if (!view.realityShortIds.trim()) warn('reality-short-ids', '没填短 ID；客户端可能连不上，可以点「生成」')
-    if (!view.realityPublicKey.trim()) warn('client-public-key', '客户端公钥为空，成员配置会不可用')
+    if (!clientView(draft.client_settings).publicKey.trim() && !view.realityPublicKey.trim()) warn('client-public-key', '客户端公钥为空，成员配置会不可用')
   }
   if (security === 'tls') {
     const view = streamView(draft.stream_settings)
@@ -446,6 +467,17 @@ export function buildNodeWrite(draft: NodeDraft, options: { omitServerKey?: bool
   }
   if (!options.omitServerKey) payload.server_key = draft.server_key.trim()
   return { payload, errors: [], warnings }
+}
+
+/** 换钥必须由显式授权触发；set 标志不是私钥，旧公钥不算新配对输入。 */
+export function realityRotationError(draft: NodeDraft, original: NodeRecord | null, rotate: boolean): string {
+  if (!original || streamView(draft.stream_settings).security !== 'reality') return ''
+  const privateKey = streamView(draft.stream_settings).realityPrivateKey.trim() || draft.server_key.trim()
+  const publicKey = clientView(draft.client_settings).publicKey.trim() || streamView(draft.stream_settings).realityPublicKey.trim()
+  const previousPublic = clientView(original.client_settings).publicKey
+  if (!rotate && (privateKey || publicKey !== previousPublic)) return '更换 REALITY 私钥或公钥前必须显式勾选「更换 REALITY 密钥」'
+  if (rotate && (!privateKey || !publicKey || publicKey === previousPublic)) return '更换 REALITY 密钥必须填写一对新的私钥与公钥（可点「生成一对」）'
+  return ''
 }
 
 /** 编辑页摘要：协议 / 传输 / 安全，列表页复用。 */

@@ -10,6 +10,7 @@ import {
   emptyNodeDraft,
   protocolView,
   removeSecurityBlock,
+  realityRotationError,
   streamView,
   validateNodeDraft,
   type NodeDraft,
@@ -106,6 +107,69 @@ describe('nodeDraft 结构化视图', () => {
     })
     expect(next.shortId).toBe('ff00')
     expect(next.mux).toEqual({ enabled: true })
+  })
+})
+
+describe('无损与脱敏反例', () => {
+  it('只改名经结构化往返，多证书、空列表、未知嵌套和传输参数深等', () => {
+    const record = vlessNode()
+    const stream = {
+      network: 'xhttp', security: 'tls',
+      xhttpSettings: { path: '/edge', mode: 'auto', extra: { xPaddingBytes: '100-1000' } },
+      sockopt: { tcpKeepAliveIdle: 60 },
+      tlsSettings: { alpn: [], certificates: [
+        { certificate: ['PEM-A'], key: ['KEY-A'], usage: 'encipherment', future: { retain: true } },
+        { certificateFile: '/b.pem', keyFile: '/b.key', oneTimeLoading: true },
+      ], rejectUnknownSni: true },
+    }
+    const client = { server_name: 'edge.example', alpn: [], allow_insecure: false, future: { nested: [1, 2] } }
+    record.stream_settings = stream
+    record.client_settings = client
+    record.protocol_settings = { decryption: 'none', fallbacks: [], future: { retain: true } }
+    const draft = draftFromNode(record)
+    draft.name = 'renamed only'
+    draft.stream_settings = applyStreamView(draft.stream_settings, streamView(draft.stream_settings))
+    draft.protocol_settings = applyProtocolView(draft.protocol_settings, draft.protocol, protocolView(draft.protocol_settings, draft.protocol))
+    draft.client_settings = applyClientView(draft.client_settings, clientView(draft.client_settings))
+    const result = buildNodeWrite(draft, { omitServerKey: true })
+    expect(result.errors).toEqual([])
+    expect(result.payload?.stream_settings).toEqual(stream)
+    expect(result.payload?.protocol_settings).toEqual({ decryption: 'none', fallbacks: [], future: { retain: true } })
+    expect(result.payload?.client_settings).toEqual(client)
+    expect(result.payload).not.toHaveProperty('server_key')
+  })
+
+  it('改TLS域名不改证书，security=none与空shortId保持原生形状', () => {
+    const tls = { network: 'tcp', security: 'tls', tlsSettings: { serverName: 'old', alpn: [], certificates: [{ certificate: ['A'], key: ['B'] }, { certificateFile: '/b' }] } }
+    expect(applyStreamView(tls, { ...streamView(tls), tlsServerName: 'new' })).toEqual({ ...tls, tlsSettings: { ...tls.tlsSettings, serverName: 'new' } })
+    const none = { network: 'ws', security: 'none', wsSettings: { path: '/x', headers: { Host: 'example' } } }
+    expect(applyStreamView(none, streamView(none))).toEqual(none)
+    const reality = { network: 'tcp', security: 'reality', realitySettings: { target: 'example:443', shortIds: [''], serverNames: ['example'] } }
+    expect(applyStreamView(reality, streamView(reality))).toEqual(reality)
+  })
+
+  it('canonical客户端键可读可改，不制造优先级冲突，其他字段不动', () => {
+    const original = { server_name: 'old', public_key: 'public', short_id: '', allow_insecure: false, alpn: [] }
+    expect(clientView(original).publicKey).toBe('public')
+    expect(applyClientView(original, { ...clientView(original), serverName: 'new' })).toEqual({ ...original, server_name: 'new' })
+  })
+
+  it('脱敏REALITY密钥留空保持；换钥需显式授权和新的私公钥输入', () => {
+    const record = vlessNode()
+    record.server_key_set = true
+    record.stream_settings = setPath(record.stream_settings, 'realitySettings.privateKey', undefined)
+    const draft = draftFromNode(record)
+    expect(draft.server_key).toBe('')
+    expect(validateNodeDraft(draft).errors).toEqual([])
+    expect(realityRotationError(draft, record, false)).toBe('')
+    expect(realityRotationError(draft, record, true)).toContain('一对新的')
+    draft.server_key = 'new-private-fixture'
+    expect(realityRotationError(draft, record, false)).toContain('显式勾选')
+    expect(realityRotationError(draft, record, true)).toContain('一对新的')
+    draft.client_settings.publicKey = 'new-public-fixture'
+    expect(realityRotationError(draft, record, true)).toBe('')
+    draft.server_key = ''
+    expect(realityRotationError(draft, record, true)).toContain('一对新的')
   })
 })
 

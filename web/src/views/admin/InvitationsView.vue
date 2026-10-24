@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { Loader2 } from 'lucide-vue-next'
 import { adminApi } from '@/api/endpoints'
 import { allPages } from '@/lib/allPages'
@@ -25,6 +25,8 @@ const referenceError = ref('')
 const createOpen = ref(false)
 const form = reactive({ subscription_id: '', expires_at_local: '' })
 const created = ref<InvitationCreated | null>(null)
+const createdPlan = ref('')
+const invitationLink = computed(() => created.value ? `${window.location.origin}/redeem?code=${encodeURIComponent(created.value.code)}` : '')
 const creating = ref(false)
 const createError = ref('')
 
@@ -37,7 +39,7 @@ onMounted(async () => {
   try {
     // 只列可绑定的订阅：已归档的订阅不能再作为新邀请的预绑定目标。
     subscriptions.value = (await allPages(cursor => adminApi.subscriptions.list({ limit: 200, cursor })))
-      .filter((item) => !item.archived)
+      .filter((item) => !item.archived && item.allow_new_bindings !== false)
   } catch (caught) {
     referenceError.value = errorText(caught)
   }
@@ -51,15 +53,28 @@ function openCreate(): void {
   createOpen.value = true
 }
 
+function closeCreate(): void {
+  if (creating.value) return
+  createOpen.value = false
+  created.value = null
+  createdPlan.value = ''
+}
+
 async function create(): Promise<void> {
+  if (creating.value || created.value) return
   if (referenceError.value) { createError.value = '请先恢复服务方案列表读取，再创建邀请'; return }
   creating.value = true
   createError.value = ''
   try {
-    created.value = await adminApi.invitations.create({
+    const body = {
       subscription_id: form.subscription_id || null,
       expires_at: fromLocalInput(form.expires_at_local),
-    })
+      max_uses: 1,
+    }
+    created.value = await adminApi.invitations.create(body)
+    createdPlan.value = form.subscription_id
+      ? `已分配服务方案 ${subscriptions.value.find(sub => sub.id === form.subscription_id)?.name ?? form.subscription_id}`
+      : '未分配方案（加入后待开通，请联系为你开通服务的管理员）'
     pushToast('success', '邀请已创建', '邀请码只展示一次；列表接口不会泄露 code。')
     await list.refresh()
   } catch (caught) {
@@ -132,7 +147,7 @@ const columns = [
         </template>
         <template v-else-if="columnIndex === 2">
           {{ item.used_count ?? 0 }} / {{ item.max_uses ?? 1 }}
-          <span class="mt-0.5 block font-mono text-xs text-muted-foreground">{{ item.subscription_id ?? '未绑定' }}</span>
+          <span class="mt-0.5 block font-mono text-xs text-muted-foreground">{{ item.subscription_id ?? '未分配方案（加入后待开通）' }}</span>
         </template>
         <template v-else-if="columnIndex === 3">{{ formatDateTime(item.expires_at) }}</template>
         <template v-else-if="columnIndex === 4">{{ formatDateTime(item.created_at) }}</template>
@@ -152,19 +167,19 @@ const columns = [
       </template>
     </DataTable>
 
-    <AppModal :open="createOpen" title="生成邀请码" size="sm" @close="createOpen = false">
+    <AppModal :open="createOpen" title="生成邀请码" size="sm" @close="closeCreate">
       <div class="space-y-4">
         <div class="space-y-1.5">
           <p v-if="referenceError" role="alert">无法读取服务方案：{{ referenceError }}。请刷新后再创建邀请。</p>
           <Label for="invite-sub">加入时分配的服务方案</Label>
-          <select id="invite-sub" v-model="form.subscription_id" :class="selectClass">
+          <select id="invite-sub" v-model="form.subscription_id" data-testid="invitation-plan-select" :disabled="creating || !!created" :class="selectClass">
             <option value="">仅建账号，加入后待开通</option>
             <option v-for="sub in subscriptions" :key="sub.id" :value="sub.id">{{ sub.name }}</option>
           </select>
         </div>
         <div class="space-y-1.5">
           <Label for="invite-expiry">过期时间</Label>
-          <Input id="invite-expiry" v-model="form.expires_at_local" type="datetime-local" />
+          <Input id="invite-expiry" v-model="form.expires_at_local" :disabled="creating || !!created" type="datetime-local" />
           <p class="text-xs text-muted-foreground">留空表示由服务端默认策略决定</p>
         </div>
         <Alert v-if="createError" variant="destructive" role="alert">
@@ -174,15 +189,17 @@ const columns = [
           <div class="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-200">
             邀请码只展示一次，关闭后列表不会再次显示 code。
           </div>
-          <CopyField :value="created.code" label="邀请码" warning="邀请码等同于一次注册权限，仅交付给受邀者。" />
+          <p role="status">{{ createdPlan }} · 可使用 1 次</p>
+          <CopyField :value="invitationLink" label="邀请注册链接" warning="仅显示一次，请现在保存。" />
+          <CopyField data-testid="invitation-code-value" :value="created.code" label="邀请码" warning="邀请码等同于一次注册权限，仅交付给受邀者。" />
           <p class="text-xs text-muted-foreground">过期时间：{{ formatDateTime(created.expires_at) }}</p>
         </template>
       </div>
       <template #footer>
-        <Button variant="outline" :disabled="creating" @click="createOpen = false">关闭</Button>
-        <Button :disabled="creating" @click="create">
+        <Button variant="outline" :disabled="creating" @click="closeCreate">关闭</Button>
+        <Button v-if="!created" :disabled="creating" @click="create">
           <Loader2 v-if="creating" class="animate-spin" aria-hidden="true" />
-          {{ created ? '再生成一个' : '生成' }}
+          生成一次性邀请
         </Button>
       </template>
     </AppModal>
