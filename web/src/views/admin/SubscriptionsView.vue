@@ -197,6 +197,7 @@ const columns = [
       <Button v-if="selected.size" variant="ghost" @click="selected.clear()">清空选择</Button>
     </div>
 
+    <p class="text-sm"><router-link class="underline" to="/admin/invitations">下一步：选择服务方案并邀请成员</router-link> · <router-link class="underline" to="/admin/members">直接开通成员</router-link></p>
     <DataTable
       :list="list"
       :columns="columns"

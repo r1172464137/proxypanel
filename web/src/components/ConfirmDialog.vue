@@ -18,6 +18,7 @@ withDefaults(
     confirmLabel?: string
     danger?: boolean
     pending?: boolean
+    confirmDisabled?: boolean
     errorText?: string
   }>(),
   { confirmLabel: '确认', danger: false, pending: false, errorText: '' },
@@ -45,14 +46,14 @@ function onOpenChange(open: boolean): void {
         <Alert v-if="errorText" variant="destructive">
           <AlertDescription class="break-all">{{ errorText }}</AlertDescription>
         </Alert>
-        <p class="text-xs text-muted-foreground">危险操作会写入审计记录；确认后立即生效。</p>
+        <p class="text-xs text-muted-foreground">请核对操作对象与影响。涉及节点的变更需要等待同步结果，提交成功不代表真实连接已改变。</p>
       </AlertDialogDescription>
 
       <AlertDialogFooter class="modal__footer gap-2">
         <Button variant="outline" :disabled="pending" @click="emit('cancel')">取消</Button>
         <Button
           :variant="danger ? 'destructive' : 'default'"
-          :disabled="pending"
+          :disabled="pending || confirmDisabled"
           @click="emit('confirm')"
         >
           <Loader2 v-if="pending" class="animate-spin" aria-hidden="true" />

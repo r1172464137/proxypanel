@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { adminApi } from '@/api/endpoints'
-import type { MemberRecord, NicCounter, NodeRecord, UsageItem } from '@/api/types'
+import { allPages } from '@/lib/allPages'
+import type { MemberRecord, NodeRecord, UsageItem } from '@/api/types'
 import { formatBytes, formatDateTime, fromLocalInput, prettyJson, utcLabel } from '@/lib/format'
 import PageHeader from '@/components/PageHeader.vue'
 import ErrorState from '@/components/ErrorState.vue'
@@ -9,7 +10,7 @@ import LoadingBlock from '@/components/LoadingBlock.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -30,7 +31,8 @@ import {
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 
 const items = ref<UsageItem[]>([])
-const nicCounters = ref<NicCounter[]>([])
+const referenceError = ref<unknown>(null)
+let loadedQuery = ''
 const nextCursor = ref<string | null>(null)
 const loading = ref(false)
 const error = ref<unknown>(null)
@@ -58,14 +60,13 @@ const nodeFilter = computed({
 onMounted(async () => {
   try {
     const [memberPage, nodePage] = await Promise.all([
-      adminApi.members.list({ limit: 200 }),
-      adminApi.nodes.list({ limit: 200 }),
+      allPages(cursor => adminApi.members.list({ limit: 200, cursor })).then(items => ({ items })),
+      allPages(cursor => adminApi.nodes.list({ limit: 200, cursor })).then(items => ({ items })),
     ])
     members.value = memberPage.items
     nodes.value = nodePage.items
-  } catch {
-    members.value = []
-    nodes.value = []
+  } catch (caught) {
+    referenceError.value = caught
   }
   await query()
 })
@@ -83,6 +84,8 @@ function requestParams() {
 }
 
 async function query(append = false): Promise<void> {
+  const scope = JSON.stringify(requestParams())
+  if (append && scope !== loadedQuery) { error.value = new Error('查询条件已变化，请先重新查询，再加载更多。'); return }
   loading.value = true
   error.value = null
   try {
@@ -92,13 +95,12 @@ async function query(append = false): Promise<void> {
       cursor: append ? nextCursor.value : null,
     })
     items.value = append ? [...items.value, ...result.items] : result.items
-    nicCounters.value = result.nic_counters
+    loadedQuery = scope
     nextCursor.value = result.next_cursor
   } catch (caught) {
     error.value = caught
     if (!append) {
       items.value = []
-      nicCounters.value = []
       nextCursor.value = null
     }
   } finally {
@@ -122,8 +124,8 @@ function exportCsv(): void {
     memberNames.value.get(String(item.member_id)) ?? '',
     item.node_id ?? '',
     nodeNames.value.get(String(item.node_id)) ?? '',
-    item.period?.start ?? '',
-    item.period?.end ?? '',
+    item.period_start ?? item.period?.start ?? '',
+    item.period_end ?? item.period?.end ?? '',
     String(item.up_bytes ?? 0),
     String(item.down_bytes ?? 0),
     item.estimated ? 'true' : 'false',
@@ -145,12 +147,13 @@ function exportCsv(): void {
   <div class="space-y-4">
     <PageHeader
       title="用量"
-      description="按成员或节点查流量。数字来自实际计费记录；补报的历史数据会标注「估算」。网卡总流量单独列出，不参与额度判断。"
+      description="按成员、节点和时间查询用量账本。导出仅包含已加载的记录；估算、边界拆分与修正分别标记。"
     >
       <Button variant="outline" :disabled="!items.length" @click="exportCsv">导出当前结果 CSV</Button>
       <Button variant="outline" :disabled="loading" @click="query()">刷新</Button>
     </PageHeader>
 
+    <ErrorState v-if="referenceError" :error="referenceError" :show-retry="false" />
     <Card>
       <CardContent class="grid gap-4 pt-6 sm:grid-cols-2 lg:grid-cols-4">
         <div class="grid gap-2">
@@ -237,7 +240,7 @@ function exportCsv(): void {
                   {{ nodeNames.get(String(item.node_id)) ?? item.node_id ?? '—' }}
                 </TableCell>
                 <TableCell class="hidden text-xs md:table-cell">
-                  <template v-if="item.period">
+                  <template v-if="item.period_start || item.period">
                     <span :title="utcLabel(item.period_start ?? item.period?.start)">{{ formatDateTime(item.period_start ?? item.period?.start, item.period?.timezone) }}</span>
                     →
                     <span :title="utcLabel(item.period_end ?? item.period?.end)">{{ formatDateTime(item.period_end ?? item.period?.end, item.period?.timezone) }}</span>
@@ -272,36 +275,6 @@ function exportCsv(): void {
             </Button>
           </div>
         </template>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle class="text-base">网卡流量（独立计量）</CardTitle>
-        </CardHeader>
-        <CardContent v-if="!nicCounters.length" class="text-sm text-muted-foreground">
-          服务端未返回网卡计数。
-        </CardContent>
-        <CardContent v-else class="px-0 pb-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>服务器</TableHead>
-                <TableHead class="text-right">接收</TableHead>
-                <TableHead class="text-right">发送</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow v-for="(counter, index) in nicCounters" :key="`${counter.server_id}-${index}`">
-                <TableCell class="font-mono">{{ counter.server_id ?? '—' }}</TableCell>
-                <TableCell class="text-right tabular">{{ formatBytes(counter.rx_bytes) }}</TableCell>
-                <TableCell class="text-right tabular">{{ formatBytes(counter.tx_bytes) }}</TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        </CardContent>
-        <p class="px-6 py-3 text-xs text-muted-foreground">
-          网卡流量含协议开销与其它进程流量，不参与成员配额判定。
-        </p>
       </Card>
 
       <Collapsible v-if="items.length">

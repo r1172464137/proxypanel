@@ -130,7 +130,15 @@ async function save(): Promise<void> {
       </Button>
     </PageHeader>
 
-    <LoadingBlock v-if="loading" label="正在读取订阅" />
+    <section class="rounded border p-4 space-y-2" aria-label="成员将获得什么">
+      <h2 class="font-semibold">成员将获得什么</h2>
+      <p>节点组：{{ groups.filter(group => draft.node_group_ids.includes(group.id)).map(group => group.name).join('、') || '尚未选择，成员将没有可用节点' }}</p>
+      <p>每人额度：{{ draft.unlimited ? '不限量' : `${draft.quota_gib} GiB` }} · 默认有效期：{{ draft.default_valid_days ? `${draft.default_valid_days} 天` : '未设置' }}</p>
+      <p>周期时区：{{ draft.timezone }} · 锚定日：{{ draft.anchor_day }}。修改周期规则仅在下一周期生效，当前周期和已用量保留。</p>
+      <p v-if="record?.pending_period_rule">已有下一周期规则待生效，请核对后再修改。<details><summary>查看待生效规则</summary><pre class="whitespace-pre-wrap break-all text-xs">{{ record.pending_period_rule }}</pre></details></p>
+      <router-link class="underline" to="/admin/invitations">下一步：按方案邀请成员</router-link>
+    </section>
+    <LoadingBlock v-if="loading" label="正在读取服务方案" />
     <ErrorState v-else-if="loadError" :error="loadError" @retry="load" />
     <div v-else class="space-y-4">
       <Alert v-if="saveError" variant="destructive">

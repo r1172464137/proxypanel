@@ -119,6 +119,26 @@ describe('ImpactPreviewDialog', () => {
     wrapper.unmount()
   })
 
+  it('提交响应丢失后保留同一幂等键，只核对同一次提交', async () => {
+    mocks.preview.mockResolvedValue(preview)
+    mocks.submit.mockRejectedValueOnce(new Error('网络中断')).mockResolvedValueOnce({ id: 'batch-replay', idempotent_replay: true })
+    const wrapper = mountDialog()
+    await wrapper.setProps({ open: true })
+    await flushPromises()
+    ;(document.querySelector('input[type="checkbox"]') as HTMLInputElement).click()
+    await flushPromises()
+    buttonByText('确认提交').click()
+    await flushPromises()
+    expect(document.body.textContent).toContain('结果未确认')
+    expect(buttonByText('重新预览').disabled).toBe(true)
+    buttonByText('核对同一次提交').click()
+    await flushPromises()
+    expect(mocks.submit).toHaveBeenCalledTimes(2)
+    expect(mocks.submit.mock.calls[0]).toEqual(mocks.submit.mock.calls[1])
+    expect(mocks.push).toHaveBeenCalledWith('/admin/batches/batch-replay')
+    wrapper.unmount()
+  })
+
   it('预览失败时展示错误并允许重新预览', async () => {
     mocks.preview.mockRejectedValueOnce(new Error('网络中断'))
     mocks.preview.mockResolvedValueOnce(preview)

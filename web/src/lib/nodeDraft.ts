@@ -167,8 +167,9 @@ export function applyStreamView(stream: JsonObject, view: StreamView): JsonObjec
     else delete cert.certificateFile
     if (view.tlsKeyFile) cert.keyFile = view.tlsKeyFile
     else delete cert.keyFile
-    if (Object.keys(cert).length > 0) next = setPath(next, 'tlsSettings.certificates', [cert])
-    else next = setPath(next, 'tlsSettings.certificates', undefined)
+    const remaining = Array.isArray(existing) ? existing.slice(1) : []
+    if (Object.keys(cert).length > 0) next = setPath(next, 'tlsSettings.certificates', [cert, ...remaining])
+    else next = setPath(next, 'tlsSettings.certificates', remaining.length ? remaining : undefined)
   }
   if (view.security === 'reality') {
     next = setOrDelete(next, 'realitySettings.dest', view.realityDest)

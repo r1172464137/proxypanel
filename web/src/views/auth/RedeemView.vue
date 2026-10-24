@@ -52,7 +52,7 @@ async function submit(): Promise<void> {
         <h1 class="text-xl font-semibold tracking-tight">兑换邀请</h1>
         <span class="mt-2 block h-0.5 w-6 rounded-none bg-brand" aria-hidden="true" />
         <p class="mt-2 text-sm leading-relaxed text-muted-foreground">
-          邀请码在服务端原子兑换，只能使用一次；兑换后自动登录，但代理权限需管理员绑定订阅后才生效。
+          使用邀请码创建账号。包含服务方案的邀请会一并开通服务；仅建账号的邀请加入后等待管理员开通。
         </p>
       </div>
 
@@ -60,7 +60,7 @@ async function submit(): Promise<void> {
         <AlertTitle>{{ describeError(error).title }}</AlertTitle>
         <AlertDescription>
           <p class="break-all">{{ describeError(error).message }}</p>
-          <p class="mt-1 text-xs">邀请不可用时不区分“已使用 / 已撤销 / 已过期”，避免探测。</p>
+          <p class="mt-1 text-xs">如果邀请不可用，请联系邀请你的管理员重新签发。</p>
         </AlertDescription>
       </Alert>
 

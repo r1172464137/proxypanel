@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { Loader2 } from 'lucide-vue-next'
 import { adminApi } from '@/api/endpoints'
+import { allPages } from '@/lib/allPages'
 import type { AgentRecord, RegistrationCode, ServerRecord } from '@/api/types'
 import { usePagedList } from '@/lib/paged'
 import { errorText, toApiError } from '@/lib/errors'
@@ -35,7 +36,7 @@ const HEARTBEAT_ONLINE_WINDOW_MS = 60_000
 
 async function loadAgents(): Promise<void> {
   try {
-    agents.value = (await adminApi.agents.list({ limit: 200 })).items
+    agents.value = await allPages(cursor => adminApi.agents.list({ limit: 200, cursor }))
     agentsError.value = false
   } catch {
     agents.value = []

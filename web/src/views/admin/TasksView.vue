@@ -20,6 +20,7 @@ const list = usePagedList<TaskRecord>((cursor) => adminApi.tasks.list({ limit: 5
 const retryTarget = ref<TaskRecord | null>(null)
 const retrying = ref(false)
 const retryError = ref('')
+const retryNotice = ref('')
 const autoRefresh = ref(false)
 
 const poller = usePolling(() => list.refresh(), 10000)
@@ -48,6 +49,7 @@ async function retry(): Promise<void> {
   retryError.value = ''
   try {
     await adminApi.tasks.retry(target.id)
+    retryNotice.value = `任务 ${target.id} 已重新排队，等待新回执；这不代表节点已恢复。`
     pushToast('success', '重试已受理', '重试受版本检查限制，旧任务不会覆盖更新后的规则。')
     retryTarget.value = null
     await list.refresh()
@@ -81,6 +83,7 @@ const columns = [
       </Button>
     </PageHeader>
 
+    <p v-if="retryNotice" role="status" class="rounded border p-4">{{ retryNotice }}</p>
     <DataTable
       :list="list"
       :columns="columns"

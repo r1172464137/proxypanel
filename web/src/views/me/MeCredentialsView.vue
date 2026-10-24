@@ -27,11 +27,12 @@ const tokenError = ref('')
 const rotating = ref(false)
 
 const credOpen = ref(false)
-const scope = ref<'all_nodes' | 'single_node'>('all_nodes')
+const scope = ref<'all_nodes' | 'single_node'>('single_node')
 const nodeId = ref('')
 const credPending = ref(false)
 const credError = ref('')
 const credDone = ref(false)
+const allConfirmed = ref(false)
 
 onMounted(() => {
   void subscription.reload()
@@ -65,7 +66,8 @@ function openToken(): void {
 }
 
 function openCred(): void {
-  scope.value = 'all_nodes'
+  scope.value = 'single_node'
+  allConfirmed.value = false
   nodeId.value = ''
   credError.value = ''
   credDone.value = false
@@ -73,6 +75,7 @@ function openCred(): void {
 }
 
 async function rotateCredentials(): Promise<void> {
+  if (scope.value === 'all_nodes' && !allConfirmed.value) { credError.value = '请明确确认全部节点的影响'; return }
   if (scope.value === 'single_node' && !nodeId.value) {
     credError.value = '请选择节点'
     return
@@ -85,7 +88,7 @@ async function rotateCredentials(): Promise<void> {
       ...(scope.value === 'single_node' ? { node_id: nodeId.value } : {}),
     })
     credDone.value = true
-    pushToast('success', '凭据轮换已提交', '旧凭据立即失效；请在客户端重新导入订阅（分发为异步）。')
+    pushToast('success', '凭据轮换已提交', '已保存，正在同步；请更新客户端订阅。实际连接状态尚未确认。')
     await subscription.reload()
   } catch (caught) {
     credError.value = errorText(caught)
@@ -97,7 +100,7 @@ async function rotateCredentials(): Promise<void> {
 
 <template>
   <div class="space-y-6">
-    <PageHeader title="我的凭据" description="两样东西：一个是订阅链接，一个是每个节点各自的密码。下面分别说明用途和泄露后果。">
+    <PageHeader title="连接信息" description="分别管理订阅链接和实际连接凭据。重置前请核对影响范围。">
       <Button variant="outline" :disabled="subscription.loading.value" @click="subscription.reload()">刷新</Button>
     </PageHeader>
 
@@ -108,7 +111,7 @@ async function rotateCredentials(): Promise<void> {
         <Card>
           <CardHeader class="flex-row items-center justify-between space-y-0">
             <CardTitle class="text-base font-semibold">订阅链接</CardTitle>
-            <Button variant="outline" size="sm" @click="openToken">换一个链接</Button>
+            <Button variant="outline" size="sm" @click="openToken">重置订阅链接</Button>
           </CardHeader>
           <CardContent class="space-y-2 pt-2">
             <p class="text-sm leading-relaxed">
@@ -128,14 +131,14 @@ async function rotateCredentials(): Promise<void> {
         <Card>
           <CardHeader class="flex-row items-center justify-between space-y-0">
             <CardTitle class="text-base font-semibold">节点密码</CardTitle>
-            <Button variant="destructive" size="sm" @click="openCred">全部换掉</Button>
+            <Button variant="destructive" size="sm" @click="openCred">重置连接凭据</Button>
           </CardHeader>
           <CardContent class="space-y-2 pt-2">
             <p class="text-sm leading-relaxed">
               每个节点各有一份密码（通常是 UUID），由面板自动生成并随订阅链接下发，所以这里不显示明文。
             </p>
             <p class="text-sm leading-relaxed text-muted-foreground">
-              <strong class="font-medium text-destructive">换掉之后所有设备立刻断开</strong>，已导入的客户端全部失效，必须重新拉取订阅并重新导入才能恢复。
+              <strong class="font-medium text-destructive">所选节点的旧凭据将失效</strong>，节点异步同步，相关客户端需要更新订阅。共享节点的连接可能短暂中断；不能用提交成功判断旧连接已经断开。
               只在确认密码被别人拿去用、或者要踢掉某台设备时才用。
             </p>
           </CardContent>
@@ -174,8 +177,9 @@ async function rotateCredentials(): Promise<void> {
 
     <ConfirmDialog
       :open="tokenOpen"
-      title="轮换订阅链接"
-      confirm-label="确认轮换"
+      title="重置订阅链接"
+      confirm-label="重置链接"
+      :confirm-disabled="!!rotated"
       danger
       :pending="rotating"
       :error-text="tokenError"
@@ -192,15 +196,16 @@ async function rotateCredentials(): Promise<void> {
 
     <ConfirmDialog
       :open="credOpen"
-      title="轮换代理凭据"
-      confirm-label="确认轮换"
+      title="重置连接凭据"
+      confirm-label="重置连接凭据"
+      :confirm-disabled="credDone || (scope === 'all_nodes' && !allConfirmed)"
       danger
       :pending="credPending"
       :error-text="credError"
       @cancel="credOpen = false"
       @confirm="rotateCredentials"
     >
-      <p>旧凭据按硬撤权策略立即失效，受影响节点上的连接会中断，需要重新导入订阅。</p>
+      <p>重置后需等待节点同步。所选节点的旧凭据将失效，相关客户端需要更新订阅；共享节点的其他连接可能短暂中断。</p>
 
       <RadioGroup v-model="scope" class="gap-2">
         <div class="flex items-center gap-2">
@@ -213,6 +218,7 @@ async function rotateCredentials(): Promise<void> {
         </div>
       </RadioGroup>
 
+      <label v-if="scope === 'all_nodes'" class="flex gap-2"><input v-model="allConfirmed" type="checkbox" />我确认重置全部节点的连接凭据，所有相关客户端都需要更新订阅。</label>
       <div v-if="scope === 'single_node'" class="grid gap-2">
         <Label for="cred-node">节点</Label>
         <!-- 这里刻意保留原生 select：选项值是后端节点 id（可能缺省），

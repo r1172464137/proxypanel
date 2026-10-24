@@ -53,14 +53,14 @@ onUnmounted(() => {
 
 const scopedAgents = computed(() => {
   const all = agents.data.value ?? []
-  const scoped = all.filter((agent) => agent.server_id === undefined || agent.server_id === serverId.value)
+  const scoped = all.filter((agent) => agent.server_id === serverId.value)
   return scoped
 })
 const agentsUnscoped = computed(() => (agents.data.value ?? []).every((agent) => agent.server_id === undefined))
 
 const scopedInstances = computed(() => {
   const all = instances.data.value ?? []
-  return all.filter((instance) => instance.server_id === undefined || instance.server_id === serverId.value)
+  return all.filter((instance) => instance.server_id === serverId.value)
 })
 const instancesUnscoped = computed(() => (instances.data.value ?? []).every((instance) => instance.server_id === undefined))
 
@@ -136,6 +136,7 @@ const nodeNameOf = (instance: CoreInstanceRecord): string =>
   instance.node_name ?? instance.node_id ?? instance.id ?? '未命名节点'
 
 const agentLayer = computed<LayerCard>(() => {
+  if (agents.error.value || !agents.data.value || agentsUnscoped.value && agents.data.value.length) return { title: '① 管理程序', status: '未知', summary: '暂时无法核对该服务器的管理程序状态', details: ['请重试读取或核对服务器归属'], tone: 'warn' }
   const rows = scopedAgents.value.map((agent) => {
     const heartbeat = heartbeatOf(agent)
     const hbTime = heartbeat ? new Date(heartbeat).getTime() : Number.NaN
@@ -153,7 +154,7 @@ const agentLayer = computed<LayerCard>(() => {
     return {
       title: '① Agent 在线',
       status: '未知',
-      summary: '未注册 Agent',
+      summary: '尚未接入管理程序',
       details: ['该服务器还没有 Agent 上报心跳'],
       tone: 'warn',
     }
@@ -192,6 +193,7 @@ const agentLayer = computed<LayerCard>(() => {
 })
 
 const instanceLayer = computed<LayerCard>(() => {
+  if (instances.error.value || !instances.data.value || instancesUnscoped.value && instances.data.value.length) return { title: '② 进程运行', status: '未知', summary: '暂时无法读取该服务器的实例', details: ['请重试读取，不应将未知视为已停止或可用'], tone: 'warn' }
   const list = scopedInstances.value
   if (!list.length) {
     return {
@@ -248,6 +250,7 @@ const instanceLayer = computed<LayerCard>(() => {
 })
 
 const portLayer = computed<LayerCard>(() => {
+  if (instances.error.value || !instances.data.value || instancesUnscoped.value && instances.data.value.length) return { title: '③ 配置同步', status: '未知', summary: '同步状态暂不可获取', details: ['真实连接尚未验证'], tone: 'warn' }
   const list = scopedInstances.value
   if (!list.length) {
     return {
@@ -275,8 +278,8 @@ const portLayer = computed<LayerCard>(() => {
       .at(-1) as string
     return {
       title: '③ 配置同步',
-      status: '已应用 · 连接未验证',
-      summary: '已下发并生效',
+      status: '最近配置已应用 · 连接未验证',
+      summary: '已收到配置应用回执；请同时核对目标修订',
       details: [`生效时间：${formatDateTime(latest)}`, note],
       tone: 'ok',
     }
@@ -312,7 +315,7 @@ const layers = computed<LayerCard[]>(() => [agentLayer.value, instanceLayer.valu
   <div class="space-y-6">
     <PageHeader
       title="Agent 与核心实例"
-      :description="server.data.value ? `${server.data.value.name} · ${server.data.value.address}` : '运行时状态分层展示：Agent 在线、进程运行、端口可达各自确认。'"
+      :description="server.data.value ? `${server.data.value.name} · ${server.data.value.address}` : '运行时状态分层展示：Agent 在线、进程运行、配置同步各自核对；真实连接需在客户端验证。'"
     >
       <Button as-child variant="outline">
         <router-link to="/admin/servers">返回服务器</router-link>

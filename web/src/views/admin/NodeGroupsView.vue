@@ -286,6 +286,7 @@ const columns = [
       <Button v-if="selected.size" variant="ghost" @click="selected.clear()">清空选择</Button>
     </div>
 
+    <p class="text-sm"><router-link class="underline" to="/admin/subscriptions/new">下一步：使用节点组建立服务方案</router-link> · <router-link class="underline" to="/admin/tasks">核对同步进度</router-link></p>
     <DataTable
       :list="list"
       :columns="columns"

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
+import { createRouter, createMemoryHistory } from 'vue-router'
 import AppShell from './AppShell.vue'
 import { sessionState } from '@/stores/session'
 
@@ -9,14 +10,7 @@ vi.mock('@/stores/session', () => ({
   logout: vi.fn(async () => undefined),
 }))
 
-vi.mock('vue-router', () => ({
-  useRoute: () => ({ meta: { title: '总览' }, fullPath: '/admin/overview', path: '/admin/overview' }),
-  useRouter: () => ({ push: vi.fn(async () => undefined) }),
-}))
-
-const stubs = {
-  RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
-}
+vi.mock('@/api/endpoints', () => ({ adminApi: { recoveryMode: { get: vi.fn(async () => ({ recovery_mode: false })) } } }))
 
 const MY_ACCOUNT_PATHS = [
   '/me/subscription',
@@ -77,7 +71,7 @@ function meLinks(root: ParentNode): HTMLElement[] {
 function mountShell(): VueWrapper {
   return mount(AppShell, {
     attachTo: document.body,
-    global: { stubs },
+    global: { plugins: [createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })] },
     slots: { default: '<div>页面内容</div>' },
   })
 }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import RecoveryModeBanner from './RecoveryModeBanner.vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppIcon from './AppIcon.vue'
 import ThemeToggle from './ThemeToggle.vue'
@@ -113,7 +114,7 @@ function closeDrawer(): void {
  */
 function onCloseAutoFocus(event: Event): void {
   event.preventDefault()
-  window.setTimeout(() => menuButton.value?.focus(), 0)
+  menuButton.value?.focus()
 }
 
 /** Sheet 自带 Esc/遮罩关闭，这里兜底处理键盘用户从外部按 Esc 的情况。 */
@@ -243,6 +244,7 @@ async function signOut(): Promise<void> {
         </Button>
       </header>
 
+      <RecoveryModeBanner v-if="sessionState.user?.role === 'admin'" />
       <main class="mx-auto w-full max-w-[1440px] flex-1 px-4 py-6 sm:px-6 lg:px-8">
         <slot />
       </main>
