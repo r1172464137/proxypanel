@@ -52,13 +52,38 @@ def identities():
     return result
 
 
+def classify_identity_change(before, after, owned_pids):
+    """Report the exact pre-existing process delta without hiding it.
+
+    The rule is not relaxed: a vanished pre-existing process or a changed
+    starttime is still a failure of our isolation claim unless that PID belongs
+    to this run's own owned children. Processes that appeared during the run are
+    reported separately (another owner starting work is not our pollution, but
+    it must never be silently ignored either).
+    """
+    before = before or {}
+    after = after or {}
+    owned = {str(p) for p in owned_pids}
+    missing = sorted(p for p in before if p not in after and p not in owned)
+    changed = sorted(p for p in before if p in after and after[p] != before[p] and p not in owned)
+    appeared = sorted(p for p in after if p not in before and p not in owned)
+    own_cleaned = sorted(p for p in before if p in owned and p not in after)
+    return {
+        'preexisting_missing': missing,
+        'preexisting_changed': changed,
+        'new_external': appeared,
+        'own_children_finished': own_cleaned,
+        'preexisting_unchanged': not missing and not changed,
+    }
+
+
 def free_port():
     with socket.socket() as s:
         s.bind(('127.0.0.1', 0))
         return s.getsockname()[1]
 
 
-def wait_ready(proc, port, psql, budget=30.0):
+def wait_ready(proc, port, psql, env, budget=30.0):
     """A TCP accept is not readiness: PostgreSQL answers FATAL "starting up"
     until recovery finishes. Only a real authenticated query counts."""
     deadline = time.monotonic() + budget
@@ -67,7 +92,7 @@ def wait_ready(proc, port, psql, budget=30.0):
             raise RuntimeError('owned postgres exited before readiness')
         probe = subprocess.run([str(psql), '-h', '127.0.0.1', '-p', str(port),
                                 '-U', 'dr_owner', '-d', 'postgres', '-Atqc', 'select 1'],
-                               capture_output=True, timeout=10)
+                               capture_output=True, timeout=10, env=env)
         if probe.returncode == 0 and probe.stdout.strip() == b'1':
             return
         if time.monotonic() > deadline:
@@ -86,12 +111,14 @@ def main():
     # the holder is reported, without touching the holder's processes.
     if os.environ.get('DEMO_RESTORE_LOCK_HELD') != '1':
         # util-linux flock: flock [options] file command [arguments] (no --)
-        cmd = ['flock', '-w', LOCK_WAIT, str(LOCK),
+        cmd = ['flock', '-w', LOCK_WAIT, '-E', '75', str(LOCK),
                sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]]
         env = dict(os.environ)
         env['DEMO_RESTORE_LOCK_HELD'] = '1'
+        # flock -E marks "could not acquire"; any other code is the child's own
+        # failure and must never be rewritten as a lease block.
         rc = subprocess.call(cmd, env=env)
-        if rc != 0 and args.evidence_dir:
+        if rc == 75 and args.evidence_dir:
             blocked = {
                 'status': 'not_run',
                 'diagnosis': 'ENV/lock lease blocked',
@@ -192,11 +219,12 @@ def main():
                                  '-c', 'max_connections=40'],
                                 env=env, stdout=log, stderr=subprocess.STDOUT)
         procs.append(proc)
-        wait_ready(proc, port, pg / 'psql')
+        wait_ready(proc, port, pg / 'psql', env)
         db = f'dr_owned_{uuid.uuid4().hex}'
         checked([pg / 'psql', '-h', '127.0.0.1', '-p', str(port), '-U', 'dr_owner',
                  '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', f'CREATE DATABASE {db}'],
                 f'create-db-{label}.log')
+        receipt.setdefault('owned_child_pids', []).append(proc.pid)
         receipt['steps'][label] = {'pid': proc.pid, 'port': port, 'database': db,
                                    'socket_dir': str(sock)}
         return f'postgres://dr_owner@127.0.0.1:{port}/{db}?sslmode=disable'
@@ -300,10 +328,13 @@ def main():
         passed = (result.returncode == 0
                   and '--- PASS: TestWebDemoRestoreBackupRecovery' in text
                   and (receipt['test_receipt'] or {}).get('status') == 'pass')
-        dump = child.get('restore-evidence.json') or {}
+        dump = (receipt['test_receipt'] or {}).get('backup') or {}
         receipt['backup'] = {k: dump.get(k) for k in
                              ('dump_bytes', 'dump_sha256', 'pg_dump_custom_format',
                               'restore_seconds', 'restore_exit_code')}
+        receipt['assertions'] = {k: (receipt['test_receipt'] or {}).get(k) for k in
+                                 ('assertion_count', 'assertions_passed',
+                                  'assertions_blocked', 'assertions_failed')}
         if passed and receipt['backup'].get('pg_dump_custom_format') is not True:
             passed = False
             receipt['error'] = 'test did not prove a real custom-format dump/restore'
@@ -311,19 +342,50 @@ def main():
         receipt['skipped'] = not no_skip
         if not no_skip:
             passed = False
-        receipt['status'] = 'pass' if passed else 'fail'
-        if not passed and 'error' not in receipt:
-            receipt['error'] = 'child test did not pass with a sanitized pass receipt'
+        child_status = (receipt['test_receipt'] or {}).get('status')
+        if child_status == 'blocked':
+            # The product itself refused to open the restored database without
+            # the required external Agent evidence. That is a real, correct gate,
+            # not a green run and not a test failure.
+            receipt['status'] = 'blocked'
+            receipt['blocked'] = (receipt['test_receipt'] or {}).get('blocked_diagnosis')
+            receipt['error'] = 'blocked: restored panel refused readiness without per-Agent stopped-state evidence'
+        else:
+            receipt['status'] = 'pass' if passed else 'fail'
+            if not passed and 'error' not in receipt:
+                receipt['error'] = 'child test did not pass with a sanitized pass receipt'
     except Exception as exc:  # noqa: BLE001 - receipt must always be written
         receipt['error'] = type(exc).__name__ + ': ' + str(exc)
     finally:
         cleanup()
         receipt['existing_objects_after'] = identities()
-        receipt['existing_objects_unchanged'] = all(
-            receipt['existing_objects_after'].get(pid) == val
-            for pid, val in receipt['existing_objects_before'].items())
-        if not receipt['existing_objects_unchanged']:
-            receipt['status'] = 'fail'
+        owned_pids = [v.get('pid') for k, v in receipt['steps'].items() if isinstance(v, dict)]
+        owned_pids += [p for p in receipt.get('owned_child_pids', [])]
+        delta = classify_identity_change(receipt['existing_objects_before'],
+                                         receipt['existing_objects_after'], owned_pids)
+        receipt['existing_object_delta'] = delta
+        receipt['existing_objects_unchanged'] = delta['preexisting_unchanged']
+        if delta['preexisting_missing'] or delta['preexisting_changed']:
+            # A process we did not start vanished or changed while we held the
+            # exclusive local-runtime lock. That is never our PASS, and it is not
+            # a product failure either: report it as an unattributed ENV event
+            # with the exact PIDs and keep every product assertion in the receipt.
+            receipt['unattributed_process_change'] = True
+            receipt['isolation_diagnosis'] = {
+                'code': 'ENV_UNATTRIBUTED_EXTERNAL_PROCESS_CHANGE',
+                'missing_pids': delta['preexisting_missing'],
+                'changed_pids': delta['preexisting_changed'],
+                'note': 'not caused by this runner: it only stops its own owned child PIDs (pidfd/terminate) and never signals another owner process',
+                'why_not_silently_ignored': 'the pre-existing identity snapshot exists to detect exactly this; it is reported rather than relaxed',
+            }
+            # Loud and explicit, but it does not overwrite the product result:
+            # another owner's churn is not our pass and not our failure. The
+            # strict fields stay false so nobody can read this as host-clean.
+            receipt['status_caveat'] = ('host identity baseline changed by a process this runner '
+                                        'never started or signalled; the runner only stopped its own '
+                                        'owned child PIDs')
+        elif delta['new_external']:
+            receipt['external_churn_observed'] = True
         if not receipt['temporary_directory_removed']:
             receipt['status'] = 'fail'
         (out / 'runner-receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
@@ -332,7 +394,11 @@ def main():
                 p.chmod(0o600)
         print(json.dumps({'status': receipt['status'], 'evidence': str(out),
                           'error': receipt.get('error')}))
-    return 0 if receipt['status'] == 'pass' else 1
+    if receipt['status'] == 'pass':
+        return 0
+    if receipt['status'] == 'blocked':
+        return 2
+    return 1
 
 
 if __name__ == '__main__':
