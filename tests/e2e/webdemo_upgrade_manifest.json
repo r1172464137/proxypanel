@@ -1,0 +1,34 @@
+{
+  "id": "webdemo/upgrade",
+  "description": "Owned US-PR-016 real cross-version Agent/SQLite upgrade and rollback closure. New owner assets only; never runs the shared Docker lifecycle fixture, the old 8443/8445 stacks or a remote host.",
+  "runner": "tests/e2e/run_webdemo_upgrade.py",
+  "manifest_version": 1,
+  "case": "TestWebDemoUpgradeClosure",
+  "packages": ["./tests/e2e"],
+  "build_tags": [],
+  "requires": ["postgres", "unix"],
+  "optional_requirements": [],
+  "env": {
+    "PANEL_TEST_DATABASE_URL": "owned PostgreSQL 17 on 127.0.0.1 with a database name prefixed dp_owned_; the runner creates it itself",
+    "PP_DEMO_UPGRADE_OLD_AGENT": "old Agent binary: saved shipped artifact build/linux-amd64/agent (SHA256SUMS-checked) or a build from git commit 52bf44a",
+    "PP_DEMO_UPGRADE_NEW_AGENT": "new Agent binary built from the current worktree candidate",
+    "PP_DEMO_UPGRADE_OLD_CORE": "official Xray v26.3.23 binary with geoip.dat/geosite.dat from the same release",
+    "PP_DEMO_UPGRADE_NEW_CORE": "official Xray v26.3.27 binary with geoip.dat/geosite.dat from the same release",
+    "PP_DEMO_UPGRADE_STATE_DIR": "optional absolute 0700 state/evidence directory; never committed"
+  },
+  "runtime_lock": "/home/compile/Work/.locks/proxypanel-webdemo-local-runtime.lock",
+  "does_not": [
+    "touch 127.0.0.1:8443, 8445, Agent-lab, the shared 15432 database, .devdb or any remote host",
+    "reuse deploy/docker-lifecycle.sh or any shared Docker/SSH fixture",
+    "change production code, SQL, migrations, the shared runner or another owner's tests",
+    "rewrite the Agent SQLite queue directly, clear it, or accept a version string as the switch proof"
+  ],
+  "stories": ["US-PR-016"],
+  "expected_tests": ["TestWebDemoUpgradeClosure"],
+  "notes": [
+    "Both known Agent commits label themselves 0.1.1, so the proof uses binary sha256 + a heartbeat newer than the pre-action snapshot + the reported core version.",
+    "The old Agent's own SQLite state is the upgrade input; the case refuses an unmerged WAL or unknown table layout and never repairs it.",
+    "The retained outbox must be credited once per batch id with the identical payload sha256; a revoked member must stay revoked and the export must stay 403.",
+    "Technical rollback uses the old binary on the upgraded state; restoring an old database dump to regain access is explicitly not used."
+  ]
+}
