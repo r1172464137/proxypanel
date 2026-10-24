@@ -143,6 +143,10 @@ func runHandshake(t *testing.T, core string, node domain.Node) (handshakeErr err
 	defer func() {
 		cancel()
 		_ = cmd.Wait()
+		if cmd.ProcessState == nil {
+			t.Errorf("owned core PID %d was not reaped", cmd.Process.Pid)
+		}
+		t.Logf("TLS owned PID %d reaped; tempdir=%s", cmd.Process.Pid, dir)
 	}()
 	address := net.JoinHostPort("127.0.0.1", fmt.Sprintf("%d", port))
 	ready := false
@@ -384,7 +388,7 @@ func sanitizedValidated(t *testing.T, node domain.Node) domain.Node {
 	stream, ps, key, issues := protocol.Sanitize(protocol.Node{
 		Protocol: node.Protocol, Host: node.Host, Port: node.Port, Listen: node.Listen,
 		StreamSettings: node.StreamSettings, ProtocolSettings: node.ProtocolSettings,
-		ClientSettings: node.ClientSettings,
+		ClientSettings: node.ClientSettings, ServerKey: node.ServerKey,
 	})
 	if len(issues) > 0 {
 		t.Fatalf("sanitize: %v", issues)
@@ -393,7 +397,7 @@ func sanitizedValidated(t *testing.T, node domain.Node) domain.Node {
 	if issues := protocol.Validate(protocol.Node{
 		Protocol: node.Protocol, Host: node.Host, Port: node.Port, Listen: node.Listen,
 		StreamSettings: node.StreamSettings, ProtocolSettings: node.ProtocolSettings,
-		ClientSettings: node.ClientSettings,
+		ClientSettings: node.ClientSettings, ServerKey: node.ServerKey,
 	}); len(issues) > 0 {
 		t.Fatalf("validate: %v", issues)
 	}

@@ -341,5 +341,21 @@
     ],
     "requires": [],
     "timeout_seconds": 120
+  },
+  {
+    "id": "protocol/handshake-review",
+    "packages": ["./internal/panel/clientconfig"],
+    "run": "^Test(SavedNodeTLSHandshakeSucceedsAfterNormalization|HistoricalLegacyTLSRowHandshakesAtBuild|ReviewTLSVerifyAndMixedHalvesHandshake|ReviewTLSSameHalfMixCorePrefersFile|XrayGRPCClientCarriesServiceName|SavedNodeRealityHandshakePayload)$",
+    "expected_tests": [
+      "TestSavedNodeTLSHandshakeSucceedsAfterNormalization",
+      "TestHistoricalLegacyTLSRowHandshakesAtBuild",
+      "TestReviewTLSVerifyAndMixedHalvesHandshake",
+      "TestReviewTLSSameHalfMixCorePrefersFile",
+      "TestXrayGRPCClientCarriesServiceName",
+      "TestSavedNodeRealityHandshakePayload"
+    ],
+    "stories": ["US-PR-011"],
+    "requires": ["xray"],
+    "timeout_seconds": 120
   }
 ]
