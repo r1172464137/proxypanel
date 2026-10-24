@@ -8,6 +8,11 @@ function object(value: unknown): Record<string, unknown> | null {
 /** Preserve the member endpoint's object-shaped items; malformed data is not an empty ledger. */
 export function unpackMeUsage(payload: unknown): MeUsageResult {
   const envelope = object(payload)
+  const legacy = Array.isArray(payload) ? payload : Array.isArray(envelope?.items) ? envelope.items : null
+  if (legacy) {
+    if (!legacy.every(object)) throw new Error('用量记录不完整，请联系管理员核对。')
+    return { items: legacy as UsageItem[], adjustments: [], next_cursor: typeof envelope?.next_cursor === 'string' ? envelope.next_cursor : null }
+  }
   const items = object(envelope?.items)
   if (!items || !Array.isArray(items.usage) || !Array.isArray(items.adjustments)) {
     throw new Error('用量资料暂时无法读取，请重试或联系为你开通服务的管理员。')

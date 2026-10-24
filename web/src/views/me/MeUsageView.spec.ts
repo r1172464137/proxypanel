@@ -35,7 +35,7 @@ describe('成员用量最小闭环', () => {
     expect(page.items[0]?.up_bytes).toBe(42)
     expect(page.adjustments[0]?.bytes).toBe(-7)
     expect(page.next_cursor).toBe('next')
-    expect(() => unpackMeUsage({ items: [] })).toThrow()
+    expect(unpackMeUsage({ items: [] })).toEqual({ items: [], adjustments: [], next_cursor: null })
     expect(() => unpackMeUsage({ items: { usage: [], adjustments: null } })).toThrow()
   })
   it('未知已用量不推导满额剩余；不完整资料保留已知值', () => {

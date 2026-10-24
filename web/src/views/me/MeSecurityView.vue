@@ -41,6 +41,8 @@ onMounted(() => void sessions.reload())
 const isCurrent = (session: SessionRecord): boolean => session.current === true
 
 async function changePassword(): Promise<void> {
+  if (saving.value) return
+  passwordResult.value = ''
   localError.value = ''
   formError.value = ''
   if (form.next.length < 10) {
@@ -68,7 +70,7 @@ async function changePassword(): Promise<void> {
       } catch (sessionError) {
         if (sessionError instanceof ApiError && sessionError.status === 401) {
           clearSession()
-          await router.push({ name: 'login' })
+          await router.push({ name: 'login', query: { next: '/me/security' } })
         } else formError.value = '无法核对当前登录状态，请稍后重试。'
       }
     } else formError.value = errorText(caught)
@@ -114,7 +116,7 @@ const sessionCount = computed(() => sessions.data.value?.length ?? 0)
           <CardTitle class="text-base font-semibold">修改密码</CardTitle>
         </CardHeader>
         <CardContent class="pt-6">
-          <form class="flex max-w-lg flex-col gap-4" @submit.prevent="changePassword">
+          <form data-testid="password-change-form" class="flex max-w-lg flex-col gap-4" @submit.prevent="changePassword">
             <p v-if="passwordResult" role="status">{{ passwordResult }}</p>
             <Alert
               v-if="localError"
@@ -162,7 +164,7 @@ const sessionCount = computed(() => sessions.data.value?.length ?? 0)
             </div>
 
             <div>
-              <Button type="submit" :disabled="saving || !form.current || !form.next">
+              <Button class="min-h-11" type="submit" :disabled="saving || !form.current || !form.next">
                 <Loader2 v-if="saving" class="animate-spin" aria-hidden="true" />
                 {{ saving ? '提交中…' : '更新密码' }}
               </Button>

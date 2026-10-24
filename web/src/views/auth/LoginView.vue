@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Loader2, ShieldCheck } from 'lucide-vue-next'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { homeRoute, login } from '@/stores/session'
-import { describeError } from '@/lib/errors'
+import { safeLoginNext } from '@/lib/clientImport'
 import type { ApiError } from '@/api/http'
 import { toApiError } from '@/lib/errors'
 
@@ -19,6 +19,13 @@ const username = ref('')
 const password = ref('')
 const submitting = ref(false)
 const error = ref<ApiError | null>(null)
+const feedback = computed(() => {
+  if (error.value?.status === 429) return '尝试过于频繁，请稍等一段时间再登录。用户名已保留，无需刷新页面。'
+  if (error.value?.status === 403) return '登录请求被安全策略拒绝。请从管理员提供的面板地址重新打开；仍失败请联系管理员核对访问来源。'
+  if (error.value?.status === 0) return '无法连接面板，请检查网络后重试。输入内容已保留。'
+  if (error.value?.status === 401) return '登录未成功，请核对用户名与密码；仍无法登录请联系管理员。'
+  return '暂时无法登录，请稍后重试或联系管理员。'
+})
 
 async function submit(): Promise<void> {
   if (submitting.value) return
@@ -26,7 +33,7 @@ async function submit(): Promise<void> {
   submitting.value = true
   try {
     await login(username.value.trim(), password.value)
-    const target = typeof route.query.next === 'string' && route.query.next.startsWith('/') ? route.query.next : homeRoute()
+    const target = safeLoginNext(route.query.next, homeRoute())
     await router.replace(target)
   } catch (caught) {
     error.value = toApiError(caught)
@@ -53,16 +60,11 @@ async function submit(): Promise<void> {
       </div>
 
       <Alert v-if="error" variant="destructive" class="mt-5">
-        <AlertTitle>{{ describeError(error).title }}</AlertTitle>
-        <AlertDescription>
-          <p class="break-all">{{ describeError(error).message }}</p>
-          <p v-if="describeError(error).hint" class="mt-1 text-xs text-muted-foreground">
-            {{ describeError(error).hint }}
-          </p>
-        </AlertDescription>
+        <AlertTitle>登录未成功</AlertTitle>
+        <AlertDescription><p data-testid="login-error-message" class="break-words">{{ feedback }}</p></AlertDescription>
       </Alert>
 
-      <form class="mt-5 flex flex-col gap-4" @submit.prevent="submit">
+      <form data-testid="login-form" class="mt-5 flex flex-col gap-4" @submit.prevent="submit">
         <div class="grid gap-2">
           <Label for="login-username">用户名</Label>
           <Input id="login-username" v-model="username" autocomplete="username" required />
@@ -79,7 +81,7 @@ async function submit(): Promise<void> {
           />
         </div>
 
-        <Button type="submit" class="w-full" :disabled="submitting || !username || !password">
+        <Button type="submit" class="min-h-11 w-full" :disabled="submitting || !username || !password">
           <Loader2 v-if="submitting" class="animate-spin" aria-hidden="true" />
           <ShieldCheck v-else aria-hidden="true" />
           {{ submitting ? '登录中…' : '登录' }}

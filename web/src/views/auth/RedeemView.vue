@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Check, Loader2 } from 'lucide-vue-next'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { redeem } from '@/stores/session'
-import { toApiError, describeError } from '@/lib/errors'
+import { toApiError } from '@/lib/errors'
 import type { ApiError } from '@/api/http'
 
 const route = useRoute()
@@ -21,8 +21,14 @@ const confirm = ref('')
 const submitting = ref(false)
 const error = ref<ApiError | null>(null)
 const localError = ref('')
+const feedback = computed(() => error.value?.status === 429 ? '尝试过于频繁，请稍后再试。'
+  : error.value?.status === 0 ? '无法连接面板，请检查网络后重试，输入内容已保留。'
+  : error.value?.code === 'RECOVERY_MODE' ? '恢复核对进行中，暂不能注册，请稍后重试。'
+  : error.value?.status === 403 ? '请求被安全策略拒绝，请从管理员提供的面板地址重新打开。'
+  : '邀请不可用或注册资料不符合要求，请核对输入，或联系邀请你的管理员重新签发。')
 
 async function submit(): Promise<void> {
+  if (submitting.value) return
   localError.value = ''
   if (password.value.length < 10) {
     localError.value = '密码至少 10 位'
@@ -57,9 +63,9 @@ async function submit(): Promise<void> {
       </div>
 
       <Alert v-if="error" variant="destructive" class="mt-5">
-        <AlertTitle>{{ describeError(error).title }}</AlertTitle>
+        <AlertTitle>未能完成注册</AlertTitle>
         <AlertDescription>
-          <p class="break-all">{{ describeError(error).message }}</p>
+          <p data-testid="redeem-result-message" class="break-words">{{ feedback }}</p>
           <p class="mt-1 text-xs">如果邀请不可用，请联系邀请你的管理员重新签发。</p>
         </AlertDescription>
       </Alert>
@@ -71,7 +77,7 @@ async function submit(): Promise<void> {
         <AlertDescription>{{ localError }}</AlertDescription>
       </Alert>
 
-      <form class="mt-5 flex flex-col gap-4" @submit.prevent="submit">
+      <form data-testid="redeem-form" class="mt-5 flex flex-col gap-4" @submit.prevent="submit">
         <div class="grid gap-2">
           <Label for="redeem-code">邀请码</Label>
           <Input id="redeem-code" v-model="code" class="font-mono" required />
@@ -114,7 +120,7 @@ async function submit(): Promise<void> {
           />
         </div>
 
-        <Button type="submit" class="w-full" :disabled="submitting">
+        <Button type="submit" class="min-h-11 w-full" :disabled="submitting">
           <Loader2 v-if="submitting" class="animate-spin" aria-hidden="true" />
           <Check v-else aria-hidden="true" />
           {{ submitting ? '兑换中…' : '兑换并登录' }}

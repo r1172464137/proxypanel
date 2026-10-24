@@ -1,4 +1,4 @@
-import type { MeStatus, MeSubscription, SubscriptionFormat } from '@/api/types'
+import type { MeStatus } from '@/api/types'
 import { accessReasonDetails } from '@/lib/accessReasons'
 
 /** Display the authoritative verdict, never infer authorization from an absent/future state. */
@@ -48,31 +48,5 @@ export function memberSummary(data: MeStatus | null | undefined) {
   }
 }
 
-export const MEMBER_CLIENTS: { format: SubscriptionFormat; name: string; instruction: string }[] = [
-  { format: 'v2rayn', name: 'v2rayN · Windows', instruction: '在「订阅分组设置」中添加订阅地址，保存后更新订阅。' },
-  { format: 'mihomo', name: 'Clash Verge Rev · Windows / macOS / Linux', instruction: '在「订阅」中粘贴链接并导入，更新后选择该配置。需要支持 Mihomo 的客户端版本。' },
-  { format: 'singbox', name: 'sing-box · 高级配置', instruction: '使用支持远程配置的 sing-box 客户端添加链接，或下载 JSON 后按客户端文档载入。版本兼容性需在客户端核对。' },
-  { format: 'xray', name: 'Xray · 高级配置', instruction: '下载原生 JSON，按 Xray 文档载入；不支持直接添加订阅的客户端请勿粘贴该链接。' },
-]
-
-export function formatAvailability(data: MeSubscription | null, format: SubscriptionFormat) {
-  if (!data?.formats?.includes(format)) return { available: false, message: '当前服务未提供此格式，请选择其他客户端。' }
-  const entry = data.format_status?.find(item => item.format === format)
-  if (!entry) return { available: undefined, message: '格式兼容性尚未确认。请先检查能否获取配置，再复制或下载。' }
-  if (entry.available) return { available: true, message: '此格式可生成配置；仍需在客户端确认版本兼容性与实际连接。' }
-  const message = entry.reason === 'nodes_empty' ? '此格式暂无可导入的节点。'
-    : entry.reason.startsWith('protocol_unsupported') ? '此格式无法表达当前节点的部分参数。'
-    : entry.reason.startsWith('node_incomplete') ? '节点配置资料不完整。' : '此格式暂不可用。'
-  return { available: false, message: `${message}请选择其他客户端，或联系为你开通服务的管理员。` }
-}
-
-export function memberSubscriptionUrl(data: MeSubscription | null, format: SubscriptionFormat, origin: string): string {
-  if (!data?.url) return ''
-  try {
-    const base = (import.meta.env.VITE_API_BASE ?? '').replace(/\/+$/, '') || origin
-    const url = new URL(data.url.replace('{token}', encodeURIComponent(data.token)), base)
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return ''
-    url.searchParams.set('format', format)
-    return url.toString()
-  } catch { return '' }
-}
+// Compatibility for existing consumers; implementation has one owner.
+export { MEMBER_CLIENTS, formatAvailability, memberSubscriptionUrl } from './clientImport'

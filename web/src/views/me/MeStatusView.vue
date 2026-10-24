@@ -46,6 +46,7 @@ const chain = computed(() => (Array.isArray(access.value?.access_chain) ? access
     <LoadingBlock v-if="status.loading.value && !data" label="正在读取状态" />
     <ErrorState v-else-if="status.error.value" :error="status.error.value" @retry="status.reload()" />
     <div v-else-if="data" class="space-y-6">
+      <p v-if="summary.incomplete" role="status" class="text-sm">部分服务资料需核对；保留已知数值，未知字段显示「—」，不表示零或不限量。</p>
       <Card>
         <CardHeader class="border-b">
           <CardTitle class="text-base font-semibold">状态</CardTitle>
@@ -66,7 +67,7 @@ const chain = computed(() => (Array.isArray(access.value?.access_chain) ? access
             </div>
             <div class="flex flex-wrap items-center gap-2">
               <dt class="w-24 shrink-0 text-sm text-muted-foreground">到期时间</dt>
-              <dd class="text-sm">{{ formatDateTime(access?.expires_at ?? member?.expires_at) }}</dd>
+              <dd class="text-sm">{{ summary.expires === null ? '未设置到期时间' : formatDateTime(summary.expires, member?.period_timezone) }}</dd>
             </div>
             <div class="flex flex-wrap items-center gap-2">
               <dt class="w-24 shrink-0 text-sm text-muted-foreground">授权节点</dt>
@@ -78,8 +79,8 @@ const chain = computed(() => (Array.isArray(access.value?.access_chain) ? access
             <div class="flex flex-wrap items-start gap-2">
               <dt class="w-24 shrink-0 text-sm text-muted-foreground">已用 / 额度</dt>
               <dd class="tabular text-sm">
-                {{ formatBytes(access?.used_bytes ?? member?.used_bytes) }} /
-                {{ formatQuota(access?.effective_quota_bytes ?? member?.effective_quota_bytes) }}
+                {{ formatBytes(summary.used) }} /
+                {{ summary.total === undefined ? '—' : formatQuota(summary.total) }}
                 <span v-if="access?.quota_source" class="mt-1 block text-xs text-muted-foreground">
                   额度来源：{{ describeQuotaSource(access.quota_source) }}
                 </span>

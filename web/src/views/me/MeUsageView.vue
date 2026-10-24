@@ -41,7 +41,7 @@ onMounted(() => {
 })
 
 const items = computed(() => usage.data.value?.items ?? [])
-const adjustments = computed(() => usage.data.value?.adjustments ?? [])
+const adjustments = computed(() => page.value === 0 ? usage.data.value?.adjustments ?? [] : [])
 
 const totals = computed(() => {
   if (!usage.data.value || usage.loading.value || usage.error.value || !items.value.length) return null
@@ -111,7 +111,7 @@ const timezone = computed(() => quota.value.timezone || Intl.DateTimeFormat().re
             title="本页暂无用量记录"
             description="暂无记录不等于用量为零。当前周期已用量请以上方摘要为准；历史按发生周期归属。"
           />
-          <Table v-else>
+          <Table v-else data-testid="me-usage-table">
             <TableHeader>
               <TableRow>
                 <TableHead>节点</TableHead>

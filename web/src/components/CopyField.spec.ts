@@ -68,6 +68,29 @@ describe('CopyField', () => {
     vi.useRealTimers()
   })
 
+  it('复制被拒绝时不报成功，显示原文并选择，允许手动复制', async () => {
+    vi.mocked(copyText).mockResolvedValueOnce(false)
+    const wrapper = mount(CopyField, { props: { value: VALUE } })
+    await buttonByLabel(wrapper, '复制')!.trigger('click')
+    await nextTick()
+    expect(buttonByLabel(wrapper, '已复制')).toBeUndefined()
+    expect(wrapper.text()).toContain('复制失败')
+    const input = wrapper.get('input').element as HTMLInputElement
+    expect(input.value).toBe(VALUE)
+    expect(input.selectionStart).toBe(0)
+    expect(input.selectionEnd).toBe(VALUE.length)
+    wrapper.unmount()
+  })
+
+  it('值改变后不继承旧复制成功提示和明文显示', async () => {
+    const wrapper = mount(CopyField, { props: { value: VALUE } })
+    await buttonByLabel(wrapper, '复制')!.trigger('click')
+    await wrapper.setProps({ value: 'new-private-value' })
+    expect(buttonByLabel(wrapper, '已复制')).toBeUndefined()
+    expect(inputValue(wrapper)).not.toBe('new-private-value')
+    wrapper.unmount()
+  })
+
   it('warning 显示为次要文字，自定义 label 走 slot', () => {
     const wrapper = mount(CopyField, {
       props: { value: VALUE, warning: '此链接等同于密码' },

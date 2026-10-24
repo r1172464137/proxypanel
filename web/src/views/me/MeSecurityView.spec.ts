@@ -35,7 +35,7 @@ describe('改密认证核对', () => {
     mocks.session.mockRejectedValue(failure)
     const wrapper = await submit()
     expect(mocks.clear).toHaveBeenCalledOnce()
-    expect(mocks.push).toHaveBeenCalledWith({ name: 'login' })
+    expect(mocks.push).toHaveBeenCalledWith({ name: 'login', query: { next: '/me/security' } })
     wrapper.unmount()
   })
   it('成功持续展示真实撤销数量', async () => {
