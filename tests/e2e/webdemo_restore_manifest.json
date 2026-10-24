@@ -1,0 +1,51 @@
+{
+  "id": "webdemo-restore-product-readiness-v1",
+  "group": "C",
+  "runner": "python3 tests/e2e/run_webdemo_restore.py",
+  "selection": "^TestWebDemoRestoreBackupRecovery$",
+  "stories": ["US-PR-011", "US-PR-013", "US-PR-014", "US-PR-016"],
+  "requires": [
+    "Go SDK (/home/compile/sdk/go1.27.3/go)",
+    "PostgreSQL 17 client+server tools pg_dump/pg_restore/initdb/postgres/psql (/home/compile/sdk/pkg/usr/lib/postgresql/17/bin)",
+    "official Xray binary ($XRAY_BIN or /home/compile/Work/bin/xray)",
+    "util-linux flock",
+    "PG runtime libraries via LD_LIBRARY_PATH, same defaults as tests/e2e/run_data_plane.py"
+  ],
+  "isolation": {
+    "lock": "/home/compile/Work/.locks/proxypanel-webdemo-local-runtime.lock via flock -w600, taken before the before-snapshot and released after cleanup",
+    "clusters": "two brand-new initdb clusters, private unix socket directories, random 127.0.0.1 ports, random owned databases",
+    "agent": "new owned state directory plus a stopped-state copy; real cmd/agent process; explicit -accept-generation on the shipped binary",
+    "forbidden_and_untouched": ["shared 15432 cluster", "old .devdb", "preview 8443", "user 8445 stack", "shared runners/fixtures of other groups"]
+  },
+  "evidence": {
+    "runner_receipt": "runner-receipt.json (status, tools, assets, source/target ports, existing-object before/after identity)",
+    "test_receipt": "receipt.json (assertions, backup digest, generations, ledger totals, equivalence table, not_run)",
+    "sanitized": "restore-evidence.json",
+    "private_not_committed": ["source.dump", "pg_dump.log", "pg_restore.log", "postgres.log", "agent-*.log", "agent-*/ state directories", "usage/ recorded payloads"],
+    "never_printed": ["agent token", "master key", "member password", "subscription token", "credential secret", "full usage payload"]
+  },
+  "assertions": [
+    "real pg_dump --format=custom (PGDMP header, digest recorded) of the source cluster",
+    "real pg_restore --exit-on-error into a second, distinct owned cluster",
+    "restored panel enters a fresh exact-integer control generation different from backup, surviving source and Agent copy",
+    "ordinary admin and member authorization writes are blocked with 409 RECOVERY_MODE; identity rescue (own password) and Agent telemetry stay usable",
+    "an exit without explicit agent_revisions_checked/ledger_checked is refused",
+    "a verified exit rotates the generation again; every Agent must explicitly accept the new one",
+    "ledger equals backup ledger plus the externally queued Agent batches, byte/payload identical, replay idempotent",
+    "post-backup ACK-deleted batches are never fabricated after restore",
+    "recorded cycle intervals are conserved and replayed usage lands inside exactly one recorded interval",
+    "an interval with no recorded cycle is refused with LEDGER_UNATTRIBUTABLE, nothing ACKed, nothing moved into the current cycle",
+    "same batch id with a different payload is stopped with BATCH_PAYLOAD_MISMATCH",
+    "the permanently revoked old credential and its export stay denied before replay, after acceptance and after restart",
+    "the restored Agent refuses the new generation (coordination_required, pending set, zero queue) until -accept-generation",
+    "after verification the restored panel's new export tunnels real traffic",
+    "surviving source control state, revocation, ledger and the backup file are unchanged"
+  ],
+  "exclusions": [
+    "HTTPS/public deployment",
+    "WAL archiving / PITR / production RPO or RTO",
+    "technical old-release binary stop-write rollback (separate maintenance path, reported as not_run)",
+    "remote 203, preview 8443, user 8445 mutation",
+    "multi-node coordination beyond the single owned Agent"
+  ]
+}
