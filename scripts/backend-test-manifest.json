@@ -213,5 +213,87 @@
     "requires": [
       "postgres"
     ]
+  },
+  {
+    "id": "store/identity-tx",
+    "packages": [
+      "./internal/panel/store"
+    ],
+    "run": "^(TestSecurityPasswordResetSerializesSessionIssuance|TestSecuritySelfPasswordPreservesOnlyInitiatingSession|TestSecurityTargetedWritesRecheckRecoveryAfterLockWait|TestSecurityRedeemInvitationInitializesBinding|TestSecurityRedeemInvitationExpiryUsesStoreClock|TestSecurityRedeemInvitationHonoursClosedBindings|TestSecurityRedeemInvitationRollsBackOnCredentialFailure|TestSecurityCheckInvitationPreflight|TestSecurityInvitationUnboundAndArchived)$",
+    "expected_tests": [
+      "TestSecurityPasswordResetSerializesSessionIssuance",
+      "TestSecuritySelfPasswordPreservesOnlyInitiatingSession",
+      "TestSecurityTargetedWritesRecheckRecoveryAfterLockWait",
+      "TestSecurityRedeemInvitationInitializesBinding",
+      "TestSecurityRedeemInvitationExpiryUsesStoreClock",
+      "TestSecurityRedeemInvitationHonoursClosedBindings",
+      "TestSecurityRedeemInvitationRollsBackOnCredentialFailure",
+      "TestSecurityCheckInvitationPreflight",
+      "TestSecurityInvitationUnboundAndArchived"
+    ],
+    "stories": [
+      "US-PR-006",
+      "US-PR-009",
+      "US-PR-014",
+      "US-PR-017"
+    ],
+    "requires": [
+      "postgres"
+    ]
+  },
+  {
+    "id": "api/identity-http",
+    "packages": [
+      "./internal/panel/api"
+    ],
+    "run": "^(TestSecurityInvitationBindingAndQuota|TestSecurityAdminPasswordResetRevokes|TestSecurityLoginCanonicalRateKey|TestSecurityAnonymousRedeemBudgetAndCheapReject|TestSecurityLoginCapacityIsolation|TestSecurityLoginOriginAndMediaType|TestSecurityLoginOriginMatrix|TestSecurityStrictJSONThroughPublicHandler|TestSecurityStrictJSONBodyBoundary|TestSecurityInvitationClosedBindings|TestSecurityAdminResetRollbackOnRevokeFailure|TestSecurityRecoveryIdentityRescue)$",
+    "expected_tests": [
+      "TestSecurityInvitationBindingAndQuota",
+      "TestSecurityAdminPasswordResetRevokes",
+      "TestSecurityLoginCanonicalRateKey",
+      "TestSecurityAnonymousRedeemBudgetAndCheapReject",
+      "TestSecurityLoginCapacityIsolation",
+      "TestSecurityLoginOriginAndMediaType",
+      "TestSecurityLoginOriginMatrix",
+      "TestSecurityStrictJSONThroughPublicHandler",
+      "TestSecurityStrictJSONBodyBoundary",
+      "TestSecurityInvitationClosedBindings",
+      "TestSecurityAdminResetRollbackOnRevokeFailure",
+      "TestSecurityRecoveryIdentityRescue"
+    ],
+    "stories": [
+      "US-PR-006",
+      "US-PR-009",
+      "US-PR-014",
+      "US-PR-017"
+    ],
+    "requires": [
+      "postgres"
+    ]
+  },
+  {
+    "id": "limit/identity-limit",
+    "packages": [
+      "./internal/panel/limit"
+    ],
+    "run": "^(TestLocalFallbackEnforcesLimit|TestLocalWindowExpires|TestLocalOverflowRemainsBoundedAndEnforcesLimit|TestStatusReportsUnavailableRedisAndDegrades|TestStatusDisabledWithoutRedis|TestSecurityFullTableDoesNotDisableUnrelatedKeys|TestSecurityFullTableScanIsBoundedPerRequest|TestSecurityOverflowStillEnforcesLimitAndExpires|TestSecurityExactBucketsSurviveOverflowPressure)$",
+    "expected_tests": [
+      "TestLocalFallbackEnforcesLimit",
+      "TestLocalWindowExpires",
+      "TestLocalOverflowRemainsBoundedAndEnforcesLimit",
+      "TestStatusReportsUnavailableRedisAndDegrades",
+      "TestStatusDisabledWithoutRedis",
+      "TestSecurityFullTableDoesNotDisableUnrelatedKeys",
+      "TestSecurityFullTableScanIsBoundedPerRequest",
+      "TestSecurityOverflowStillEnforcesLimitAndExpires",
+      "TestSecurityExactBucketsSurviveOverflowPressure"
+    ],
+    "stories": [
+      "US-PR-006",
+      "US-PR-009",
+      "US-PR-014",
+      "US-PR-017"
+    ],
+    "requires": []
   }
 ]

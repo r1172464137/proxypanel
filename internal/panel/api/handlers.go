@@ -1,10 +1,15 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
+	"mime"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -120,27 +125,29 @@ func (s *Server) loginPayload(m *domain.Member, csrf string) map[string]any {
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if err := s.validateLoginRequest(r); err != nil {
+		s.writeError(w, r, err)
+		return
+	}
 	var in struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
-	if err := decodeJSON(r, &in); err != nil {
+	if err := decodeAuthJSON(r, &in); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
 	// 空字段是入参问题，应当在鉴权之前就以 400 拒绝（而不是落到统一的 401 分支）。
 	// 注意顺序：先做字段非空校验，再做限流，避免用空用户名消耗配额。
-	if strings.TrimSpace(in.Username) == "" || in.Password == "" {
+	in.Username = strings.TrimSpace(in.Username)
+	if in.Username == "" || in.Password == "" {
 		s.writeError(w, r, domain.Validation("username and password are required").
 			WithFieldErrors(map[string]string{"username": "required", "password": "required"}))
 		return
 	}
-	if s.RateLimiter != nil {
-		ok, _ := s.RateLimiter.Allow(r.Context(), "login:"+clientIP(r)+":"+strings.ToLower(in.Username), 10, time.Minute)
-		if !ok {
-			s.writeError(w, r, domain.E(domain.CodeRateLimited, http.StatusTooManyRequests, "too many login attempts"))
-			return
-		}
+	if err := s.authBudget(r, "login", in.Username); err != nil {
+		s.writeError(w, r, err)
+		return
 	}
 	uniform := domain.E(domain.CodeUnauthenticated, http.StatusUnauthorized, "invalid username or password")
 	m, err := s.Store.GetMemberByUsername(r.Context(), in.Username)
@@ -167,7 +174,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		ID: newID(ids.Session), MemberID: m.ID, TokenHash: secrets.HashToken(token), CSRFToken: csrf,
 		IP: clientIP(r), UserAgent: r.UserAgent(), ExpiresAt: time.Now().UTC().Add(ttl),
 	}
-	if err := s.Store.CreateSession(r.Context(), sess); err != nil {
+	if err := s.Store.CreateSessionForPassword(r.Context(), sess, m.PasswordHash); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -209,7 +216,26 @@ func (s *Server) handleRedeem(w http.ResponseWriter, r *http.Request) {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
-	if err := decodeJSON(r, &in); err != nil {
+	if err := decodeAuthJSON(r, &in); err != nil {
+		s.writeError(w, r, err)
+		return
+	}
+	in.Username = strings.TrimSpace(in.Username)
+	in.Code = strings.TrimSpace(in.Code)
+	if in.Username == "" || in.Code == "" {
+		s.writeError(w, r, domain.Validation("username and code are required"))
+		return
+	}
+	if err := s.authBudget(r, "redeem", in.Username); err != nil {
+		s.writeError(w, r, err)
+		return
+	}
+	// Cheap checks precede bcrypt; the transaction rechecks state under locks.
+	if err := s.Store.CheckInvitation(r.Context(), secrets.HashToken(in.Code)); err != nil {
+		s.writeError(w, r, err)
+		return
+	}
+	if err := s.redeemWorkBudget(r); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
@@ -218,16 +244,16 @@ func (s *Server) handleRedeem(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, domain.Validation("%s", err.Error()))
 		return
 	}
-	if strings.TrimSpace(in.Username) == "" {
-		s.writeError(w, r, domain.Validation("username is required"))
-		return
-	}
 	member := &domain.Member{
 		ID: newID(ids.Member), Username: strings.TrimSpace(in.Username), PasswordHash: hash,
 		Role: "member", Active: true, ProxyEnabled: true,
 	}
 	created, err := s.Store.RedeemInvitation(r.Context(), secrets.HashToken(strings.TrimSpace(in.Code)), member)
 	if err != nil {
+		// Public redemption never reveals the invitation's binding state.
+		if domain.AsError(err).Code == domain.CodeSubscriptionNotBindable {
+			err = domain.Validation("invitation is not usable")
+		}
 		s.writeError(w, r, err)
 		return
 	}
@@ -348,15 +374,8 @@ func (s *Server) handleMePassword(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, domain.Validation("%s", err.Error()))
 		return
 	}
-	if _, err := s.Store.UpdateMember(r.Context(), m.ID, 0, func(x *domain.Member) error {
-		x.PasswordHash = hash
-		return nil
-	}); err != nil {
-		s.writeError(w, r, err)
-		return
-	}
 	sess := sessionFrom(r.Context())
-	revoked, err := s.Store.RevokeAllSessions(r.Context(), m.ID, sess.ID)
+	revoked, err := s.Store.ChangePassword(r.Context(), m.ID, m.PasswordHash, hash, sess.ID)
 	if err != nil {
 		s.writeError(w, r, err)
 		return
@@ -556,3 +575,100 @@ func itoa64(v int64) string {
 }
 
 var _ = access.AlgorithmVersion
+
+// JSON plus an explicit origin check protects the unauthenticated login too:
+// SameSite does not stop a top-level form from replacing a login cookie.
+func (s *Server) validateLoginRequest(r *http.Request) error {
+	media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || media != "application/json" {
+		return domain.Validation("Content-Type must be application/json")
+	}
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
+			return domain.E(domain.CodeCSRFFailed, 403, "login origin is not allowed")
+		}
+		return nil // non-browser JSON clients and same-origin requests without Origin
+	}
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || (u.Scheme != "https" && u.Scheme != "http") {
+		return domain.E(domain.CodeCSRFFailed, 403, "login origin is not allowed")
+	}
+	if parseAllowedOrigins(s.Cfg.AllowedOrigins).allows(origin) {
+		return nil
+	}
+	// PublicURL is the canonical origin behind TLS termination. Never trust XFP.
+	if base, err := url.Parse(s.Cfg.PublicURL); err == nil && base.Host != "" {
+		if u.Scheme == base.Scheme && strings.EqualFold(u.Host, base.Host) {
+			return nil
+		}
+	} else {
+		scheme := "https"
+		if s.Cfg.Dev && r.TLS == nil {
+			scheme = "http"
+		}
+		if u.Scheme == scheme && strings.EqualFold(u.Host, r.Host) {
+			return nil
+		}
+	}
+	return domain.E(domain.CodeCSRFFailed, 403, "login origin is not allowed")
+}
+
+// Source admission runs BEFORE allocating attacker-chosen account buckets or
+// invoking bcrypt. Hash identifiers to keep local/Redis keys bounded in bytes.
+func (s *Server) authBudget(r *http.Request, kind, username string) error {
+	if s.RateLimiter == nil {
+		return nil
+	}
+	allow := func(key string, n int) bool {
+		ok, err := s.RateLimiter.Allow(r.Context(), key, n, time.Minute)
+		return err == nil && ok
+	}
+	source := secrets.HashToken(clientIP(r))
+	n := 50
+	if kind == "redeem" {
+		n = 20
+	}
+	if !allow(kind+":source:"+source, n) {
+		return domain.E(domain.CodeRateLimited, 429, "too many authentication attempts")
+	}
+	if kind == "login" {
+		if !allow("login:"+source+":"+secrets.HashToken(strings.ToLower(username)), 10) {
+			return domain.E(domain.CodeRateLimited, 429, "too many login attempts")
+		}
+	}
+	return nil
+}
+
+// Only a usable invitation can consume the global expensive-work budget.
+func (s *Server) redeemWorkBudget(r *http.Request) error {
+	if s.RateLimiter == nil {
+		return nil
+	}
+	ok, err := s.RateLimiter.Allow(r.Context(), "redeem:work", 100, time.Minute)
+	if err != nil || !ok {
+		return domain.E(domain.CodeRateLimited, 429, "too many redemption attempts")
+	}
+	return nil
+}
+
+// Read at most limit+1; do not drain arbitrary attacker-controlled bodies.
+func decodeAuthJSON(r *http.Request, dst any) error {
+	if r.Body == nil {
+		return domain.Validation("request body is required")
+	}
+	raw, err := io.ReadAll(io.LimitReader(r.Body, (1<<20)+1))
+	if err != nil || len(raw) > 1<<20 {
+		return domain.Validation("invalid or oversized JSON body")
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(dst); err != nil {
+		return domain.Validation("invalid JSON body")
+	}
+	var extra any
+	if err := dec.Decode(&extra); err != io.EOF {
+		return domain.Validation("one JSON document is required")
+	}
+	return nil
+}

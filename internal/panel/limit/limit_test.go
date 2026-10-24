@@ -49,7 +49,7 @@ func TestLocalWindowExpires(t *testing.T) {
 	}
 }
 
-func TestLocalTableFailsClosed(t *testing.T) {
+func TestLocalOverflowRemainsBoundedAndEnforcesLimit(t *testing.T) {
 	l, err := New("")
 	if err != nil {
 		t.Fatalf("new: %v", err)
@@ -61,12 +61,14 @@ func TestLocalTableFailsClosed(t *testing.T) {
 			t.Fatalf("fill %d: ok=%v err=%v", i, ok, err)
 		}
 	}
-	ok, err := l.Allow(ctx, "overflow", 5, time.Hour)
-	if err == nil {
-		t.Fatal("a full local table must report the failure")
+	for i := 0; i < 6; i++ {
+		ok, err := l.Allow(ctx, "overflow", 5, time.Hour)
+		if err != nil || ok != (i < 5) {
+			t.Fatalf("overflow attempt %d: allowed=%v err=%v", i+1, ok, err)
+		}
 	}
-	if ok {
-		t.Fatal("a full local table must deny instead of allowing unlimited attempts")
+	if len(l.local) != MaxLocalKeys {
+		t.Fatal("overflow grew the exact-key table")
 	}
 }
 

@@ -5,6 +5,7 @@ package limit
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"strings"
@@ -14,9 +15,13 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// MaxLocalKeys bounds the local fallback table; overflowing it denies requests
-// (fail closed) instead of growing without limit.
+// MaxLocalKeys bounds exact counters. New keys at capacity use a fixed hashed
+// overflow table, sharing conservative counters instead of disabling all login.
 const MaxLocalKeys = 4096
+
+// sweepBudget caps how many entries one capacity-miss may scan for expired
+// keys, so filling the table cannot turn every request into a full table walk.
+const sweepBudget = 128
 
 type bucket struct {
 	count   int
@@ -28,8 +33,9 @@ type Limiter struct {
 	rdb   *redis.Client
 	clock func() time.Time
 
-	mu    sync.Mutex
-	local map[string]bucket
+	mu       sync.Mutex
+	local    map[string]bucket
+	overflow [MaxLocalKeys]bucket
 
 	degraded bool
 	lastErr  string
@@ -99,23 +105,50 @@ func (l *Limiter) allowLocal(key string, limit int, window time.Duration) (bool,
 	now := l.clock()
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if len(l.local) >= MaxLocalKeys {
-		for k, b := range l.local {
-			if !b.expires.After(now) {
-				delete(l.local, k)
-			}
-		}
+	b, ok := l.local[key]
+	if !ok && len(l.local) >= MaxLocalKeys {
+		// Reclaim at most sweepBudget expired entries per miss: unbounded
+		// scanning here would be the CPU amplification we are preventing.
+		l.sweepExpiredLocked(now)
 		if len(l.local) >= MaxLocalKeys {
-			return false, errors.New("rate limiter local table is full")
+			h := sha256.Sum256([]byte(key))
+			i := (int(h[0])<<8 | int(h[1])) % len(l.overflow)
+			b = l.overflow[i]
+			if !b.expires.After(now) {
+				b = bucket{expires: now.Add(window)}
+			}
+			// Saturate rather than wrap on a busy shared bucket.
+			if b.count <= limit {
+				b.count++
+			}
+			l.overflow[i] = b
+			return b.count <= limit, nil
 		}
 	}
-	b, ok := l.local[key]
 	if !ok || !b.expires.After(now) {
 		b = bucket{count: 0, expires: now.Add(window)}
 	}
-	b.count++
+	if b.count <= limit {
+		b.count++
+	}
 	l.local[key] = b
 	return b.count <= limit, nil
+}
+
+// sweepExpiredLocked reclaims up to sweepBudget expired exact counters. The
+// caller holds l.mu. Bounding the work per request means a full table cannot be
+// turned into a repeated full-map scan by an attacker.
+func (l *Limiter) sweepExpiredLocked(now time.Time) {
+	visited := 0
+	for k, existing := range l.local {
+		visited++
+		if visited > sweepBudget {
+			return
+		}
+		if !existing.expires.After(now) {
+			delete(l.local, k)
+		}
+	}
 }
 
 func (l *Limiter) setDegraded(err error) {

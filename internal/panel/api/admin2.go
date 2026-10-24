@@ -580,13 +580,11 @@ func (s *Server) handlePatchMember(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	deactivated := false
 	v, err := s.Store.UpdateMember(r.Context(), id, in.Version, func(m *domain.Member) error {
-		revoke, err := applyMemberPatch(m, &in)
+		_, err := applyMemberPatch(m, &in)
 		if err != nil {
 			return err
 		}
-		deactivated = revoke
 		if bind == nil || m.SubscriptionID == nil {
 			return nil
 		}
@@ -610,9 +608,6 @@ func (s *Server) handlePatchMember(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, err)
 		return
 	}
-	if deactivated || !v.Active {
-		_, _ = s.Store.RevokeAllSessions(r.Context(), v.ID, "")
-	}
 	if err := s.syncCredentials(r, v.ID); err != nil {
 		s.writeError(w, r, err)
 		return
@@ -631,7 +626,6 @@ func (s *Server) handleDeleteMember(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, err)
 		return
 	}
-	_, _ = s.Store.RevokeAllSessions(r.Context(), id, "")
 	_, _ = s.Store.PurgeCredentials(r.Context(), id, "member archived")
 	s.audit(r, "member.archive", "member", id, nil)
 	s.writeData(w, http.StatusOK, v)

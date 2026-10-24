@@ -184,7 +184,7 @@ func (s *Store) CountMembers(ctx context.Context) (total, active int, err error)
 
 // CreateMember inserts a member row.
 func (s *Store) CreateMember(ctx context.Context, m *domain.Member) (*domain.Member, error) {
-	err := s.inTx(ctx, func(tx *sql.Tx) error {
+	err := s.inWritableTx(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO members (`+memberCols+`)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,false,$17,$18,1,now(),now())`,
 			m.ID, m.Username, m.PasswordHash, m.Role, m.Active, m.ProxyEnabled, m.Archived, nullableString(m.SubscriptionID),
@@ -207,9 +207,19 @@ func (s *Store) CreateMember(ctx context.Context, m *domain.Member) (*domain.Mem
 // UpdateMember applies fn under the shared control lock and a member row lock.
 // The last-admin invariant is checked in the same transaction as the update.
 func (s *Store) UpdateMember(ctx context.Context, id string, expectedVersion int64, fn func(*domain.Member) error) (*domain.Member, error) {
+	out, _, err := s.updateMember(ctx, id, expectedVersion, "", false, fn)
+	return out, err
+}
+
+func (s *Store) updateMember(ctx context.Context, id string, expectedVersion int64, keepSessionID string, selfPassword bool, fn func(*domain.Member) error) (*domain.Member, int, error) {
 	var out *domain.Member
+	var revoked int
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
-		if err := lockMemberChangesTx(ctx, tx); err != nil {
+		if selfPassword {
+			if err := lockMemberChangesTx(ctx, tx); err != nil {
+				return err
+			}
+		} else if err := requireWritableTx(ctx, tx); err != nil {
 			return err
 		}
 		cur, err := scanMember(tx.QueryRowContext(ctx, `SELECT `+memberCols+` FROM members WHERE id=$1 FOR UPDATE`, id))
@@ -219,9 +229,21 @@ func (s *Store) UpdateMember(ctx context.Context, id string, expectedVersion int
 		if expectedVersion != 0 && cur.Version != expectedVersion {
 			return domain.Conflict(domain.CodeConflict, "member was modified by another request")
 		}
+		if selfPassword {
+			var valid bool
+			if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM sessions WHERE id=$1 AND member_id=$2 AND revoked_at IS NULL AND expires_at > $3)`, keepSessionID, id, s.now()).Scan(&valid); err != nil {
+				return dbErr(err)
+			}
+			if !valid || !cur.Active || cur.Archived {
+				return domain.E(domain.CodeUnauthenticated, 401, "session expired or revoked")
+			}
+		}
 		before := *cur
 		if err := fn(cur); err != nil {
 			return err
+		}
+		if selfPassword && !passwordOnlyMemberChange(&before, cur) {
+			return domain.Validation("password-only change required")
 		}
 		if err := archivedGuard("member", before.Archived, cur.Archived); err != nil {
 			return err
@@ -241,6 +263,13 @@ func (s *Store) UpdateMember(ctx context.Context, id string, expectedVersion int
 			cur.PeriodAnchorDay, pendingJSON(cur.PendingPeriodRule), cur.OverQuota, nullableTime(cur.BoundAt),
 			nullableTime(cur.LastLoginAt), cur.Version, cur.UpdatedAt); err != nil {
 			return dbErr(err)
+		}
+		if before.PasswordHash != cur.PasswordHash || !cur.Active || cur.Archived {
+			var err error
+			revoked, err = revokeSessionsQ(ctx, tx, cur.ID, keepSessionID)
+			if err != nil {
+				return err
+			}
 		}
 		// A binding change closes the previous binding history row and opens a
 		// new one; history is never deleted.
@@ -265,7 +294,7 @@ func (s *Store) UpdateMember(ctx context.Context, id string, expectedVersion int
 		out = cur
 		return nil
 	})
-	return out, err
+	return out, revoked, err
 }
 
 func memberBindingID(memberID string, version int64) string {
@@ -314,10 +343,32 @@ func (s *Store) CountActiveAdmins(ctx context.Context) (int, error) {
 // ─── sessions ──────────────────────────────────────────────────────────────
 
 func (s *Store) CreateSession(ctx context.Context, sess *domain.Session) error {
-	_, err := s.DB.ExecContext(ctx, `INSERT INTO sessions (id, member_id, token_hash, csrf_token, ip, user_agent,
-		created_at, last_seen_at, expires_at) VALUES ($1,$2,$3,$4,$5,$6,now(),now(),$7)`,
-		sess.ID, sess.MemberID, sess.TokenHash, sess.CSRFToken, sess.IP, sess.UserAgent, sess.ExpiresAt)
-	return dbErr(err)
+	return s.createSessionForPassword(ctx, sess, "", false)
+}
+
+// Serialize session issuance with password reset. bcrypt runs outside the lock;
+// its verified hash must still match at insertion, closing the old-hash race.
+func (s *Store) CreateSessionForPassword(ctx context.Context, sess *domain.Session, verifiedHash string) error {
+	return s.createSessionForPassword(ctx, sess, verifiedHash, true)
+}
+
+func (s *Store) createSessionForPassword(ctx context.Context, sess *domain.Session, verifiedHash string, requireHash bool) error {
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		if err := lockMemberChangesTx(ctx, tx); err != nil {
+			return err
+		}
+		m, err := scanMember(tx.QueryRowContext(ctx, `SELECT `+memberCols+` FROM members WHERE id=$1 FOR UPDATE`, sess.MemberID))
+		if err != nil {
+			return err
+		}
+		if !m.Active || m.Archived || (requireHash && (verifiedHash == "" || m.PasswordHash != verifiedHash)) {
+			return domain.E(domain.CodeUnauthenticated, 401, "invalid username or password")
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO sessions (id, member_id, token_hash, csrf_token, ip, user_agent,
+			created_at, last_seen_at, expires_at) VALUES ($1,$2,$3,$4,$5,$6,now(),now(),$7)`,
+			sess.ID, sess.MemberID, sess.TokenHash, sess.CSRFToken, sess.IP, sess.UserAgent, sess.ExpiresAt)
+		return dbErr(err)
+	})
 }
 
 // SessionByTokenHash returns the session and member for a cookie token hash.
@@ -469,8 +520,11 @@ func (s *Store) CreateInvitation(ctx context.Context, codeHash string, subID *st
 	if maxUses <= 0 {
 		maxUses = 1
 	}
-	_, err := s.DB.ExecContext(ctx, `INSERT INTO invitations (id, code_hash, subscription_id, expires_at, max_uses, created_by)
+	err := s.inWritableTx(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `INSERT INTO invitations (id, code_hash, subscription_id, expires_at, max_uses, created_by)
 		VALUES ($1,$2,$3,$4,$5,$6)`, id, codeHash, nullableString(subID), expiresAt.UTC(), maxUses, createdBy)
+		return dbErr(err)
+	})
 	return id, dbErr(err)
 }
 
@@ -507,6 +561,9 @@ func (s *Store) InvitationByCodeHash(ctx context.Context, codeHash string) (*dom
 func (s *Store) RedeemInvitation(ctx context.Context, codeHash string, member *domain.Member) (*domain.Member, error) {
 	var created *domain.Member
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		if err := requireWritableTx(ctx, tx); err != nil {
+			return err
+		}
 		var id string
 		var expiresAt time.Time
 		var maxUses, usedCount int
@@ -515,13 +572,21 @@ func (s *Store) RedeemInvitation(ctx context.Context, codeHash string, member *d
 		if err := tx.QueryRowContext(ctx, `SELECT id, subscription_id, expires_at, max_uses, used_count, used_at, revoked_at
 			FROM invitations WHERE code_hash=$1 FOR UPDATE`, codeHash).Scan(
 			&id, &subID, &expiresAt, &maxUses, &usedCount, &usedAt, &revoked); err != nil {
+			if err != sql.ErrNoRows {
+				return dbErr(err)
+			}
 			return domain.Validation("invitation is not usable")
 		}
 		if revoked.Valid || usedAt.Valid || usedCount >= maxUses || !expiresAt.After(s.now()) {
 			return domain.Validation("invitation is not usable")
 		}
+		member.SubscriptionID = nil
 		if subID.Valid {
 			member.SubscriptionID = &subID.String
+		}
+		sub, err := s.prepareInvitedBindingTx(ctx, tx, member)
+		if err != nil {
+			return err
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO members (`+memberCols+`)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,false,$17,now(),1,now(),now())`,
@@ -531,6 +596,9 @@ func (s *Store) RedeemInvitation(ctx context.Context, codeHash string, member *d
 			nullableTime(member.PeriodEnd), member.PeriodTimezone, member.PeriodAnchorDay,
 			pendingJSON(member.PendingPeriodRule), nullableTime(member.BoundAt)); err != nil {
 			return dbErr(err)
+		}
+		if err := s.invitedCredentialsTx(ctx, tx, member, sub); err != nil {
+			return err
 		}
 		// Keep the invitation row locked, but insert the member before writing
 		// its immediately checked used_by_member_id foreign key.
@@ -552,15 +620,17 @@ func (s *Store) RedeemInvitation(ctx context.Context, codeHash string, member *d
 }
 
 func (s *Store) RevokeInvitation(ctx context.Context, id string) error {
-	res, err := s.DB.ExecContext(ctx, `UPDATE invitations SET revoked_at=now()
+	return s.inWritableTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `UPDATE invitations SET revoked_at=now()
 		WHERE id=$1 AND revoked_at IS NULL AND used_at IS NULL`, id)
-	if err != nil {
-		return dbErr(err)
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return domain.Conflict(domain.CodeConflict, "invitation is already used, revoked or missing")
-	}
-	return nil
+		if err != nil {
+			return dbErr(err)
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return domain.Conflict(domain.CodeConflict, "invitation is already used, revoked or missing")
+		}
+		return nil
+	})
 }
 
 // ─── subscription tokens ───────────────────────────────────────────────────
@@ -586,9 +656,15 @@ func (s *Store) EnsureSubscriptionToken(ctx context.Context, memberID, tokenHash
 	if err != nil {
 		return "", err
 	}
-	_, err = s.DB.ExecContext(ctx, `INSERT INTO subscription_tokens (id, member_id, token_hash, token_enc)
-		VALUES ($1,$2,$3,$4) ON CONFLICT (member_id) WHERE revoked_at IS NULL DO NOTHING`,
-		newID("stk"), memberID, tokenHash, enc)
+	err = s.inTx(ctx, func(tx *sql.Tx) error {
+		if err := requireWritableTx(ctx, tx); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `INSERT INTO subscription_tokens (id, member_id, token_hash, token_enc)
+			VALUES ($1,$2,$3,$4) ON CONFLICT (member_id) WHERE revoked_at IS NULL DO NOTHING`,
+			newID("stk"), memberID, tokenHash, enc)
+		return dbErr(err)
+	})
 	if err != nil {
 		return "", dbErr(err)
 	}
@@ -608,6 +684,9 @@ func (s *Store) RotateSubscriptionToken(ctx context.Context, memberID, tokenHash
 		return "", err
 	}
 	err = s.inTx(ctx, func(tx *sql.Tx) error {
+		if err := requireWritableTx(ctx, tx); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `UPDATE subscription_tokens SET revoked_at=now()
 			WHERE member_id=$1 AND revoked_at IS NULL`, memberID); err != nil {
 			return dbErr(err)
@@ -681,7 +760,7 @@ func (s *Store) EnsureCredentials(ctx context.Context, memberID string, nodeIDs 
 	for _, id := range nodeIDs {
 		want[id] = true
 	}
-	err = s.inTx(ctx, func(tx *sql.Tx) error {
+	err = s.inWritableTx(ctx, func(tx *sql.Tx) error {
 		rows, err := tx.QueryContext(ctx, `SELECT id, node_id, kind FROM credentials
 			WHERE member_id=$1 AND state='active' FOR UPDATE`, memberID)
 		if err != nil {
@@ -742,6 +821,9 @@ func (s *Store) EnsureCredentials(ctx context.Context, memberID string, nodeIDs 
 func (s *Store) RotateCredentials(ctx context.Context, memberID string, nodeIDs []string, gen func(nodeID string) (id, secret, kind string, err error)) (int, error) {
 	count := 0
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		if err := requireWritableTx(ctx, tx); err != nil {
+			return err
+		}
 		for _, nodeID := range nodeIDs {
 			if _, err := tx.ExecContext(ctx, `UPDATE credentials SET state='revoked', revoked_at=now(),
 				rotated_reason='rotation' WHERE member_id=$1 AND node_id=$2 AND state='active'`, memberID, nodeID); err != nil {
@@ -774,7 +856,7 @@ func (s *Store) RotateCredentials(ctx context.Context, memberID string, nodeIDs 
 // PurgeCredentials revokes every active credential of a member (hard revoke).
 func (s *Store) PurgeCredentials(ctx context.Context, memberID, reason string) (int, error) {
 	n := 0
-	err := s.inTx(ctx, func(tx *sql.Tx) error {
+	err := s.inWritableTx(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, `UPDATE credentials SET state='revoked', revoked_at=now(), rotated_reason=$2
 			WHERE member_id=$1 AND state='active'`, memberID, reason)
 		if err != nil {
