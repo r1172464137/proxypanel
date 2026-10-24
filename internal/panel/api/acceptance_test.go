@@ -584,6 +584,28 @@ func TestAcceptanceSessionRevocationAndScope(t *testing.T) {
 	other := e.loginAs(t, "sess-other", "other-password-1")
 	e.mustCall(t, sess, "GET", "/api/v1/auth/session", nil).ok(t)
 
+	// Deleting the current session is not a second logout endpoint. Both roles
+	// must retain their session after this specific validation refusal.
+	for _, current := range []*acceptSession{admin, sess} {
+		currentID := ""
+		for _, raw := range e.mustCall(t, current, "GET", "/api/v1/me/sessions", nil).listItems(t) {
+			row := raw.(map[string]any)
+			if row["current"] == true {
+				currentID = wantField(t, row, "id")
+			}
+		}
+		if currentID == "" {
+			t.Fatal("no current session listed")
+		}
+		e.mustCall(t, current, "DELETE", "/api/v1/me/sessions/"+currentID, nil).
+			expect(t, http.StatusBadRequest, "VALIDATION_FAILED")
+		e.mustCall(t, current, "GET", "/api/v1/auth/session", nil).ok(t)
+	}
+	logoutSession := e.loginAs(t, "sess-user", "sess-password-1")
+	e.mustCall(t, logoutSession, "POST", "/api/v1/auth/logout", nil).ok(t)
+	e.mustCall(t, logoutSession, "GET", "/api/v1/auth/session", nil).expect(t, http.StatusUnauthorized, "UNAUTHENTICATED")
+	e.mustCall(t, sess, "GET", "/api/v1/auth/session", nil).ok(t)
+
 	// AC-AUTH-03: a member session cannot use the admin surface, and another
 	// member's session id cannot be revoked through the member endpoint.
 	e.mustCall(t, sess, "GET", "/api/v1/admin/members", nil).expect(t, http.StatusForbidden, "FORBIDDEN")

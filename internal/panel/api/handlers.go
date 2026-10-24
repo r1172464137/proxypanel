@@ -457,7 +457,12 @@ func (s *Server) handleMeSessions(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMeSessionDelete(w http.ResponseWriter, r *http.Request) {
 	m := memberFrom(r.Context())
-	if err := s.Store.RevokeSession(r.Context(), r.PathValue("id"), m.ID); err != nil {
+	id := r.PathValue("id")
+	if id == sessionFrom(r.Context()).ID {
+		s.writeError(w, r, domain.Validation("cannot revoke the current session; use logout instead"))
+		return
+	}
+	if err := s.Store.RevokeSession(r.Context(), id, m.ID); err != nil {
 		s.writeError(w, r, err)
 		return
 	}
