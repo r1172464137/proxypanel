@@ -425,8 +425,14 @@ try {
     return { scenarios, h1Workbench: workbenchH1, memberPageTitleUnaffected: '我的服务' }
   })
 
-  // Resource creation entirely through the UI.
+  // Resource creation entirely through the UI. Capture the genuinely empty
+  // setup state first, then prove the same objects are reused by progress.
+  let initialSetupCompleted = -1
   await record('chain', 'ui-create-resources', async () => {
+    await ap.goto(panelBase + '/admin/overview')
+    const initialSetupText = await ap.getByTestId('setup-progress-label').innerText()
+    initialSetupCompleted = Number(/已确认完成 (\d)\/6/.exec(initialSetupText)?.[1] ?? -1)
+    assert.equal(initialSetupCompleted, 0, `fresh owned environment should start at 0/6, got "${initialSetupText}"`)
     server = await servers.create('wdemo server', '127.0.0.1')
     const inbound = state.ports.inbound
     node = await nodes.create({ name: 'wdemo vless', serverLabel: `wdemo server (127.0.0.1)`, host: '127.0.0.1', port: inbound, listen: '127.0.0.1' })
@@ -435,7 +441,7 @@ try {
     subscription = await plans.create({ name: 'wdemo plan 1GiB', groupName: 'wdemo group', quotaGiB: 1 })
     assert.equal(subscription.quota_bytes, 1073741824)
     fixtures.push({ source: 'UI-created server/node/node-group/service plan (no API/SQL fixture shortcuts)', serverId: server.id, nodeId: node.id, groupId: group.id, subscriptionId: subscription.id })
-    return { serverId: server.id, nodeId: node.id, groupId: group.id, subscriptionId: subscription.id, nodeInbound: inbound }
+    return { initialSetupCompleted, serverId: server.id, nodeId: node.id, groupId: group.id, subscriptionId: subscription.id, nodeInbound: inbound }
   })
 
   // US-002 — real setup progress.
@@ -447,14 +453,18 @@ try {
     const done = Number(/已确认完成 (\d)\/6/.exec(text)?.[1] ?? -1)
     // Server step requires a live Agent heartbeat and the traffic step is
     // "unknown" by design, so UI-created server/node/group/plan/member credits 3.
-    assert.ok(done >= 3, `setup progress should credit UI-created objects, got "${text}"`)
+    assert.ok(done >= 3 && done > initialSetupCompleted, `setup progress should advance from ${initialSetupCompleted}/6 using the created objects, got "${text}"`)
     assert.match(text, /6 步/)
+    const serverRows = (await api(adminCtx, '/admin/servers')).items ?? []
+    const planRows = (await api(adminCtx, '/admin/subscriptions')).items ?? []
+    assert.equal(serverRows.filter(item => item.id === server.id).length, 1, 'setup must reuse the one existing server')
+    assert.equal(planRows.filter(item => item.id === subscription.id).length, 1, 'setup must reuse the one existing service plan')
     await ap.getByTestId('setup-step-servers').getByRole('link').first().click().catch(async () => { await ap.getByTestId('setup-step-servers').click() })
     await ap.waitForURL(u => !u.pathname.includes('/admin/overview'))
     const target = new URL(ap.url()).pathname
     await ap.goto(panelBase + '/admin/overview')
     await ap.getByTestId('setup-progress-label').waitFor()
-    return { progressText: text, completedCount: done, stepNavigatesTo: target, unknownStep: 'connection verification stays unknown until real traffic (not a checkbox)' }
+    return { initialCompletedCount: initialSetupCompleted, progressText: text, completedCount: done, reusedServerId: server.id, reusedPlanId: subscription.id, stepNavigatesTo: target, unknownStep: 'connection verification stays unknown until real traffic (not a checkbox)' }
   })
 
   // US-003 — registration code + real Agent heartbeat.
@@ -505,7 +515,25 @@ try {
     await reuseCtx.close()
     const created = await db(`select count(*)::int as count from members where username='wdemo_reuse_denied'`)
     assert.equal(created[0].count, 0)
-    return { withPlan: membershipOk(memberRecord), unusableInvitationStatus: rejected, accountsCreated: 0, noStatusDisclosure: true }
+    // The second required branch is a valid invitation with no service plan.
+    await ap.goto(panelBase + '/admin/invitations')
+    await ap.getByRole('button', { name: '生成邀请码', exact: true }).first().click()
+    await ap.locator('#invite-sub').selectOption('')
+    const noPlanCreated = ap.waitForResponse(r => r.url().endsWith('/api/v1/admin/invitations') && r.request().method() === 'POST')
+    await ap.getByRole('button', { name: '生成一次性邀请', exact: true }).click()
+    const noPlanResponse = await noPlanCreated
+    assert.equal(noPlanResponse.status(), 201)
+    const noPlanCode = (await noPlanResponse.json()).data.code
+    const noPlanCtx = await context()
+    const noPlanPage = new RedeemPage(await noPlanCtx.newPage(), panelBase)
+    await noPlanPage.redeem({ code: noPlanCode, username: 'wdemo_pending_service', password: state.admin_password })
+    await noPlanPage.page.waitForURL('**/me/subscription?welcome=1')
+    const pendingCopy = await noPlanPage.page.getByTestId('redeem-result-message').innerText()
+    assert.match(pendingCopy, /尚未分配服务方案|待开通/)
+    const pendingMember = await api(noPlanCtx, '/me/status')
+    assert.equal(pendingMember.member.subscription_id, null)
+    await noPlanCtx.close()
+    return { withPlan: membershipOk(memberRecord), withoutPlan: { subscriptionId: null, pendingCopy: redact(pendingCopy) }, unusableInvitationStatus: rejected, accountsCreated: 0, noStatusDisclosure: true }
   })
 
   // US-007 — member first screen: status/quota/expiry/reset/client import, and
@@ -623,7 +651,18 @@ try {
     assert.ok(startedCores.length > 0, `owned core not applied: ${JSON.stringify(coresApplied)}`)
     assert.ok(startedCores.every(r => Number(r.generation) > 0 && Number(r.config_revision) > 0), `applied core must carry a real generation/revision: ${JSON.stringify(startedCores)}`)
     assert.ok(startedCores.every(r => !!r.agent_id), 'applied core must be owned by the real registered Agent')
-    return { agentStart: started, coreInstances: coresApplied, realAgent: true, officialXray: started.core_path }
+    // Complete US-PR-003 on the actual server page after registration/apply;
+    // an API/DB row alone does not prove the administrator sees the state.
+    await servers.open()
+    const connectedRow = servers.row('wdemo server')
+    await connectedRow.getByTestId('server-agent-state').filter({ hasText: '在线' }).waitFor({ state: 'visible' })
+    const connectedText = await connectedRow.innerText()
+    assert.match(connectedText, /在线/)
+    const us003 = results.find(item => item.id === 'US-PR-003' && item.status === 'PASS')
+    assert.ok(us003, 'US-PR-003 pre-registration result missing')
+    us003.detail.afterAgent = { pageState: '在线', realHeartbeatVisible: true, appliedCoreState: startedCores[0].state }
+    await ap.goto(panelBase + '/admin/overview')
+    return { agentStart: started, coreInstances: coresApplied, serverPageAfterAgent: redact(connectedText.split('\n').slice(0, 6).join(' | ')), realAgent: true, officialXray: started.core_path }
   })
 
   // The continuous data chain with fixed file / SHA / real sampling.
@@ -734,7 +773,11 @@ try {
   // US-005 — plan sentence, bound-member delete refusal.
   await record('us', 'US-PR-005', async () => {
     await ap.goto(panelBase + `/admin/subscriptions/${subscription.id}`)
+    await ap.getByTestId('subscription-form').waitFor({ state: 'visible' })
     const body = await ap.locator('main').innerText()
+    assert.match(body, /节点组：wdemo group/)
+    assert.match(body, /每人额度：1 GiB/)
+    assert.match(body, /周期|UTC|锚定日/)
     const retire = ap.getByTestId(`subscription-retire-button-${subscription.id}`)
     await ap.goto(panelBase + '/admin/subscriptions')
     await retire.click()
