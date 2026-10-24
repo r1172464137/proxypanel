@@ -44,6 +44,7 @@ import type {
   TemplateRecord,
   TemplateWrite,
   TokenRotationResult,
+  UpgradeReadiness,
   UsageItem,
   UsagePage,
 } from './types'
@@ -230,6 +231,8 @@ export const adminApi = {
   },
 
   batches: {
+    // 批次列表：GET /admin/batches（items + next_cursor），与其它列表同一分页口径。
+    list: (query?: PageQuery) => api.page<BatchDetail>(`${ADMIN}/batches`, { query: pageQuery(query) }),
     preview: (body: {
       operation: BatchOperation
       member_ids: string[]
@@ -239,6 +242,11 @@ export const adminApi = {
     submit: (body: { preview_id: string; rules_version?: unknown; member_set_digest?: unknown; confirm: true }, idempotencyKey: string) =>
       api.post<BatchSubmitResult>(`${ADMIN}/batches`, body, { idempotencyKey }),
     get: async (id: string) => batchDetailFromEnvelope(await api.get<unknown>(`${ADMIN}/batches/${encodeURIComponent(id)}`)),
+  },
+
+  upgradeReadiness: {
+    // 升级预检只读端点；状态为 ready/blocked/unknown，读取失败由调用方显式展示。
+    get: () => api.get<UpgradeReadiness>(`${ADMIN}/upgrade-readiness`),
   },
 
   usage: {

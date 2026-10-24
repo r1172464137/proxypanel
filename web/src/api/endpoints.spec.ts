@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { adminApi, authApi, meApi, memberRecordFromDetail } from './endpoints'
 import { setCsrfToken } from './http'
+import type { UpgradeReadiness } from './types'
 
 interface Captured {
   url: string
@@ -75,6 +76,36 @@ describe('端点封装', () => {
       values: { subscription_id: 'sub_1' },
     })
     expect(preview.id).toBe('prv_1')
+  })
+
+  it('批量列表走中央封装并透传分页查询', async () => {
+    const calls = stubFetch({ items: [{ id: 'bat_1', state: 'running' }], next_cursor: 'next-cursor' })
+    const page = await adminApi.batches.list({ limit: 20, cursor: 'opaque' })
+    expect(calls[0]!.url).toBe('/api/v1/admin/batches?limit=20&cursor=opaque')
+    expect(page.items[0]!.id).toBe('bat_1')
+    expect(page.next_cursor).toBe('next-cursor')
+  })
+
+  it('升级预检通过中央封装读取 typed readiness', async () => {
+    const readiness: UpgradeReadiness = {
+      status: 'blocked',
+      checked_at: '2026-10-24T07:00:00Z',
+      candidate_version: 'v1',
+      schema: { applied_migrations: ['001'], pending_migrations: [], checksum_ok: true },
+      checks: [],
+      blockers: ['PENDING_BATCHES'],
+      phase: 'preflight',
+      applied_migrations: ['001'],
+      pending_migrations: [],
+      pending_batches: 2,
+      duplicate_batches: 0,
+    }
+    const calls = stubFetch({ data: readiness })
+    const result = await adminApi.upgradeReadiness.get()
+    expect(calls[0]!.url).toBe('/api/v1/admin/upgrade-readiness')
+    expect(calls[0]!.init.method).toBe('GET')
+    expect(result.status).toBe('blocked')
+    expect(result.blockers).toEqual(['PENDING_BATCHES'])
   })
 
   it('登录是公共端点：不带 CSRF，且不触发全局登出', async () => {

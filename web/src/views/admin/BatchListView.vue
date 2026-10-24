@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { api } from '@/api/http'
+import { adminApi } from '@/api/endpoints'
 import type { BatchDetail } from '@/api/types'
 import { usePagedList } from '@/lib/paged'
 import { formatDateTime } from '@/lib/format'
@@ -10,9 +10,8 @@ import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { Button } from '@/components/ui/button'
 
-// 批次列表：契约里是 GET /admin/batches（items + next_cursor）。endpoints.ts 只封装了
-// preview/submit/get，这里用同一个 api.page 走相同路径，避免改动共享的端点文件。
-const list = usePagedList<BatchDetail>((cursor) => api.page<BatchDetail>('/api/v1/admin/batches', { query: { limit: 50, ...(cursor ? { cursor } : {}) } }))
+// 批次列表统一走 adminApi.batches.list，与其它列表共享同一分页/查询封装。
+const list = usePagedList<BatchDetail>((cursor) => adminApi.batches.list({ limit: 50, cursor }))
 
 onMounted(() => void list.refresh())
 

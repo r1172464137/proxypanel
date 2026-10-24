@@ -18,6 +18,19 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 const cursors = ref<(string | null)[]>([null])
 const page = ref(0)
 const usage = useResource<MeUsageResult>((signal) => loadMeUsage(cursors.value[page.value], signal))
+
+/**
+ * 单次读取 + 失效游标收口。CURSOR_INVALID 时旧游标范围只能作废：
+ * 立即回到首页、清空游标历史（下一次读取 cursor=null），并保留可见错误等用户显式重新加载。
+ * 这里不自动重试，避免无界请求循环。
+ */
+async function load() {
+  await usage.reload()
+  if (usage.error.value?.code === 'CURSOR_INVALID') {
+    page.value = 0
+    cursors.value = [null]
+  }
+}
 async function changePage(next: boolean) {
   if (usage.loading.value) return
   if (next) {
@@ -26,17 +39,17 @@ async function changePage(next: boolean) {
     cursors.value[page.value + 1] = cursor
     page.value++
   } else if (page.value > 0) page.value--
-  await usage.reload()
+  await load()
 }
 async function refresh() {
   page.value = 0
   cursors.value = [null]
-  await Promise.all([usage.reload(), status.reload()])
+  await Promise.all([load(), status.reload()])
 }
 const status = useResource<MeStatus>(() => meApi.status())
 
 onMounted(() => {
-  void usage.reload()
+  void load()
   void status.reload()
 })
 
@@ -102,7 +115,12 @@ const timezone = computed(() => quota.value.timezone || Intl.DateTimeFormat().re
       </Card>
 
       <LoadingBlock v-if="usage.loading.value" label="正在读取用量" />
-      <ErrorState v-else-if="usage.error.value" :error="usage.error.value" @retry="usage.reload()" />
+      <ErrorState
+        v-else-if="usage.error.value"
+        :error="usage.error.value"
+        :retry-label="usage.error.value.code === 'CURSOR_INVALID' ? '重新加载第一页' : '重试'"
+        @retry="load()"
+      />
       <Card v-else data-testid="usage-detail-card">
         <CardContent class="pt-6">
           <EmptyState
