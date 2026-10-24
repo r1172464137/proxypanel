@@ -134,6 +134,9 @@ prepare_evidence() {
 
 snapshot_host_identity() {
   local out="$1"
+  # Loopback listeners only. The host has other users/tasks on other addresses
+  # (e.g. LAN addresses); those are outside this run's boundary but still
+  # recorded, so `listen_127` filters to 127.0.0.1 wildcard-free entries.
   python3 - "$out" <<'PY'
 import json, os, sys
 pid = 1
@@ -168,7 +171,12 @@ data = {
  'container_env': rd('/proc/self/environ','hex') is not None and 'container=' in (rd('/proc/self/environ') or ''),
  'uid': os.getuid(), 'gid': os.getgid(),
  'system_nginx_present': os.path.exists('/usr/sbin/nginx'),
- 'listen_127': os.popen("ss -ltnH 2>/dev/null | awk '{print $4}' | sort").read().split(),
+ 'listen_127': sorted({
+   a for a in os.popen("ss -ltnH 2>/dev/null | awk '{print $4}'").read().split() if a.startswith('127.0.0.1:')
+ }),
+ 'listen_all': sorted({
+   a for a in os.popen("ss -ltnH 2>/dev/null | awk '{print $4}'").read().split()
+ }),
 }
 json.dump(data, open(sys.argv[1],'w'), indent=2)
 PY
@@ -188,10 +196,14 @@ new_listen = sorted(set(A.get('listen_127', [])) - set(B.get('listen_127', [])))
 stale_listen = sorted(set(B.get('listen_127', [])) - set(A.get('listen_127', [])))
 json.dump({'changed': diff, 'new_127_listeners': new_listen,
            'disappeared_127_listeners': stale_listen,
+           'note': 'loopback-only comparison; other-interface listeners are informational (listen_all)',
            'server_process_identity_unchanged': not any(
                k in diff for k in ('pid1_cmdline','pid1_ns_pid','host_ns_pid','host_ns_mnt','host_ns_net'))},
           open(out,'w'), indent=2)
 assert not diff, f'protected host identity changed: {diff}'
+# The only loopback listeners this run may add are its own random panel/HTTPS
+# ports, and they must already be gone when the after-snapshot is taken.
+assert not new_listen, f'loopback listener left behind: {new_listen}'
 print('host identity unchanged')
 PY
   chmod 600 "$EVIDENCE/host-identity-diff.json"
