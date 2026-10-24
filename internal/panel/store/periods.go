@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"proxypanel/internal/panel/domain"
 	"proxypanel/internal/panel/period"
 )
 
@@ -100,6 +101,68 @@ func recordMemberPeriodTx(ctx context.Context, tx *sql.Tx, rec PeriodRecord) err
 	_, err = tx.ExecContext(ctx, `INSERT INTO member_periods (member_id, period_start, period_end, anchor_day, timezone, source)
   VALUES ($1,$2,$3,$4,$5,$6)`, rec.MemberID, rec.PeriodStart, rec.PeriodEnd, rec.AnchorDay, rec.Timezone, rec.Source)
 	return err
+}
+
+// recordRunningPeriodTx registers the explicit persisted interval, not a
+// calendar reconstruction. Migration preflight is responsible for proving old
+// persisted data before business startup. Existing provenance stays immutable.
+func recordRunningPeriodTx(ctx context.Context, tx *sql.Tx, m *domain.Member, source string) error {
+	if m.PeriodStart == nil || m.PeriodEnd == nil {
+		return nil
+	}
+	var end time.Time
+	var anchor int
+	var zone string
+	err := tx.QueryRowContext(ctx, `SELECT period_end, anchor_day, timezone FROM member_periods WHERE member_id=$1 AND period_start=$2`, m.ID, *m.PeriodStart).Scan(&end, &anchor, &zone)
+	if err == nil {
+		if !end.Equal(*m.PeriodEnd) || anchor != m.PeriodAnchorDay || zone != m.PeriodTimezone {
+			return ErrPeriodConflict
+		}
+		return nil
+	}
+	if err != sql.ErrNoRows {
+		return err
+	}
+	return recordMemberPeriodTx(ctx, tx, PeriodRecord{MemberID: m.ID, PeriodStart: *m.PeriodStart,
+		PeriodEnd: *m.PeriodEnd, AnchorDay: m.PeriodAnchorDay, Timezone: m.PeriodTimezone, Source: source})
+}
+
+// recordedWindowsTx refuses any gap, even for a zero-byte sample. Allocation
+// must not redistribute the unprovable part over the remaining known windows.
+func recordedWindowsTx(ctx context.Context, tx *sql.Tx, memberID string, start, end time.Time) ([]period.Boundary, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT period_start, period_end FROM member_periods
+		WHERE member_id=$1 AND period_start < $3 AND period_end > $2 ORDER BY period_start`, memberID, start, end)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	cursor := start
+	var windows []period.Boundary
+	for rows.Next() {
+		var w period.Boundary
+		if err := rows.Scan(&w.Start, &w.End); err != nil {
+			return nil, err
+		}
+		if w.Start.After(cursor) {
+			return nil, ledgerUnattributable()
+		}
+		if len(windows) > 0 && w.Start.Before(windows[len(windows)-1].End) {
+			return nil, ledgerUnattributable()
+		}
+		windows = append(windows, w)
+		cursor = w.End
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if cursor.Before(end) {
+		return nil, ledgerUnattributable()
+	}
+	return windows, nil
+}
+
+func ledgerUnattributable() error {
+	return domain.E("LEDGER_UNATTRIBUTABLE", 422, "the complete sample interval cannot be proven from recorded history")
 }
 
 // ListMemberPeriods returns recorded intervals intersecting [start,end), ordered

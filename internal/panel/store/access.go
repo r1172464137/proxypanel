@@ -434,6 +434,9 @@ func (s *Store) AllowedNodes(ctx context.Context, res *AccessResult) []domain.No
 // follows the (possibly new) rule.
 func (s *Store) refreshMemberPeriod(ctx context.Context, tx *sql.Tx, m *domain.Member) error {
 	if m.SubscriptionID == nil {
+		if err := recordRunningPeriodTx(ctx, tx, m, "proven_current"); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `UPDATE members SET period_start=NULL, period_end=NULL,
 			period_timezone='', period_anchor_day=0 WHERE id=$1`, m.ID); err != nil {
 			return dbErr(err)
@@ -454,22 +457,87 @@ func (s *Store) refreshMemberPeriod(ctx context.Context, tx *sql.Tx, m *domain.M
 		return domain.Validation("invalid timezone %q on subscription", tz)
 	}
 	now := s.now()
-	if m.PeriodStart == nil || m.PeriodEnd == nil || !m.PeriodEnd.After(now) {
-		win := period.Containing(anchor, loc, now)
-		if m.PeriodStart != nil && m.PeriodEnd != nil && !m.PeriodEnd.After(now) {
-			// roll forward to the cycle containing now
-			win = period.Containing(anchor, loc, now)
+	if m.PeriodStart != nil && m.PeriodEnd != nil {
+		// Preserve the running rule as well as its boundaries. A replacement
+		// binding takes effect only after the old end, never retroactively.
+		if m.PeriodAnchorDay != anchor || m.PeriodTimezone != tz {
+			m.PendingPeriodRule = &domain.PeriodRule{AnchorDay: anchor, Timezone: tz, SubmittedAt: &now}
 		}
-		m.PeriodStart, m.PeriodEnd = &win.Start, &win.End
+		if err := recordRunningPeriodTx(ctx, tx, m, "proven_current"); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE members SET pending_period_rule=$2 WHERE id=$1`, m.ID, pendingJSON(m.PendingPeriodRule)); err != nil {
+			return dbErr(err)
+		}
+		_, err := s.advanceMemberPeriodTx(ctx, tx, m, now)
+		return err
 	}
-	m.PeriodTimezone = tz
-	m.PeriodAnchorDay = anchor
+	win := period.Containing(anchor, loc, now)
+	m.PeriodStart, m.PeriodEnd = &win.Start, &win.End
+	m.PeriodTimezone, m.PeriodAnchorDay = tz, anchor
+	m.PendingPeriodRule = nil
+	if err := recordRunningPeriodTx(ctx, tx, m, "binding"); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE members SET period_start=$2, period_end=$3, period_timezone=$4,
-		period_anchor_day=$5 WHERE id=$1`, m.ID, nullableTime(m.PeriodStart), nullableTime(m.PeriodEnd),
+		period_anchor_day=$5, pending_period_rule=NULL WHERE id=$1`, m.ID, nullableTime(m.PeriodStart), nullableTime(m.PeriodEnd),
 		m.PeriodTimezone, m.PeriodAnchorDay); err != nil {
 		return dbErr(err)
 	}
 	return nil
+}
+
+// reconcileQuotaCredentialsTx loads the decision exclusively from this
+// transaction so uncommitted quota/period changes cannot be missed.
+func (s *Store) reconcileQuotaCredentialsTx(ctx context.Context, tx *sql.Tx, m *domain.Member, used int64) error {
+	ev := &Evidence{Member: m, UsedBytes: used, NodeGroups: map[string][]string{}}
+	if m.SubscriptionID != nil {
+		subs, err := s.loadSubscriptions(ctx, tx, []string{*m.SubscriptionID})
+		if err != nil {
+			return err
+		}
+		ev.Subscription = subs[*m.SubscriptionID]
+	}
+	adj, err := quotaAdjustmentSumQ(ctx, tx, m.ID, m.PeriodStart)
+	if err != nil {
+		return err
+	}
+	ev.AdjustBytes = adj
+	rows, err := tx.QueryContext(ctx, `SELECT `+nodeCols+` FROM nodes WHERE NOT archived ORDER BY id`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		n, err := s.scanNodeRow(rows)
+		if err != nil {
+			rows.Close()
+			return err
+		}
+		ev.Nodes = append(ev.Nodes, *n)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	rows, err = tx.QueryContext(ctx, `SELECT node_id, group_id FROM node_group_members`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var node, group string
+		if err := rows.Scan(&node, &group); err != nil {
+			rows.Close()
+			return err
+		}
+		ev.NodeGroups[node] = append(ev.NodeGroups[node], group)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	return s.reconcileCredentials(ctx, tx, m.ID, ev.Decision(s.now()).AllowedNodeIDs, ev.Nodes)
 }
 
 // ─── authoritative cycle advancement ───────────────────────────────────────
@@ -542,10 +610,31 @@ func (s *Store) advanceMemberPeriodTx(ctx context.Context, tx *sql.Tx, m *domain
 	if err != nil {
 		return false, err
 	}
+	if m.PeriodStart != nil && m.PeriodEnd != nil {
+		if err := recordRunningPeriodTx(ctx, tx, m, "proven_current"); err != nil {
+			return false, err
+		}
+	}
 	if !adv.Advanced {
 		return false, nil
 	}
-	start, end := adv.Start, adv.End
+	loc, err := period.LoadTimezone(adv.Timezone)
+	if err != nil {
+		return false, err
+	}
+	// Persist every skipped interval, including a short transition interval.
+	// The old end is the only origin; new rules never reconstruct the past.
+	var start, end time.Time
+	for cursor := *m.PeriodEnd; !cursor.After(now); {
+		next := period.NextBoundary(cursor, adv.Anchor, loc)
+		if err := recordMemberPeriodTx(ctx, tx, PeriodRecord{MemberID: m.ID,
+			PeriodStart: cursor, PeriodEnd: next, AnchorDay: adv.Anchor,
+			Timezone: adv.Timezone, Source: "roll_forward"}); err != nil {
+			return false, err
+		}
+		start, end = cursor, next
+		cursor = next
+	}
 	m.PeriodStart, m.PeriodEnd = &start, &end
 	m.PeriodAnchorDay, m.PeriodTimezone = adv.Anchor, adv.Timezone
 	m.PendingPeriodRule = adv.Pending

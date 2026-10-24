@@ -1,11 +1,22 @@
 [
   {
     "id": "store/period-history-candidate",
-    "packages": ["./internal/panel/store"],
+    "packages": [
+      "./internal/panel/store"
+    ],
     "run": "^TestPeriod(RecordValidation|RecordHistory|RecordConcurrent|SchemaOnly)$",
-    "expected_tests": ["TestPeriodRecordValidation", "TestPeriodRecordHistory", "TestPeriodRecordConcurrent", "TestPeriodSchemaOnly"],
-    "stories": ["US-PR-013"],
-    "requires": ["postgres"],
+    "expected_tests": [
+      "TestPeriodRecordValidation",
+      "TestPeriodRecordHistory",
+      "TestPeriodRecordConcurrent",
+      "TestPeriodSchemaOnly"
+    ],
+    "stories": [
+      "US-PR-013"
+    ],
+    "requires": [
+      "postgres"
+    ],
     "timeout_seconds": 120
   },
   {
@@ -636,11 +647,21 @@
   },
   {
     "id": "integration/protocol-agent",
-    "packages": ["./internal/agent/supervisor"],
+    "packages": [
+      "./internal/agent/supervisor"
+    ],
     "run": "^(TestProtocolAgentTLSLifecycle|TestIntegrationSamplingReadCommitOrder|TestIntegrationCancelledPeriodicSamplingGate)$",
-    "expected_tests": ["TestProtocolAgentTLSLifecycle", "TestIntegrationSamplingReadCommitOrder", "TestIntegrationCancelledPeriodicSamplingGate"],
-    "stories": ["US-PR-011"],
-    "requires": ["xray"],
+    "expected_tests": [
+      "TestProtocolAgentTLSLifecycle",
+      "TestIntegrationSamplingReadCommitOrder",
+      "TestIntegrationCancelledPeriodicSamplingGate"
+    ],
+    "stories": [
+      "US-PR-011"
+    ],
+    "requires": [
+      "xray"
+    ],
     "timeout_seconds": 120
   },
   {
@@ -666,5 +687,27 @@
       "unix"
     ],
     "timeout_seconds": 300
+  },
+  {
+    "id": "store/closed-loop-b",
+    "packages": [
+      "./internal/panel/store"
+    ],
+    "run": "^(TestB(PeriodFullChain|MoveLateAndTerminalIsolation|OwnerUnionAndGap|InitialAndConcurrentAdvance)|TestAdvancePeriodsTick)$",
+    "expected_tests": [
+      "TestBPeriodFullChain",
+      "TestBMoveLateAndTerminalIsolation",
+      "TestBOwnerUnionAndGap",
+      "TestBInitialAndConcurrentAdvance",
+      "TestAdvancePeriodsTick"
+    ],
+    "stories": [
+      "US-PR-013",
+      "US-PR-004"
+    ],
+    "requires": [
+      "postgres"
+    ],
+    "timeout_seconds": 120
   }
 ]

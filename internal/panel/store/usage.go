@@ -3,12 +3,12 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 
 	"proxypanel/internal/contracts"
 	"proxypanel/internal/panel/domain"
 	"proxypanel/internal/panel/ids"
-	"proxypanel/internal/panel/period"
 	"proxypanel/internal/panel/usagecalc"
 )
 
@@ -18,6 +18,11 @@ func (s *Store) SubmitUsageBatch(ctx context.Context, agent *domain.Agent, batch
 	hash := usagecalc.PayloadSHA256(batch)
 	status = "accepted"
 	err = s.inTx(ctx, func(tx *sql.Tx) error {
+		// Serialize a batch without holding an Agent row while quota updates
+		// publish to all Agents (which would invert the revision lock order).
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, "usage:"+agent.ID+":"+batch.BatchID); err != nil {
+			return dbErr(err)
+		}
 		var existing string
 		err := tx.QueryRowContext(ctx, `SELECT payload_sha256 FROM usage_batches
 			WHERE agent_id=$1 AND batch_id=$2 FOR UPDATE`, agent.ID, batch.BatchID).Scan(&existing)
@@ -37,13 +42,6 @@ func (s *Store) SubmitUsageBatch(ctx context.Context, agent *domain.Agent, batch
 		validator := usagecalc.Validator{
 			Now:           s.now(),
 			AgentServerID: agent.ServerID,
-			NodeServer: func(nodeID string) (string, bool) {
-				var serverID string
-				if err := tx.QueryRowContext(ctx, `SELECT server_id FROM nodes WHERE id=$1`, nodeID).Scan(&serverID); err != nil {
-					return "", false
-				}
-				return serverID, true
-			},
 			NodeHasHistory: func(nodeID, memberID string) bool {
 				var n int
 				if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM credentials WHERE node_id=$1 AND member_id=$2`,
@@ -67,6 +65,33 @@ func (s *Store) SubmitUsageBatch(ctx context.Context, agent *domain.Agent, batch
 			return e
 		}
 
+		for _, sample := range batch.Samples {
+			if err := nodeAuthorizedForRangeTx(ctx, tx, sample.NodeID, agent.ServerID, agent.ID, sample.StartedAt, sample.EndedAt); err != nil {
+				return err
+			}
+		}
+		// Cross-Agent batches may touch the same members in opposite sample
+		// order. Acquire every member lock in the same order before advancing.
+		memberIDs := make([]string, 0, len(batch.Samples))
+		for _, sample := range batch.Samples {
+			memberIDs = append(memberIDs, sample.MemberID)
+		}
+		locked, err := tx.QueryContext(ctx, `SELECT id FROM members WHERE id=ANY($1) ORDER BY id FOR UPDATE`, memberIDs)
+		if err != nil {
+			return dbErr(err)
+		}
+		for locked.Next() {
+			var id string
+			if err := locked.Scan(&id); err != nil {
+				locked.Close()
+				return err
+			}
+		}
+		err = locked.Err()
+		locked.Close()
+		if err != nil {
+			return dbErr(err)
+		}
 		startedAt, endedAt := batchBounds(batch.Samples)
 		if _, err := tx.ExecContext(ctx, `INSERT INTO usage_batches
 			(agent_id, batch_id, payload_sha256, status, sample_count, started_at, ended_at, core_generation)
@@ -77,6 +102,7 @@ func (s *Store) SubmitUsageBatch(ctx context.Context, agent *domain.Agent, batch
 		}
 
 		touched := map[string]bool{}
+		ledgerPart := 0
 		for _, sample := range batch.Samples {
 			// The member row is locked so the cycle advance below cannot race
 			// with another batch or a read path for the same member.
@@ -92,32 +118,18 @@ func (s *Store) SubmitUsageBatch(ctx context.Context, agent *domain.Agent, batch
 			// booked against the previous period_start, which is what made the
 			// quota never reset.
 			if _, err := s.advanceMemberPeriodTx(ctx, tx, m, s.now()); err != nil {
+				if errors.Is(err, ErrPeriodInvalid) || errors.Is(err, ErrPeriodConflict) {
+					return ledgerUnattributable()
+				}
 				return err
 			}
-			anchor, tz := m.PeriodAnchorDay, m.PeriodTimezone
-			if anchor == 0 || tz == "" {
-				// Member without a cycle rule: fall back to the global settings
-				// timezone and anchor day 1 rather than dropping data.
-				st, serr := settingsQ(ctx, tx)
-				if serr != nil {
-					return serr
-				}
-				anchor, tz = 1, st.Timezone
-			}
-			loc, err := period.LoadTimezone(tz)
+			windows, err := recordedWindowsTx(ctx, tx, m.ID, sample.StartedAt, sample.EndedAt)
 			if err != nil {
 				return err
 			}
-			windows := period.CandidateWindows(anchor, loc, sample.StartedAt, s.now())
 			var currentStart time.Time
 			if m.PeriodStart != nil {
 				currentStart = *m.PeriodStart
-			}
-			// A rule transition can create a short first cycle whose persisted
-			// start is not a calendar anchor. Current usage must use that key.
-			if m.PeriodStart != nil && m.PeriodEnd != nil &&
-				!sample.StartedAt.Before(*m.PeriodStart) && !sample.EndedAt.After(*m.PeriodEnd) {
-				windows = []period.Boundary{{Start: m.PeriodStart.UTC(), End: m.PeriodEnd.UTC()}}
 			}
 			allocs := usagecalc.Allocate(sample, windows, currentStart)
 			if len(allocs) == 0 {
@@ -126,17 +138,18 @@ func (s *Store) SubmitUsageBatch(ctx context.Context, agent *domain.Agent, batch
 			credID := ""
 			_ = tx.QueryRowContext(ctx, `SELECT id FROM credentials WHERE node_id=$1 AND member_id=$2
 				ORDER BY state='active' DESC, created_at DESC LIMIT 1`, sample.NodeID, sample.MemberID).Scan(&credID)
-			for i, a := range allocs {
+			for _, a := range allocs {
 				if _, err := tx.ExecContext(ctx, `INSERT INTO usage_entries
 					(agent_id, batch_id, member_id, node_id, credential_id, period_start, period_end, up_bytes, down_bytes,
 					 sample_started_at, sample_ended_at, estimated, boundary_split, correction, core_generation, split_part)
 					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-					ON CONFLICT DO NOTHING`,
+					`,
 					agent.ID, batch.BatchID, sample.MemberID, sample.NodeID, credID, a.PeriodStart, a.PeriodEnd,
 					a.UpBytes, a.DownBytes, sample.StartedAt.UTC(), sample.EndedAt.UTC(), a.Estimated,
-					a.BoundarySplit, a.Correction, sample.CoreGeneration, i); err != nil {
+					a.BoundarySplit, a.Correction, sample.CoreGeneration, ledgerPart); err != nil {
 					return dbErr(err)
 				}
+				ledgerPart++
 			}
 			touched[sample.MemberID] = true
 		}
@@ -151,6 +164,12 @@ func (s *Store) SubmitUsageBatch(ctx context.Context, agent *domain.Agent, batch
 		return nil
 	})
 	if err != nil {
+		if e, ok := err.(*domain.Error); ok && e.Code == "LEDGER_UNATTRIBUTABLE" {
+			// The rejected batch and every partial entry rolled back. The event
+			// is intentionally outside that transaction and contains no secrets.
+			_ = s.RecordEvent(ctx, "ledger_unattributable", "warning", "agent", agent.ID,
+				"usage batch requires historical evidence", "ledger_unattributable:"+agent.ID+":"+batch.BatchID)
+		}
 		return "", err
 	}
 	return status, nil
@@ -179,6 +198,11 @@ func (s *Store) applyQuotaState(ctx context.Context, tx *sql.Tx, memberID string
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE members SET over_quota=$2, updated_at=now() WHERE id=$1`, memberID, over); err != nil {
 		return dbErr(err)
+	}
+	// Reconcile actual encrypted secrets in this transaction, not just the
+	// verdict bit. Recovery still obeys every other authorization restriction.
+	if err := s.reconcileQuotaCredentialsTx(ctx, tx, m, used); err != nil {
+		return err
 	}
 	if _, err := s.bumpRevisionsTx(ctx, tx, nil); err != nil {
 		return err
@@ -325,6 +349,9 @@ func (s *Store) CreateQuotaAdjustment(ctx context.Context, memberID string, byte
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
 		m, err := scanMember(tx.QueryRowContext(ctx, `SELECT `+memberCols+` FROM members WHERE id=$1 FOR UPDATE`, memberID))
 		if err != nil {
+			return err
+		}
+		if _, err := s.advanceMemberPeriodTx(ctx, tx, m, s.now()); err != nil {
 			return err
 		}
 		adj.PeriodStart = m.PeriodStart

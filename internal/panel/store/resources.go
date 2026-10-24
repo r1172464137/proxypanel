@@ -10,6 +10,69 @@ import (
 	"proxypanel/internal/panel/domain"
 )
 
+// lockExecutionHistoryTx serializes execution-identity changes with reports.
+// It is NOT a recovery/write guard: C's shared control gate must run before it.
+// Taking it before node/Agent locks also closes registration-vs-move/create
+// visibility races without inventing a historical identity from metadata.
+func lockExecutionHistoryTx(ctx context.Context, tx *sql.Tx) error {
+	_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('proxypanel:execution-history',0))`)
+	return dbErr(err)
+}
+
+// openNodeAuthorizationsTx records only actual registered identities, beginning
+// now. No Node.CreatedAt or current metadata is used to invent earlier history.
+func (s *Store) openNodeAuthorizationsTx(ctx context.Context, tx *sql.Tx, nodeID, serverID string) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO node_server_history (id,node_id,server_id,agent_id,valid_from)
+		SELECT $1 || ':' || a.id,$2,$3,a.id,$4 FROM agents a WHERE a.server_id=$3 AND NOT a.archived
+		ON CONFLICT (node_id,agent_id) WHERE valid_to IS NULL AND released_revision IS NULL DO NOTHING`,
+		newID("nsh"), nodeID, serverID, s.now().Truncate(time.Microsecond))
+	return dbErr(err)
+}
+
+// nodeAuthorizedForRangeTx uses the union for exactly one Agent/server, never
+// the node's current desired assignment. Missing history stays unprovable.
+func nodeAuthorizedForRangeTx(ctx context.Context, tx *sql.Tx, nodeID, serverID, agentID string, start, end time.Time) error {
+	rows, err := tx.QueryContext(ctx, `SELECT valid_from, valid_to FROM node_server_history
+		WHERE node_id=$1 AND server_id=$2 AND agent_id=$3 ORDER BY valid_from`, nodeID, serverID, agentID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	cursor := start
+	known := false
+	for rows.Next() {
+		var from time.Time
+		var to sql.NullTime
+		if err := rows.Scan(&from, &to); err != nil {
+			return err
+		}
+		known = true
+		if from.After(cursor) {
+			break
+		}
+		if !to.Valid {
+			cursor = end
+			break
+		}
+		if to.Time.After(cursor) {
+			cursor = to.Time
+		}
+		if !cursor.Before(end) {
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if !known {
+		return domain.E(domain.CodeBatchOwnershipMismatch, 403, "no execution authorization history for node and Agent")
+	}
+	if cursor.Before(end) {
+		return ledgerUnattributable()
+	}
+	return nil
+}
+
 // lowerString mirrors lower() in the ordering keys of the internal listings.
 func lowerString(v string) string { return strings.ToLower(v) }
 
@@ -513,6 +576,12 @@ func (s *Store) CreateNode(ctx context.Context, v *domain.Node, coreInstanceID s
 		return nil, err
 	}
 	err = s.inTx(ctx, func(tx *sql.Tx) error {
+		if err := lockExecutionHistoryTx(ctx, tx); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `SELECT id FROM servers WHERE id=$1 FOR UPDATE`, v.ServerID); err != nil {
+			return dbErr(err)
+		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO nodes (`+nodeCols+`)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,false,1,now(),now())`,
 			v.ID, v.ServerID, v.Name, v.Enabled, v.Host, v.Port, nullableExternalPort(v.ExternalPort), v.Listen,
@@ -532,6 +601,9 @@ func (s *Store) CreateNode(ctx context.Context, v *domain.Node, coreInstanceID s
 		if err != nil {
 			return dbErr(err)
 		}
+		if err := s.openNodeAuthorizationsTx(ctx, tx, v.ID, v.ServerID); err != nil {
+			return err
+		}
 		_, err = s.bumpRevisionsTx(ctx, tx, []string{v.ID})
 		return err
 	})
@@ -545,6 +617,9 @@ func (s *Store) CreateNode(ctx context.Context, v *domain.Node, coreInstanceID s
 func (s *Store) UpdateNode(ctx context.Context, id string, expectedVersion int64, fn func(*domain.Node) error) (*domain.Node, error) {
 	var out *domain.Node
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		if err := lockExecutionHistoryTx(ctx, tx); err != nil {
+			return err
+		}
 		cur, err := s.scanNodeRow(tx.QueryRowContext(ctx, `SELECT `+nodeCols+` FROM nodes WHERE id=$1 FOR UPDATE`, id))
 		if err != nil {
 			return err
@@ -576,7 +651,9 @@ func (s *Store) UpdateNode(ctx context.Context, id string, expectedVersion int64
 			return dbErr(err)
 		}
 		if cur.ServerID != "" {
-			if _, err := tx.ExecContext(ctx, `UPDATE core_instances SET server_id=$2, updated_at=now() WHERE node_id=$1`,
+			if _, err := tx.ExecContext(ctx, `UPDATE core_instances SET server_id=$2,
+				agent_id=(SELECT id FROM agents WHERE server_id=$2 AND NOT archived ORDER BY created_at DESC LIMIT 1),
+				updated_at=now() WHERE node_id=$1`,
 				cur.ID, cur.ServerID); err != nil {
 				return dbErr(err)
 			}
@@ -589,6 +666,15 @@ func (s *Store) UpdateNode(ctx context.Context, id string, expectedVersion int64
 			return err
 		}
 		if oldServerID != cur.ServerID {
+			// Release is only requested here. Keep the old execution window open
+			// until that specific Agent confirms termination at this revision.
+			if _, err := tx.ExecContext(ctx, `UPDATE node_server_history SET released_revision=$3
+				WHERE node_id=$1 AND server_id=$2 AND valid_to IS NULL AND released_revision IS NULL`, cur.ID, oldServerID, rev); err != nil {
+				return dbErr(err)
+			}
+			if err := s.openNodeAuthorizationsTx(ctx, tx, cur.ID, cur.ServerID); err != nil {
+				return err
+			}
 			// The node left its previous server: revoke there as well, or the
 			// old host would keep serving the removed authorization.
 			if err := s.bumpServerAgentsTx(ctx, tx, oldServerID, rev); err != nil {

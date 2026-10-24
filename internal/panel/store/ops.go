@@ -107,6 +107,9 @@ func (s *Store) CreateRegistrationCode(ctx context.Context, serverID, codeHash s
 func (s *Store) RegisterAgent(ctx context.Context, codeHash, name, version, tokenHash, tokenPrefix string) (*domain.Agent, string, error) {
 	var agent *domain.Agent
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		if err := lockExecutionHistoryTx(ctx, tx); err != nil {
+			return err
+		}
 		var codeID, serverID string
 		var expiresAt time.Time
 		var usedAt sql.NullTime
@@ -120,6 +123,11 @@ func (s *Store) RegisterAgent(ctx context.Context, codeHash, name, version, toke
 		if usedAt.Valid || !expiresAt.After(s.now()) {
 			return domain.E(domain.CodeAgentAuthFailed, 401, "registration code already used or expired")
 		}
+		// Serialize registration with creation on this server, then lock the
+		// existing nodes against moves before recording authorization identities.
+		if _, err := tx.ExecContext(ctx, `SELECT id FROM servers WHERE id=$1 FOR UPDATE`, serverID); err != nil {
+			return dbErr(err)
+		}
 		var generation int64
 		if err := tx.QueryRowContext(ctx, `SELECT control_generation FROM control_state WHERE id=1`).Scan(&generation); err != nil {
 			return dbErr(err)
@@ -132,6 +140,12 @@ func (s *Store) RegisterAgent(ctx context.Context, codeHash, name, version, toke
 			return dbErr(err)
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE registration_codes SET used_at=now(), used_by_agent_id=$2 WHERE id=$1`, codeID, id); err != nil {
+			return dbErr(err)
+		}
+		if _, err := tx.ExecContext(ctx, `WITH authorized_nodes AS MATERIALIZED
+			(SELECT id FROM nodes WHERE server_id=$2 AND NOT archived ORDER BY id FOR UPDATE)
+			INSERT INTO node_server_history (id,node_id,server_id,agent_id,valid_from)
+			SELECT $1 || ':' || id,id,$2,$3,$4 FROM authorized_nodes`, newID("nsh"), serverID, id, s.now().Truncate(time.Microsecond)); err != nil {
 			return dbErr(err)
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE core_instances SET agent_id=$2 WHERE server_id=$1 AND agent_id IS NULL`, serverID, id); err != nil {
@@ -241,30 +255,104 @@ func (s *Store) ListAgents(ctx context.Context, limit int) ([]domain.Agent, erro
 
 // RecordHeartbeat stores the agent heartbeat and reported instance states.
 func (s *Store) RecordHeartbeat(ctx context.Context, agentID string, hb contracts.Heartbeat) error {
-	instances, err := json.Marshal(hb.Instances)
-	if err != nil {
-		return err
-	}
 	metrics, err := json.Marshal(hb.Metrics)
 	if err != nil {
 		return err
 	}
-	_, err = s.DB.ExecContext(ctx, `UPDATE agents SET version=$2, xray_version=$3, uptime_seconds=$4,
-		queue_depth=$5, metrics=$6, instances=$7, last_heartbeat_at=now(), updated_at=now() WHERE id=$1`,
-		agentID, hb.Version, hb.XrayVersion, hb.UptimeSeconds, hb.QueueDepth, metrics, instances)
-	if err != nil {
-		return dbErr(err)
+	return s.inTx(ctx, func(tx *sql.Tx) error {
+		if err := lockExecutionHistoryTx(ctx, tx); err != nil {
+			return err
+		}
+		skip, err := s.validateExecutionResultsTx(ctx, tx, agentID, hb.Revision, hb.Instances)
+		if err != nil {
+			return err
+		}
+		current := make([]contracts.InstanceResult, 0, len(hb.Instances))
+		for _, r := range hb.Instances {
+			if !skip[r.InstanceID] {
+				current = append(current, r)
+			}
+		}
+		instances, err := json.Marshal(current)
+		if err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE agents SET version=$2, xray_version=$3, uptime_seconds=$4,
+		queue_depth=$5, metrics=$6, instances=CASE WHEN $8 THEN instances ELSE $7 END,
+		last_heartbeat_at=now(), updated_at=now() WHERE id=$1`,
+			agentID, hb.Version, hb.XrayVersion, hb.UptimeSeconds, hb.QueueDepth, metrics, instances, len(current) == 0 && len(skip) > 0)
+		if err != nil {
+			return dbErr(err)
+		}
+		for _, r := range hb.Instances {
+			if skip[r.InstanceID] || r.InstanceID == "" {
+				continue
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE core_instances SET state=$2, applied_at=COALESCE(applied_at, now()),
+			last_error=$3, updated_at=now() WHERE node_id=$1`, r.InstanceID, r.State, r.Error); err != nil {
+				return dbErr(err)
+			}
+		}
+		return nil
+	})
+}
+
+// validateExecutionResultsTx preserves SEC02's current-server boundary for all
+// ordinary results. A terminal result bound to a historical release revision
+// may only close that window; it never writes the current core instance.
+func (s *Store) validateExecutionResultsTx(ctx context.Context, tx *sql.Tx, agentID string, revision int64, results []contracts.InstanceResult) (map[string]bool, error) {
+	var serverID string
+	var desired int64
+	if err := tx.QueryRowContext(ctx, `SELECT server_id,desired_revision FROM agents WHERE id=$1 FOR UPDATE`, agentID).Scan(&serverID, &desired); err != nil {
+		return nil, dbErr(err)
 	}
-	for _, r := range hb.Instances {
+	if revision > desired {
+		return nil, domain.E(domain.CodeRevisionStale, 409, "execution revision was never issued")
+	}
+	skip := map[string]bool{}
+	for _, r := range results {
 		if r.InstanceID == "" {
 			continue
 		}
-		if _, err := s.DB.ExecContext(ctx, `UPDATE core_instances SET state=$2, applied_at=COALESCE(applied_at, now()),
-			last_error=$3, updated_at=now() WHERE node_id=$1`, r.InstanceID, r.State, r.Error); err != nil {
-			return dbErr(err)
+		if r.State == "stopped" && r.OldConnectionsTerminated {
+			var windowID string
+			err := tx.QueryRowContext(ctx, `SELECT id FROM node_server_history WHERE node_id=$1 AND agent_id=$2
+				AND server_id=$3 AND released_revision=$4 FOR UPDATE`, r.InstanceID, agentID, serverID, revision).Scan(&windowID)
+			if err == nil {
+				if _, err := tx.ExecContext(ctx, `UPDATE node_server_history SET valid_to=$2, release_confirmed_at=$2
+					WHERE id=$1 AND valid_to IS NULL`, windowID, s.now().Truncate(time.Microsecond)); err != nil {
+					return nil, dbErr(err)
+				}
+				skip[r.InstanceID] = true
+				continue
+			}
+			if err != sql.ErrNoRows {
+				return nil, err
+			}
+		}
+		var currentServer string
+		if err := tx.QueryRowContext(ctx, `SELECT server_id FROM core_instances WHERE node_id=$1 FOR SHARE`, r.InstanceID).Scan(&currentServer); err != nil {
+			if err == sql.ErrNoRows {
+				return nil, domain.E(domain.CodeForbidden, 403, "unknown execution instance")
+			}
+			return nil, err
+		}
+		if currentServer != serverID {
+			return nil, domain.E(domain.CodeForbidden, 403, "instance belongs to another server")
+		}
+		// Current metadata alone is not proof that an old A report belongs to
+		// A's new execution after A→B→A. Only terminal evidence may refer to a
+		// revision at/before a previously released authorization.
+		var released bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM node_server_history
+			WHERE node_id=$1 AND agent_id=$2 AND released_revision >= $3)`, r.InstanceID, agentID, revision).Scan(&released); err != nil {
+			return nil, err
+		}
+		if released {
+			return nil, domain.E(domain.CodeRevisionStale, 409, "result predates the current execution authorization")
 		}
 	}
-	return nil
+	return skip, nil
 }
 
 // RecordApplyReport stores an idempotent application receipt. A stale revision
@@ -282,6 +370,9 @@ func (s *Store) RecordApplyReport(ctx context.Context, agentID string, report co
 		return err
 	}
 	return s.inTx(ctx, func(tx *sql.Tx) error {
+		if err := lockExecutionHistoryTx(ctx, tx); err != nil {
+			return err
+		}
 		var desired, applied, generation int64
 		if err := tx.QueryRowContext(ctx, `SELECT desired_revision, applied_revision, control_generation
 			FROM agents WHERE id=$1 FOR UPDATE`, agentID).Scan(&desired, &applied, &generation); err != nil {
@@ -296,6 +387,10 @@ func (s *Store) RecordApplyReport(ctx context.Context, agentID string, report co
 			return domain.E(domain.CodeRevisionStale, 409,
 				"receipt control generation does not match the current generation")
 		}
+		skip, err := s.validateExecutionResultsTx(ctx, tx, agentID, report.Revision, report.Results)
+		if err != nil {
+			return err
+		}
 		if report.Revision < applied {
 			// Stale receipt: record it for the audit trail but never move state.
 			_, err := tx.ExecContext(ctx, `INSERT INTO agent_receipts (agent_id, revision, state, applied_at, payload)
@@ -307,6 +402,17 @@ func (s *Store) RecordApplyReport(ctx context.Context, agentID string, report co
 			VALUES ($1,$2,$3,$4,$5) ON CONFLICT (agent_id, revision) DO NOTHING`,
 			agentID, report.Revision, report.State, report.AppliedAt.UTC(), payload); err != nil {
 			return dbErr(err)
+		}
+		// Historical terminal-only reports cannot establish snapshot-wide
+		// success, especially after A→B→A. Keep the receipt but not its waterline.
+		historicalOnly := len(report.Results) > 0
+		for _, r := range report.Results {
+			if !skip[r.InstanceID] {
+				historicalOnly = false
+			}
+		}
+		if historicalOnly {
+			return nil
 		}
 		switch report.State {
 		case "applied", "applied_with_errors":
@@ -348,7 +454,7 @@ func (s *Store) RecordApplyReport(ctx context.Context, agentID string, report co
 			}
 		}
 		for _, r := range report.Results {
-			if r.InstanceID == "" {
+			if skip[r.InstanceID] || r.InstanceID == "" {
 				continue
 			}
 			switch r.State {
