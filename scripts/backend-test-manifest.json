@@ -1,5 +1,38 @@
 [
   {
+    "id": "maintenance/batch-retention",
+    "packages": ["./internal/panel/maintenance"],
+    "run": "^(TestMaintenanceIntegrationPass|TestMaintenanceIntegrationSingleExecutor)$",
+    "expected_tests": ["TestMaintenanceIntegrationPass", "TestMaintenanceIntegrationSingleExecutor"],
+    "stories": ["US-PR-010", "US-PR-012"],
+    "requires": ["postgres"],
+    "timeout_seconds": 120
+  },
+  {
+    "id": "store/batch-task-durability",
+    "packages": ["./internal/panel/store"],
+    "run": "^(TestBatchDurability.*|TestRetryTaskReopensDispatchAndPublishesCurrentRevision|TestRetryTaskRefusals|TestRetryTaskIsAtomicOnFailure|TestCleanup.*)$",
+    "expected_tests": [
+      "TestBatchDurabilityReplayAcrossCleanup",
+      "TestBatchDurabilityRetryRevisionIsolation",
+      "TestBatchDurabilityOneTaskPerAgent",
+      "TestBatchDurabilitySubmissionRollback",
+      "TestBatchDurabilityLegacyBackfill",
+      "TestBatchDurabilityMigrationRollback",
+      "TestBatchDurabilityConcurrentAndRecovery",
+      "TestBatchDurabilityLegacyOrphanGate",
+      "TestRetryTaskReopensDispatchAndPublishesCurrentRevision",
+      "TestRetryTaskRefusals",
+      "TestRetryTaskIsAtomicOnFailure",
+      "TestCleanupNeverDeletesProtectedTables",
+      "TestCleanupStatementsAreBoundedAndUseThePolicyArguments",
+      "TestCleanupKeepsOpenAlertsAndUndeliveredNotifications"
+    ],
+    "stories": ["US-PR-010", "US-PR-012"],
+    "requires": ["postgres"],
+    "timeout_seconds": 180
+  },
+  {
     "id": "api/product-status",
     "packages": [
       "./internal/panel/api"

@@ -42,6 +42,7 @@ func TestNormalizeBoundsIsAlwaysBounded(t *testing.T) {
 func TestCleanupNeverDeletesProtectedTables(t *testing.T) {
 	protected := []string{
 		"usage_entries", "usage_batches", "credentials", "idempotency_records",
+		"batch_idempotency", "batch_durability_diagnostics",
 		"agent_receipts", "tasks", "notification_outbox", "members", "servers",
 		"nodes", "node_groups", "subscriptions", "templates", "settings",
 		"control_state", "member_bindings", "quota_adjustments", "subscription_tokens",

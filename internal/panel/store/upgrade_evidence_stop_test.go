@@ -146,7 +146,7 @@ func TestAdministratorStopReadyImport(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if periods != 1 || owners != 1 || audits != 1 || versions != 5 {
+	if periods != 1 || owners != 1 || audits != 1 || versions != 6 {
 		t.Fatal(periods, owners, audits, versions)
 	}
 	t.Log("real owned PID exits + immutable legacy Agent export -> 管理员核对 ready -> 0005 periods/owners/audit registered")

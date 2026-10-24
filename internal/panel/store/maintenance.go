@@ -160,6 +160,10 @@ func (s *Store) InMaintenanceTx(ctx context.Context, bounds MaintenanceBounds, f
 		return dbErr(err)
 	}
 	rollback := func() { _ = tx.Rollback() }
+	if err := requireWritableTx(ctx, tx); err != nil {
+		rollback()
+		return err
+	}
 	var locked bool
 	if err := tx.QueryRowContext(ctx, "SELECT pg_try_advisory_xact_lock($1)", MaintenanceLockKey).Scan(&locked); err != nil {
 		rollback()
@@ -880,12 +884,14 @@ var cleanupStatements = []cleanupStatement{
 		SELECT bi.id FROM batch_items bi JOIN batches b ON b.id = bi.batch_id
 		WHERE b.state = 'completed' AND b.completed_at IS NOT NULL AND b.completed_at < $2
 		  AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.batch_id = b.id AND t.state IN ('pending', 'dispatched'))
+		  AND EXISTS (SELECT 1 FROM batch_idempotency d WHERE d.batch_id=b.id AND d.idempotency_key=b.idempotency_key)
 		ORDER BY bi.created_at LIMIT $3)`},
 	{Name: "batches", Query: `DELETE FROM batches WHERE id IN (
 		SELECT b.id FROM batches b
 		WHERE b.state = 'completed' AND b.completed_at IS NOT NULL AND b.completed_at < $2
 		  AND NOT EXISTS (SELECT 1 FROM batch_items bi WHERE bi.batch_id = b.id)
 		  AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.batch_id = b.id AND t.state IN ('pending', 'dispatched'))
+		  AND EXISTS (SELECT 1 FROM batch_idempotency d WHERE d.batch_id=b.id AND d.idempotency_key=b.idempotency_key)
 		ORDER BY b.completed_at LIMIT $3)`},
 }
 

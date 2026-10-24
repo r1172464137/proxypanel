@@ -33,7 +33,8 @@ type BatchSubmitResult struct {
 	Replay  bool               `json:"idempotent_replay"`
 }
 
-// requestFingerprint binds an idempotency key to one logical request.
+// requestFingerprint preserves the legacy v1 (preview, confirmation) identity.
+// New receipts bind all submitted preconditions with a versioned v2 fingerprint.
 func requestFingerprint(previewID string, confirm bool) string {
 	payload := previewID + "|" + itoa64(boolToInt(confirm))
 	sum := sha256.Sum256([]byte(payload))
@@ -52,38 +53,50 @@ func (s *Store) SubmitBatch(ctx context.Context, req BatchSubmitRequest) (*Batch
 	if strings.TrimSpace(req.IdempotencyKey) == "" {
 		return nil, domain.Validation("Idempotency-Key header is required")
 	}
-	if !req.Confirm {
-		return nil, domain.Validation("confirm must be true")
+	// Bind every submitted version precondition, including omitted values.
+	payload, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
 	}
-	if strings.TrimSpace(req.PreviewID) == "" {
-		return nil, domain.Validation("preview_id is required")
-	}
-	fingerprint := requestFingerprint(req.PreviewID, req.Confirm)
+	sum := sha256.Sum256(payload)
+	fingerprint := hex.EncodeToString(sum[:])
 	var result *BatchSubmitResult
-	err := s.inWritableTx(ctx, func(tx *sql.Tx) error {
+	err = s.inWritableTx(ctx, func(tx *sql.Tx) error {
 		if err := lockMemberChangesTx(ctx, tx); err != nil {
 			return err
 		}
 		// 1. Idempotency: same key + same fingerprint replays the stored result.
-		var existingID, existingFingerprint string
-		err := tx.QueryRowContext(ctx, `SELECT id, request_fingerprint FROM batches
-			WHERE idempotency_key=$1 FOR UPDATE`, req.IdempotencyKey).Scan(&existingID, &existingFingerprint)
+		var existingFingerprint string
+		var version int
+		var storedResult []byte
+		err := tx.QueryRowContext(ctx, `SELECT request_fingerprint, fingerprint_version, result FROM batch_idempotency
+			WHERE idempotency_key=$1 FOR UPDATE`, req.IdempotencyKey).Scan(&existingFingerprint, &version, &storedResult)
 		switch {
 		case err == nil:
-			if existingFingerprint != fingerprint {
+			expected := fingerprint
+			if version == 1 {
+				expected = requestFingerprint(req.PreviewID, req.Confirm)
+			}
+			if existingFingerprint != expected {
 				return domain.E(domain.CodeIdempotencyKeyReused, 409,
 					"Idempotency-Key was already used for a different request")
 			}
-			batch, items, err := s.loadBatchTx(ctx, tx, existingID)
-			if err != nil {
-				return err
+			result = &BatchSubmitResult{}
+			if err := json.Unmarshal(storedResult, result); err != nil {
+				return domain.Internal(err)
 			}
-			result = &BatchSubmitResult{Batch: batch, Results: items, Summary: batch.Summary, Replay: true}
+			result.Replay = true
 			return nil
 		case err != sql.ErrNoRows:
 			return dbErr(err)
 		}
 
+		if !req.Confirm {
+			return domain.Validation("confirm must be true")
+		}
+		if strings.TrimSpace(req.PreviewID) == "" {
+			return domain.Validation("preview_id is required")
+		}
 		// 2. Load and lock the preview.
 		var planRaw, payloadRaw []byte
 		var storedDigest string
@@ -174,9 +187,9 @@ func (s *Store) SubmitBatch(ctx context.Context, req BatchSubmitRequest) (*Batch
 			}
 		}
 		for agentID, taskID := range applied.tasks {
-			if _, err := tx.ExecContext(ctx, `INSERT INTO tasks (id, kind, agent_id, state, idempotency_key, batch_id)
-				VALUES ($1,'authorization.sync',$2,'pending',$3,$4)`,
-				taskID, agentID, batchID+":"+agentID, batchID); err != nil {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO tasks (id, kind, agent_id, state, idempotency_key, batch_id, revision)
+				VALUES ($1,'authorization.sync',$2,'pending',$3,$4,$5)`,
+				taskID, agentID, batchID+":"+agentID, batchID, applied.revision); err != nil {
 				return dbErr(err)
 			}
 		}
@@ -188,11 +201,19 @@ func (s *Store) SubmitBatch(ctx context.Context, req BatchSubmitRequest) (*Batch
 			})); err != nil {
 			return dbErr(err)
 		}
-		batch := &domain.Batch{ID: batchID, PreviewID: plan.ID, Operation: operation, State: "applied",
-			IdempotencyKey: req.IdempotencyKey, CreatedBy: req.CreatedBy, CreatedAt: now,
-			Results: applied.items, Summary: applied.summary}
-		result = &BatchSubmitResult{Batch: batch, Results: applied.items, Summary: applied.summary}
-		return nil
+		batch, items, err := s.loadBatchTx(ctx, tx, batchID)
+		if err != nil {
+			return err
+		}
+		result = &BatchSubmitResult{Batch: batch, Results: items, Summary: batch.Summary}
+		raw, err := json.Marshal(result)
+		if err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO batch_idempotency
+			(idempotency_key,request_fingerprint,fingerprint_version,batch_id,result,created_at)
+			VALUES ($1,$2,2,$3,$4,$5)`, req.IdempotencyKey, fingerprint, batchID, raw, now)
+		return dbErr(err)
 	})
 	if err != nil {
 		return nil, err
@@ -399,8 +420,11 @@ func (s *Store) applyPreview(ctx context.Context, tx *sql.Tx, plan *Preview, now
 			}
 			if !dispatch[nodeID] {
 				dispatch[nodeID] = true
-				taskID := newID(ids.Task)
-				out.tasks[agentID] = taskID
+				taskID := out.tasks[agentID]
+				if taskID == "" {
+					taskID = newID(ids.Task)
+					out.tasks[agentID] = taskID
+				}
 				out.items = append(out.items, domain.BatchItem{MemberID: m.ID, NodeID: nodeID,
 					AgentID: agentID, State: "pending", TaskID: taskID})
 			}
@@ -784,7 +808,7 @@ func mustString(o domain.Object, key string) string {
 // SweepTimeouts marks dispatch rows that missed the revocation SLA and
 // supersedes items overtaken by a newer revision. It never reports success.
 func (s *Store) SweepTimeouts(ctx context.Context, now time.Time) (timedOut int, superseded int, err error) {
-	err = s.inTx(ctx, func(tx *sql.Tx) error {
+	err = s.inWritableTx(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, `UPDATE tasks SET state='timeout',
 			last_error='no agent receipt within the SLA', updated_at=now()
 			WHERE state IN ('pending','dispatched')
@@ -832,11 +856,17 @@ func (s *Store) SweepTimeouts(ctx context.Context, now time.Time) (timedOut int,
 func (s *Store) markAgentItems(ctx context.Context, tx *sql.Tx, agentID string, revision int64, state, message string) error {
 	if state == "applied" {
 		_, err := tx.ExecContext(ctx, `UPDATE batch_items SET state='succeeded', updated_at=now()
-			WHERE agent_id=$1 AND revision <= $2 AND state IN ('pending','dispatched')`, agentID, revision)
+			WHERE agent_id=$1 AND revision = $2 AND state IN ('pending','dispatched')
+			AND EXISTS (SELECT 1 FROM tasks t WHERE t.id=batch_items.task_id
+			  AND t.batch_id=batch_items.batch_id AND t.agent_id=$1 AND t.revision=$2
+			  AND t.kind='authorization.sync' AND t.state IN ('pending','dispatched'))`, agentID, revision)
 		return dbErr(err)
 	}
 	_, err := tx.ExecContext(ctx, `UPDATE batch_items SET state='failed', updated_at=now(), error=$3
-		WHERE agent_id=$1 AND revision <= $2 AND state IN ('pending','dispatched')`, agentID, revision, message)
+		WHERE agent_id=$1 AND revision = $2 AND state IN ('pending','dispatched')
+		AND EXISTS (SELECT 1 FROM tasks t WHERE t.id=batch_items.task_id
+		  AND t.batch_id=batch_items.batch_id AND t.agent_id=$1 AND t.revision=$2
+		  AND t.kind='authorization.sync' AND t.state IN ('pending','dispatched'))`, agentID, revision, message)
 	return dbErr(err)
 }
 

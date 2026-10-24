@@ -248,7 +248,7 @@ func (s *Store) Migrate(ctx context.Context, dir string) error {
 			_ = tx.Rollback()
 			return err
 		}
-		fresh, err := s.checkUpgradeReadinessQ(ctx, tx, true)
+		fresh, err := s.checkUpgradeReadinessWithBaselineQ(ctx, tx, true, proof.DatabaseSHA256)
 		if err != nil {
 			_ = tx.Rollback()
 			return err

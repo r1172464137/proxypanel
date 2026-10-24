@@ -377,6 +377,7 @@ type Session struct {
 }
 
 type Task struct {
+	Revision    *int64     `json:"revision"`
 	ID          string     `json:"id"`
 	Kind        string     `json:"kind"`
 	AgentID     string     `json:"agent_id"`

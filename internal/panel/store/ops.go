@@ -429,16 +429,16 @@ func (s *Store) RecordApplyReport(ctx context.Context, agentID string, report co
 				updated_at=now() WHERE id=$1`, agentID, report.Revision, report.AppliedAt.UTC()); err != nil {
 				return dbErr(err)
 			}
-			failed := report.State == "applied_with_errors"
-			if err := s.markAgentItems(ctx, tx, agentID, report.Revision, "applied", ""); err != nil {
+			itemState, taskState, message := "applied", "succeeded", ""
+			if report.State == "applied_with_errors" {
+				itemState, taskState, message = "failed", "failed", "agent reported partial failure"
+			}
+			if err := s.markAgentItems(ctx, tx, agentID, report.Revision, itemState, message); err != nil {
 				return err
 			}
-			if failed {
-				if err := s.markAgentItems(ctx, tx, agentID, report.Revision, "failed", "agent reported partial failure"); err != nil {
-					return err
-				}
-			} else if _, err := tx.ExecContext(ctx, `UPDATE tasks SET state='succeeded', updated_at=now()
-				WHERE agent_id=$1 AND state IN ('pending','dispatched')`, agentID); err != nil {
+			if _, err := tx.ExecContext(ctx, `UPDATE tasks SET state=$3, last_error=$4, updated_at=now()
+				WHERE agent_id=$1 AND revision=$2 AND kind='authorization.sync'
+				AND state IN ('pending','dispatched')`, agentID, report.Revision, taskState, message); err != nil {
 				return dbErr(err)
 			}
 		case "failed":
@@ -453,7 +453,8 @@ func (s *Store) RecordApplyReport(ctx context.Context, agentID string, report co
 				return err
 			}
 			if _, err := tx.ExecContext(ctx, `UPDATE tasks SET state='failed', last_error=$2, updated_at=now()
-				WHERE agent_id=$1 AND state IN ('pending','dispatched')`, agentID, msg); err != nil {
+				WHERE agent_id=$1 AND revision=$3 AND kind='authorization.sync'
+				AND state IN ('pending','dispatched')`, agentID, msg, report.Revision); err != nil {
 				return dbErr(err)
 			}
 			if _, err := tx.ExecContext(ctx, `INSERT INTO events (id, kind, severity, subject_type, subject_id, message, dedupe_key)
@@ -491,7 +492,7 @@ func (s *Store) RecordApplyReport(ctx context.Context, agentID string, report co
 // ─── tasks, events, audit, overview ────────────────────────────────────────
 
 const taskCols = `id, kind, agent_id, node_id, member_id, batch_id, state, attempts, max_attempts,
-	last_error, available_at, locked_at, created_at, updated_at`
+	last_error, available_at, locked_at, created_at, updated_at, revision`
 
 func (s *Store) ListTasks(ctx context.Context, state string, limit int) ([]domain.Task, error) {
 	q := `SELECT ` + taskCols + ` FROM tasks`
@@ -523,7 +524,7 @@ func scanTask(row interface{ Scan(...any) error }) (domain.Task, error) {
 	var t domain.Task
 	var locked sql.NullTime
 	if err := row.Scan(&t.ID, &t.Kind, &t.AgentID, &t.NodeID, &t.MemberID, &t.BatchID, &t.State, &t.Attempts,
-		&t.MaxAttempts, &t.LastError, &t.AvailableAt, &locked, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		&t.MaxAttempts, &t.LastError, &t.AvailableAt, &locked, &t.CreatedAt, &t.UpdatedAt, &t.Revision); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.Task{}, err
 		}
@@ -582,6 +583,17 @@ func (s *Store) RetryTask(ctx context.Context, id string) (*domain.Task, error) 
 		if err != nil {
 			return err
 		}
+		if task.Revision == nil || task.Kind != "authorization.sync" {
+			return domain.Conflict(domain.CodeConflict, "task publication is unproven or unsupported; manual evidence required")
+		}
+		var blocked bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM batch_durability_diagnostics
+			WHERE subject_type='task' AND subject_id=$1)`, id).Scan(&blocked); err != nil {
+			return dbErr(err)
+		}
+		if blocked {
+			return domain.Conflict(domain.CodeConflict, "task has unresolved durability diagnostics")
+		}
 		switch task.State {
 		case "failed", "timeout":
 		case "succeeded":
@@ -609,16 +621,20 @@ func (s *Store) RetryTask(ctx context.Context, id string) (*domain.Task, error) 
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE agents SET desired_revision=$2, updated_at=now()
-			WHERE id=$1 AND NOT archived AND desired_revision < $2`, task.AgentID, rev); err != nil {
+		res, err := tx.ExecContext(ctx, `UPDATE agents SET desired_revision=$2, updated_at=now()
+			WHERE id=$1 AND NOT archived AND desired_revision < $2`, task.AgentID, rev)
+		if err != nil {
 			return dbErr(err)
+		}
+		if n, err := res.RowsAffected(); err != nil || n != 1 {
+			return domain.Conflict(domain.CodeConflict, "task agent is unavailable for publication")
 		}
 
 		// Re-open the task itself. The guard repeats the state and attempt checks
 		// against the locked row, so a concurrent retry cannot spend two attempts.
-		res, err := tx.ExecContext(ctx, `UPDATE tasks SET state='pending', attempts=attempts+1,
-			available_at=now(), locked_at=NULL, last_error='', updated_at=now()
-			WHERE id=$1 AND state IN ('failed','timeout') AND attempts < max_attempts`, id)
+		res, err = tx.ExecContext(ctx, `UPDATE tasks SET state='pending', attempts=attempts+1,
+			available_at=now(), locked_at=NULL, last_error='', revision=$2, updated_at=now()
+			WHERE id=$1 AND state IN ('failed','timeout') AND attempts < max_attempts`, id, rev)
 		if err != nil {
 			return dbErr(err)
 		}

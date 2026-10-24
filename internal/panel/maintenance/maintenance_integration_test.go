@@ -173,6 +173,11 @@ func seed(t *testing.T, st *store.Store) *fixture {
 		VALUES ('evt_old_open','agent_offline','warning','agent','agt_off','old open','open',$1)`, now.Add(-60*24*time.Hour))
 	mustExec(t, st, `INSERT INTO audit_logs (id, action, created_at) VALUES ('aud_old','settings.update',$1)`,
 		now.Add(-60*24*time.Hour))
+	// This fixture's zero-row assertion below is for aged audit history. The
+	// migration evidence audit is real history too; age it explicitly instead
+	// of weakening that assertion or deleting a fresh audit in production.
+	mustExec(t, st, `UPDATE audit_logs SET created_at=$1 WHERE action='upgrade.evidence.import'`,
+		now.Add(-60*24*time.Hour))
 	mustExec(t, st, `INSERT INTO previews (id, operation, payload, plan, rules_version, member_set_digest, expires_at, created_at)
 		VALUES ('prv_old','assign_subscription','{}','{}',1,'',$1,$2)`, now.Add(-10*24*time.Hour), now.Add(-20*24*time.Hour))
 	mustExec(t, st, `INSERT INTO sessions (id, member_id, token_hash, csrf_token, expires_at, created_at)
@@ -187,6 +192,11 @@ func seed(t *testing.T, st *store.Store) *fixture {
 		VALUES ('bat_old','prv_old','assign_subscription','completed','idem-bat-old','fp',$1,$2)`,
 		now.Add(-60*24*time.Hour), now.Add(-61*24*time.Hour))
 	mustExec(t, st, `INSERT INTO batch_items (id, batch_id, member_id, node_id, state) VALUES ('bi_old','bat_old','mbr_exp','nd_1','succeeded')`)
+	// Production submissions now have a permanent receipt. A manually seeded
+	// history row without one is intentionally not safe for retention cleanup.
+	mustExec(t, st, `INSERT INTO batch_idempotency
+		(idempotency_key,request_fingerprint,fingerprint_version,batch_id,result)
+		VALUES ('idem-bat-old','fp',1,'bat_old','{"batch":{"id":"bat_old"},"results":[],"summary":{},"idempotent_replay":false}')`)
 	// A completed batch whose task is still pending: must be preserved.
 	mustExec(t, st, `INSERT INTO batches (id, preview_id, operation, state, idempotency_key, request_fingerprint, completed_at, created_at)
 		VALUES ('bat_pending','prv_old','assign_subscription','completed','idem-bat-pending','fp',$1,$2)`,

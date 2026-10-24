@@ -174,6 +174,14 @@ type upgradeEntry struct {
 }
 
 func (s *Store) checkUpgradeReadinessQ(ctx context.Context, q querier, preflight bool) (*UpgradeReadiness, error) {
+	return s.checkUpgradeReadinessWithBaselineQ(ctx, q, preflight, "")
+}
+
+// Only Migrate supplies a baseline, after validating its initial ready proof.
+// A stop review binds that original snapshot, not the DDL/imports performed by
+// preceding files. Migrate still compares the CURRENT snapshot with the exact
+// expected post-file digest, and requires unchanged evidence on every file.
+func (s *Store) checkUpgradeReadinessWithBaselineQ(ctx context.Context, q querier, preflight bool, baseline string) (*UpgradeReadiness, error) {
 	r := &UpgradeReadiness{Status: "ready", Phase: "post-migrate", Checks: []ReadinessCheck{}, Applied: []string{}, Pending: []string{}}
 	if preflight {
 		r.Phase = "preflight"
@@ -339,6 +347,10 @@ func (s *Store) checkUpgradeReadinessQ(ctx context.Context, q querier, preflight
 			}
 		}
 	}
+	stopProof := *r
+	if baseline != "" {
+		stopProof.DatabaseSHA256 = baseline
+	}
 	for _, a := range agents {
 		var input *AgentEvidenceInput
 		if evidence != nil {
@@ -369,7 +381,7 @@ func (s *Store) checkUpgradeReadinessQ(ctx context.Context, q querier, preflight
 				r.add("AGENT_INTENT_UNPROVEN", "unknown", 1, "Legacy journal is unavailable; provide administrator-reviewed per-instance execution reconciliation instead. Do not manufacture intent records.")
 			}
 			r.add("AGENT_STOP_UNVERIFIED", "unknown", 1, "Provide a structured administrator-reviewed stop record with restart fence, process identity/termination observations, ordered capture and complete instance/window reconciliation. Hashes alone do not prove stop.")
-		} else if err := verifyAdministratorStop(a, input, data, r); err != nil {
+		} else if err := verifyAdministratorStop(a, input, data, &stopProof); err != nil {
 			r.add("AGENT_STOP_REVIEW_INVALID", "blocked", 1, "Administrator stop review failed: "+err.Error()+". Correct external materials; do not migrate.")
 		} else {
 			r.StopVerification = "管理员核对 / administrator-reviewed external observations; not independently observed by panel"
@@ -431,9 +443,16 @@ func (s *Store) checkUpgradeReadinessQ(ctx context.Context, q querier, preflight
 			}
 		}
 	}
+	// A retained permanent submission receipt proves a task's original batch
+	// even after bounded cleanup has removed the presentation/history rows.
+	// Legacy schemas still require the actual batch; do not relax their gate.
+	taskOrphanQuery := `SELECT count(*) FROM tasks t WHERE t.batch_id<>'' AND NOT EXISTS(SELECT 1 FROM batches b WHERE b.id=t.batch_id)`
+	if _, ok := data["batch_idempotency"]; ok {
+		taskOrphanQuery += ` AND NOT EXISTS(SELECT 1 FROM batch_idempotency d WHERE d.batch_id=t.batch_id)`
+	}
 	// SQL checks report actual affected counts, not fabricated zero statistics.
 	for _, c := range []struct{ code, query string }{
-		{"TASK_ORPHAN", `SELECT count(*) FROM tasks t WHERE t.batch_id<>'' AND NOT EXISTS(SELECT 1 FROM batches b WHERE b.id=t.batch_id)`},
+		{"TASK_ORPHAN", taskOrphanQuery},
 		{"ITEM_TASK_ORPHAN", `SELECT count(*) FROM batch_items i WHERE i.task_id<>'' AND NOT EXISTS(SELECT 1 FROM tasks t WHERE t.id=i.task_id)`},
 		{"BATCH_CLOCK_INVALID", `SELECT count(*) FROM usage_batches WHERE clock_skew OR ended_at<started_at`},
 	} {

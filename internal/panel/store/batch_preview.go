@@ -40,38 +40,38 @@ type PreviewRequest struct {
 
 // PreviewItem is the per member before/after row shown to the operator.
 type PreviewItem struct {
-	MemberID      string   `json:"member_id"`
-	Username      string   `json:"username"`
-	Before        domain.Object `json:"before"`
-	After         domain.Object `json:"after"`
-	Consequences  []string `json:"consequences"`
-	Blocked       bool     `json:"blocked"`
-	BlockedReason string   `json:"blocked_reason,omitempty"`
-	OverQuotaAfter bool    `json:"over_quota_after"`
-	HasAccessAfter bool    `json:"has_access_after"`
-	NodesAdded    int      `json:"nodes_added"`
-	NodesRemoved  int      `json:"nodes_removed"`
-	Expiring      bool     `json:"expiring"`
+	MemberID       string        `json:"member_id"`
+	Username       string        `json:"username"`
+	Before         domain.Object `json:"before"`
+	After          domain.Object `json:"after"`
+	Consequences   []string      `json:"consequences"`
+	Blocked        bool          `json:"blocked"`
+	BlockedReason  string        `json:"blocked_reason,omitempty"`
+	OverQuotaAfter bool          `json:"over_quota_after"`
+	HasAccessAfter bool          `json:"has_access_after"`
+	NodesAdded     int           `json:"nodes_added"`
+	NodesRemoved   int           `json:"nodes_removed"`
+	Expiring       bool          `json:"expiring"`
 }
 
 // Preview is a persisted, versioned plan.
 type Preview struct {
-	ID               string                 `json:"id"`
-	Operation        string                 `json:"operation"`
-	Version          int64                  `json:"version"`
-	RulesVersion     int64                  `json:"rules_version"`
-	MemberSetDigest  string                 `json:"member_set_digest"`
-	MemberCount      int                    `json:"member_count"`
-	AffectedNodes    int                    `json:"affected_nodes"`
-	AffectedAgents   int                    `json:"affected_agents"`
-	AffectedCount    int                    `json:"affected_count"`
-	Items            []PreviewItem          `json:"items"`
-	Exceptions       []domain.Object        `json:"exceptions"`
-	Warnings         []string               `json:"warnings"`
-	Conclusion       domain.Object          `json:"conclusion"`
-	Payload          domain.Object          `json:"payload"`
-	ExpiresAt        time.Time              `json:"expires_at"`
-	CreatedAt        time.Time              `json:"created_at"`
+	ID              string          `json:"id"`
+	Operation       string          `json:"operation"`
+	Version         int64           `json:"version"`
+	RulesVersion    int64           `json:"rules_version"`
+	MemberSetDigest string          `json:"member_set_digest"`
+	MemberCount     int             `json:"member_count"`
+	AffectedNodes   int             `json:"affected_nodes"`
+	AffectedAgents  int             `json:"affected_agents"`
+	AffectedCount   int             `json:"affected_count"`
+	Items           []PreviewItem   `json:"items"`
+	Exceptions      []domain.Object `json:"exceptions"`
+	Warnings        []string        `json:"warnings"`
+	Conclusion      domain.Object   `json:"conclusion"`
+	Payload         domain.Object   `json:"payload"`
+	ExpiresAt       time.Time       `json:"expires_at"`
+	CreatedAt       time.Time       `json:"created_at"`
 }
 
 // memberStamp identifies the versioned member set a preview was built from.
@@ -432,10 +432,10 @@ func (s *Store) CreatePreview(ctx context.Context, req PreviewRequest) (*Preview
 		_ = after.Set("allowed_nodes", len(afterDec.AllowedNodeIDs))
 		item := PreviewItem{
 			MemberID: m.ID, Username: m.Username, Before: before, After: after,
-			Consequences: make([]string, 0, 3),
+			Consequences:   make([]string, 0, 3),
 			OverQuotaAfter: afterDec.ProxyAccess == access.ProxyOverQuota,
 			HasAccessAfter: afterDec.Access,
-			NodesAdded: added, NodesRemoved: removed,
+			NodesAdded:     added, NodesRemoved: removed,
 			Expiring: m.ExpiresAt != nil && m.ExpiresAt.Before(now.Add(7*24*time.Hour)),
 		}
 		if added > 0 {
@@ -506,13 +506,17 @@ func (s *Store) CreatePreview(ctx context.Context, req PreviewRequest) (*Preview
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.DB.ExecContext(ctx, `INSERT INTO previews (id, operation, payload, plan, rules_version,
+	err = s.inWritableTx(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `INSERT INTO previews (id, operation, payload, plan, rules_version,
 		member_set_digest, created_by, created_at, expires_at, conclusion, affected_nodes, affected_agents, member_count)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-		preview.ID, preview.Operation, encodeObject(payload), planJSON, preview.RulesVersion,
-		preview.MemberSetDigest, req.CreatedBy, preview.CreatedAt, preview.ExpiresAt,
-		encodeObject(conclusion), preview.AffectedNodes, preview.AffectedAgents, preview.MemberCount); err != nil {
-		return nil, dbErr(err)
+			preview.ID, preview.Operation, encodeObject(payload), planJSON, preview.RulesVersion,
+			preview.MemberSetDigest, req.CreatedBy, preview.CreatedAt, preview.ExpiresAt,
+			encodeObject(conclusion), preview.AffectedNodes, preview.AffectedAgents, preview.MemberCount)
+		return dbErr(err)
+	})
+	if err != nil {
+		return nil, err
 	}
 	return preview, nil
 }
