@@ -1,5 +1,14 @@
 [
   {
+    "id": "store/period-history-candidate",
+    "packages": ["./internal/panel/store"],
+    "run": "^TestPeriod(RecordValidation|RecordHistory|RecordConcurrent|SchemaOnly)$",
+    "expected_tests": ["TestPeriodRecordValidation", "TestPeriodRecordHistory", "TestPeriodRecordConcurrent", "TestPeriodSchemaOnly"],
+    "stories": ["US-PR-013"],
+    "requires": ["postgres"],
+    "timeout_seconds": 120
+  },
+  {
     "id": "api/static",
     "packages": [
       "./internal/panel/api"
