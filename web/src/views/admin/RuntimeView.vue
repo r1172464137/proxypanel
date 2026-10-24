@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { api } from '@/api/http'
 import { adminApi } from '@/api/endpoints'
-import type { UpgradeReadiness } from '@/api/types'
 import { usePagedList } from '@/lib/paged'
 import { useResource } from '@/lib/async'
 import { useRecoveryMode, mutateRecoveryMode } from '@/lib/recoveryMode'
@@ -20,10 +18,9 @@ const route = useRoute()
 const router = useRouter()
 const tab = computed({ get: () => route.hash === '#recovery' ? 'recovery' : route.hash === '#upgrade' ? 'upgrade' : selected.value, set: value => { selected.value = String(value); void router.replace({ hash: value === 'runtime' ? '' : `#${value}` }) } })
 const selected = ref('runtime')
-const base = (import.meta.env.VITE_API_BASE ?? '').replace(/\/+$/, '')
 const agents = usePagedList(cursor => adminApi.agents.list({ limit: 50, cursor }))
 const instances = usePagedList(cursor => adminApi.coreInstances.list({ limit: 50, cursor }))
-const readiness = useResource(() => api.get<UpgradeReadiness>(`${base}/api/v1/admin/upgrade-readiness`))
+const readiness = useResource(() => adminApi.upgradeReadiness.get())
 const recovery = useRecoveryMode()
 const recoveryUpdatedAt = computed(() => {
   const value = recovery.data.value as Record<string, unknown> | null
