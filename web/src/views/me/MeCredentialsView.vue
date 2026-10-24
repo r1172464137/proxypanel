@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { meApi } from '@/api/endpoints'
 import { useResource } from '@/lib/async'
+import { allPages } from '@/lib/allPages'
 import { credentialRotationRequest } from '@/lib/clientImport'
 import { errorText } from '@/lib/errors'
 import PageHeader from '@/components/PageHeader.vue'
@@ -10,7 +11,7 @@ import LoadingBlock from '@/components/LoadingBlock.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-const nodes = useResource(() => meApi.nodes())
+const nodes = useResource(async () => ({ items: await allPages(cursor => meApi.nodes({ limit: 200, cursor })), next_cursor: null }))
 const open = ref(false)
 const scope = ref<'single_node' | 'all_nodes'>('single_node')
 const nodeId = ref('')

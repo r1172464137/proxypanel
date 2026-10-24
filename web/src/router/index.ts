@@ -4,7 +4,11 @@ import { ensureSession, homeRoute, sessionState } from '@/stores/session'
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: () => homeRoute() },
   { path: '/me', redirect: '/me/subscription' },
-  { path: '/admin/setup', redirect: '/admin/overview' },
+  { path: '/admin/setup', name: 'admin-setup', component: () => import('@/views/admin/SetupView.vue'), meta: { role: 'admin', title: '首次设置' } },
+  { path: '/me/connect', name: 'me-connect', component: () => import('@/views/me/MeConnectView.vue'), meta: { title: '客户端导入与订阅链接' } },
+  { path: '/me/credential', redirect: '/me/credentials' },
+  { path: '/admin/invite', redirect: '/admin/invitations' },
+  { path: '/admin/usage-detail', redirect: '/admin/usage' },
   { path: '/admin/runtime', name: 'admin-runtime', component: () => import('@/views/admin/RuntimeView.vue'), meta: { role: 'admin', title: '运行与恢复核对' } },
   {
     path: '/login',
@@ -22,7 +26,7 @@ const routes: RouteRecordRaw[] = [
     path: '/admin/overview',
     name: 'admin-overview',
     component: () => import('@/views/admin/OverviewView.vue'),
-    meta: { role: 'admin', title: '总览' },
+    meta: { role: 'admin', title: '工作台' },
   },
   {
     path: '/admin/servers',
@@ -34,7 +38,7 @@ const routes: RouteRecordRaw[] = [
     path: '/admin/servers/:id/runtime',
     name: 'admin-server-runtime',
     component: () => import('@/views/admin/ServerRuntimeView.vue'),
-    meta: { role: 'admin', title: 'Agent 与核心实例' },
+    meta: { role: 'admin', title: '管理程序与核心实例' },
   },
   {
     path: '/admin/nodes',
@@ -64,19 +68,19 @@ const routes: RouteRecordRaw[] = [
     path: '/admin/subscriptions',
     name: 'admin-subscriptions',
     component: () => import('@/views/admin/SubscriptionsView.vue'),
-    meta: { role: 'admin', title: '订阅' },
+    meta: { role: 'admin', title: '服务方案' },
   },
   {
     path: '/admin/subscriptions/new',
     name: 'admin-subscription-new',
     component: () => import('@/views/admin/SubscriptionEditorView.vue'),
-    meta: { role: 'admin', title: '新建订阅' },
+    meta: { role: 'admin', title: '新建服务方案' },
   },
   {
     path: '/admin/subscriptions/:id',
     name: 'admin-subscription-edit',
     component: () => import('@/views/admin/SubscriptionEditorView.vue'),
-    meta: { role: 'admin', title: '编辑订阅' },
+    meta: { role: 'admin', title: '编辑服务方案' },
   },
   {
     path: '/admin/members',
@@ -106,13 +110,13 @@ const routes: RouteRecordRaw[] = [
     path: '/admin/batches',
     name: 'admin-batches',
     component: () => import('@/views/admin/BatchListView.vue'),
-    meta: { role: 'admin', title: '批量任务' },
+    meta: { role: 'admin', title: '变更记录' },
   },
   {
     path: '/admin/batches/:id',
     name: 'admin-batch-detail',
     component: () => import('@/views/admin/BatchDetailView.vue'),
-    meta: { role: 'admin', title: '批量任务' },
+    meta: { role: 'admin', title: '变更记录详情' },
   },
   {
     path: '/admin/usage',
@@ -148,7 +152,7 @@ const routes: RouteRecordRaw[] = [
     path: '/me/subscription',
     name: 'me-subscription',
     component: () => import('@/views/me/MeSubscriptionView.vue'),
-    meta: { title: '我的订阅' },
+    meta: { title: '我的服务' },
   },
   {
     path: '/me/usage',
@@ -160,13 +164,13 @@ const routes: RouteRecordRaw[] = [
     path: '/me/credentials',
     name: 'me-credentials',
     component: () => import('@/views/me/MeCredentialsView.vue'),
-    meta: { title: '凭据' },
+    meta: { title: '连接信息' },
   },
   {
     path: '/me/status',
     name: 'me-status',
     component: () => import('@/views/me/MeStatusView.vue'),
-    meta: { title: '状态' },
+    meta: { title: '服务状态' },
   },
   {
     path: '/me/security',
@@ -194,6 +198,10 @@ router.beforeEach(async (to) => {
   }
   const isPublic = to.meta.public === true
   const user = sessionState.user
+
+  if (to.path === '/me/subscription' && ['#link', '#qrcode'].includes(to.hash)) {
+    return { path: '/me/connect', query: to.query, hash: to.hash, replace: true }
+  }
 
   if (isPublic) {
     if ((to.name === 'login' || to.name === 'redeem') && user) return homeRoute(user)

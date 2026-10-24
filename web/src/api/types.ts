@@ -370,6 +370,7 @@ export interface InvitationRecord {
 }
 
 export interface InvitationCreate {
+  max_uses?: number
   subscription_id?: string | null
   expires_at?: string | null
 }
@@ -480,16 +481,8 @@ export interface UsageItem {
   [key: string]: unknown
 }
 
-export interface NicCounter {
-  server_id?: string | null
-  rx_bytes?: number
-  tx_bytes?: number
-  [key: string]: unknown
-}
-
 export interface UsagePage {
   items: UsageItem[]
-  nic_counters?: NicCounter[]
   next_cursor?: string | null
 }
 
@@ -504,7 +497,7 @@ export interface QuotaAdjustmentRecord {
   [key: string]: unknown
 }
 
-/** GET /me/usage 的归一化结果（服务端 items[0] 形如 {usage:[], adjustments:[]}）。 */
+/** GET /me/usage 的归一化结果（服务端 items 是 {usage:[], adjustments:[]} 对象）。 */
 export interface MeUsageResult {
   items: UsageItem[]
   adjustments: QuotaAdjustmentRecord[]
@@ -523,6 +516,7 @@ export interface TaskRecord {
   batch_id?: string | null
   attempts?: number | null
   max_attempts?: number | null
+  revision?: number | null
   last_error?: string | null
   error?: { code?: string; message?: string } | string | null
   available_at?: string | null

@@ -6,6 +6,7 @@ import { authApi, meApi } from '@/api/endpoints'
 import { ApiError } from '@/api/http'
 import type { SessionRecord } from '@/api/types'
 import { useResource } from '@/lib/async'
+import { allPages } from '@/lib/allPages'
 import { errorText } from '@/lib/errors'
 import { formatDateTime, formatRelative } from '@/lib/format'
 import { clearSession } from '@/stores/session'
@@ -24,7 +25,7 @@ import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 const router = useRouter()
-const sessions = useResource<SessionRecord[]>(async () => (await meApi.sessions()).items)
+const sessions = useResource<SessionRecord[]>(() => allPages(cursor => meApi.sessions({ limit: 200, cursor })))
 
 const form = reactive({ current: '', next: '', confirm: '' })
 const saving = ref(false)
@@ -101,7 +102,7 @@ async function revoke(): Promise<void> {
   }
 }
 
-const sessionCount = computed(() => sessions.data.value?.length ?? 0)
+const sessionCount = computed(() => sessions.error.value || !sessions.loaded.value ? null : sessions.data.value?.length ?? null)
 </script>
 
 <template>
@@ -176,7 +177,7 @@ const sessionCount = computed(() => sessions.data.value?.length ?? 0)
       <Card>
         <CardHeader class="flex-row items-center justify-between space-y-0 border-b">
           <CardTitle class="text-base font-semibold">会话</CardTitle>
-          <span class="text-xs text-muted-foreground">共 {{ sessionCount }} 个</span>
+          <span class="text-xs text-muted-foreground">{{ sessionCount === null ? '会话数量尚未确认' : `共 ${sessionCount} 个` }}</span>
         </CardHeader>
         <CardContent class="pt-4">
           <LoadingBlock v-if="sessions.loading.value && !sessions.data.value" :rows="2" label="正在读取会话" />

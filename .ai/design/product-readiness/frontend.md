@@ -29,7 +29,7 @@
 | `DEC-product-readiness-001` | Applied | §4、§5.1 全站 | 无支付/交易页与词；"服务方案"不产出付费语义 |
 | `DEC-product-readiness-002` | Applied | §4 全节、§9 | 文案与流程一起改：导航重组、首次设置、状态机、异常闭环 |
 | `DEC-product-readiness-003` | Applied | §4.1–4.8（管理员）、§4.9–4.11（成员）、§5 | 仅 admin/member 两角色；沿用 `router.beforeEach` 现有角色守卫 |
-| `DEC-product-readiness-012` | Applied | §8、§10 | 前端设计与实现分批交付，子代理自述不作验收证据；本设计未执行任何验证 |
+| `DEC-product-readiness-014` | Applied | §8、§10 | 前端设计与实现分批交付，子代理自述不作验收证据；本设计未执行任何验证 |
 | `DEC-product-readiness-005` | Applied | §8 测试矩阵、§10 | 真实浏览器 E2E 承接 US，不用组件 mock 代替完整链路 |
 | `DEC-product-readiness-006` | Applied | §8.4、§10 | 前端证据必须指向同一候选版本；旧 `web/tests` 日志不冒充新结果 |
 | `DEC-product-readiness-007` | Applied | §4.1（US-PR-001/016）、§8.4 | 面板托管与宿主 nginx 静态托管两种前端归属都要能登录与刷新 |

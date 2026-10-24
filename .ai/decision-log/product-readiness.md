@@ -9,7 +9,7 @@
 | DEC-product-readiness-001 | D0 | scope.product-positioning | 产品级私有面板；不增加支付、订单、退款、返利或商城 | 用户在三种商业化范围中明确选择“产品级私有面板” | user | 本轮结构化范围问题的明确回答 | prd/design/task/test | 用户明确要求增加收费交易业务 | — |
 | DEC-product-readiness-002 | D1 | outcome.complete-journeys | 同时改进文案、导航、开通与运维流程；以可部署、可交付、可长期使用为目标，不限于换词或换皮 | 用户要求修正文案与产品设计，并完成成品后的完整链路测试 | user | 本轮产品改造请求及范围选项说明 | prd/design/task/test | 用户明确缩减为仅文案修改 | — |
 | DEC-product-readiness-003 | D1 | actors.admin-member | 保留管理员与成员两类使用角色，分别完成管理员交付和成员使用旅程 | 用户接受的范围选项明确包含管理员和成员旅程，不新增多租户或细粒度角色体系 | user | 本轮范围选项预览及明确选择 | prd/design/test | 用户要求新增角色或租户边界 | — |
-| DEC-product-readiness-012 | D2 | execution.subagents | 上限5：Sol可在隔离分支实现独立模块并只读审阅；DSV4F机械取证/明确小修；主会话守账本迁移、安全语义和合并，按影响定向验证 | 用户明确要求加速并允许子代理实际干活，消除主会话串行实现瓶颈 | user | 最新“加快推进/缩短测试时长/开子代理干”指令 | design/task/test | 用户改变并发、模型或实现权限 | DEC-product-readiness-011 |
+| DEC-product-readiness-014 | D2 | execution.subagents | 上限6：后续实现、测试与专项检查交已配置DeepSeek V4 Flash；主会话负责分工、合并后大体复查与关键验证；正式accept仍独立只读串行 | 用户明确要求DS优先加速，并提醒其可能疏忽，故子代理自述不直接作为通过证据；不凑数重复工作 | user | 最新“允许6个子代理、让deepseekv4f干、干完主大体查”明确指令 | design/task/test/frontend | 用户改变模型、并发或复核要求 | DEC-product-readiness-012 |
 | DEC-product-readiness-005 | D1 | acceptance.end-to-end | 实现完成后执行真实端到端链路，覆盖前后端、Agent、官方核心、真实客户端与账本；未运行/不支持/失败独立记录 | 用户明确要求完整链路测试，并提供现有环境 | user | 本轮任务原文；此前完整测试要求 | prd/design/task/test | 用户明确改变验证范围 | — |
 | DEC-product-readiness-006 | D2 | delivery.evidence-gates | 将遗留补丁视为候选而非已交付；先核验整合安全/授权/计量基础，再在同一候选版本验证产品旅程，禁止跨版本拼接通过数字 | 多个独立副本及补丁尚未统一，存在缺失/过期交付和未收尾失败 | agent | 当前主仓库 3435f1d 与上一轮暂停状态；本轮事实调研 | design/task/test | 整合版本和完整验收已形成可靠证据 | — |
 | DEC-product-readiness-007 | D1 | deployment.host-nginx | 面板容器不运行 nginx；TLS 由宿主 nginx 终止；同时支持面板托管前端及宿主托管静态前端 | 保留用户已明确选择的部署方式，本轮产品化不反转该架构 | user | 本会话此前 Dockerfile 与两种前端托管的明确选择 | prd/design/task/test | 用户明确要求改变部署架构 | — |
@@ -28,6 +28,10 @@
 无。当前尚未采用任何需要用户另行决定的收费、角色、配额规则或兼容承诺。
 
 ## Superseded Decisions
+
+DEC-product-readiness-012已由014替代；原五并发Sol实现规则不再用于后续调度，保留其历史授权：
+
+| DEC-product-readiness-012 | D2 | execution.subagents | 上限5：Sol可在隔离分支实现独立模块并只读审阅；DSV4F机械取证/明确小修；主会话守账本迁移、安全语义和合并，按影响定向验证 | 用户明确要求加速并允许子代理实际干活，消除主会话串行实现瓶颈 | user | 最新“加快推进/缩短测试时长/开子代理干”指令 | design/task/test | 用户改变并发、模型或实现权限 | DEC-product-readiness-011 |
 
 DEC-product-readiness-011已由012替代；保留5并发与模型选择，允许隔离实现、非仅只读。原决定：
 

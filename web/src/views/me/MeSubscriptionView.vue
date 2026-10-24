@@ -3,6 +3,7 @@ import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { meApi } from '@/api/endpoints'
 import { useResource } from '@/lib/async'
+import { allPages } from '@/lib/allPages'
 import { formatBytes, formatDateTime, formatQuota } from '@/lib/format'
 import { memberSummary } from '@/lib/memberService'
 import PageHeader from '@/components/PageHeader.vue'
@@ -14,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 const route = useRoute()
 const status = useResource(() => meApi.status())
 const subscription = useResource(() => meApi.subscription())
-const nodes = useResource(() => meApi.nodes())
+const nodes = useResource(async () => ({ items: await allPages(cursor => meApi.nodes({ limit: 200, cursor })), next_cursor: null }))
 const summary = computed(() => memberSummary(status.data.value))
 const timezone = computed(() => summary.value.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
 async function refresh() { await Promise.all([status.reload(), subscription.reload(), nodes.reload()]) }

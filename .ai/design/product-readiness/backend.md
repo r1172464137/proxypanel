@@ -24,7 +24,7 @@
 | `DEC-product-readiness-001` | Applied | §1、§2 | 只做私有面板，不加交易实体与端点 |
 | `DEC-product-readiness-002` | Applied | §4.4、§6、§10 | 流程/文案改动配套可核对后端状态与错误语义 |
 | `DEC-product-readiness-003` | Applied | §4.1、§7 | 仅 admin/member 两个身份作用域 |
-| `DEC-product-readiness-012` | Applied | §10、§11 | 子代理结论不单独作为证据，必须有可复核运行证据 |
+| `DEC-product-readiness-014` | Applied | §10、§11 | 子代理结论不单独作为证据，必须有可复核运行证据 |
 | `DEC-product-readiness-005` | Applied | §10、§11 | 后端测试计划划分“本阶段可验证”和“端到端承接”，不假报 |
 | `DEC-product-readiness-006` | Applied | §3、§9.9、§10、§11 | 候选整合门禁、单候选版本、迁移审查 |
 | `DEC-product-readiness-007` | Applied | §8、§9.10、§12 | 面板容器不跑 nginx；两种前端托管都保留 |

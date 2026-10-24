@@ -1,7 +1,7 @@
 /**
  * 统一 HTTP 客户端。
  *
- * 端口契约（docs/specs/implementation-contract.md）：
+ * 端口契约（docs/design/implementation-contract.md）：
  * - 成功单对象：{"data": ...}；列表：{"items": [], "next_cursor": null}
  * - 错误：{"error": {"code","message","details","retryable","request_id"}}
  * - 写请求携带 X-CSRF-Token；批量提交携带 Idempotency-Key。
@@ -119,7 +119,7 @@ function parseBody(text: string): unknown {
   }
 }
 
-function normalizeError(status: number, payload: unknown, rawText: string): ApiErrorPayload {
+function normalizeError(status: number, payload: unknown): ApiErrorPayload {
   if (isRecord(payload) && isRecord(payload.error)) {
     const error = payload.error
     const code = typeof error.code === 'string' && error.code ? error.code : statusFallback(status).code
@@ -135,12 +135,9 @@ function normalizeError(status: number, payload: unknown, rawText: string): ApiE
       request_id: typeof error.request_id === 'string' ? error.request_id : undefined,
     }
   }
-  // 非契约响应（网关 HTML、代理错误页等）：不回显原始正文，避免把任意 HTML 当文案。
-  const fallback = statusFallback(status)
-  if (status >= 500 && rawText && !rawText.trim().startsWith('<')) {
-    return { ...fallback, message: `${fallback.message}：${rawText.slice(0, 200)}` }
-  }
-  return fallback
+  // Uncontracted gateway bodies can include credentials or private diagnostics,
+  // whether they are HTML, plain text or arbitrary JSON. Never display them.
+  return statusFallback(status)
 }
 
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -177,7 +174,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 
   if (!response.ok) {
     if (response.status === 401 && !options.suppressAuthRedirect) unauthorizedHandler?.()
-    throw new ApiError(response.status, normalizeError(response.status, payload, rawText))
+    throw new ApiError(response.status, normalizeError(response.status, payload))
   }
 
   if (response.status === 204 || rawText === '') return undefined as T

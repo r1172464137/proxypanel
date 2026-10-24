@@ -2,12 +2,13 @@
  * 端点封装。路径与语义严格对齐 docs/design/implementation-contract.md。
  * 所有列表返回 PageResult（items + next_cursor）。
  */
-import { api } from './http'
+import { api, ApiError } from './http'
 import { loadMeUsage } from '@/lib/meUsage'
 import type {
   AgentRecord,
   AuditRecord,
   BatchDetail,
+  BatchResultItem,
   BatchOperation,
   BatchPreview,
   BatchSubmitResult,
@@ -23,7 +24,6 @@ import type {
   MeSubscription,
   MemberRecord,
   MemberWrite,
-  NicCounter,
   NodeGroupRecord,
   NodeGroupWrite,
   NodeRecord,
@@ -109,6 +109,24 @@ export function memberRecordFromDetail(payload: unknown): MemberRecord {
     record.access = access
   }
   return record as unknown as MemberRecord
+}
+
+export function batchDetailFromEnvelope(payload: unknown): BatchDetail {
+  const envelope = asObject(payload)
+  const batch = asObject(envelope?.batch) ?? envelope
+  const id = batch?.id
+  const rawResults = envelope?.results ?? batch?.results
+  if (!batch || typeof id !== 'string' || !id || !Array.isArray(rawResults)) {
+    throw new ApiError(0, { code: 'MALFORMED_RESPONSE', message: '面板返回了无法识别的变更记录，请重新核对。' })
+  }
+  const results: BatchResultItem[] = []
+  for (const value of rawResults) {
+    const row = asObject(value)
+    if (!row) throw new ApiError(0, { code: 'MALFORMED_RESPONSE', message: '变更记录明细不完整，请重新核对。' })
+    results.push(row)
+  }
+  const summary = asObject(envelope?.summary) ?? asObject(batch.summary) ?? undefined
+  return { ...batch, id, results, summary }
 }
 
 export const authApi = {
@@ -220,7 +238,7 @@ export const adminApi = {
     }) => api.post<BatchPreview>(`${ADMIN}/batches/preview`, body),
     submit: (body: { preview_id: string; rules_version?: unknown; member_set_digest?: unknown; confirm: true }, idempotencyKey: string) =>
       api.post<BatchSubmitResult>(`${ADMIN}/batches`, body, { idempotencyKey }),
-    get: (id: string) => api.get<BatchDetail>(`${ADMIN}/batches/${encodeURIComponent(id)}`),
+    get: async (id: string) => batchDetailFromEnvelope(await api.get<unknown>(`${ADMIN}/batches/${encodeURIComponent(id)}`)),
   },
 
   usage: {
@@ -231,11 +249,10 @@ export const adminApi = {
       to?: string
       limit?: number
       cursor?: string | null
-    }): Promise<{ items: UsageItem[]; nic_counters: NicCounter[]; next_cursor: string | null }> => {
+    }): Promise<{ items: UsageItem[]; next_cursor: string | null }> => {
       const payload = await api.get<UsagePage>(`${ADMIN}/usage`, { query })
       return {
         items: Array.isArray(payload.items) ? payload.items : [],
-        nic_counters: Array.isArray(payload.nic_counters) ? payload.nic_counters : [],
         next_cursor: typeof payload.next_cursor === 'string' ? payload.next_cursor : null,
       }
     },

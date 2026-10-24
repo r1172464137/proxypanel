@@ -1,6 +1,6 @@
 {
   "feature": "product-readiness",
-  "current_phase": null,
+  "current_phase": "frontend",
   "active_phases": [
     "backend",
     "frontend",
@@ -105,6 +105,64 @@
         }
       },
       "validation_revision": 2
+    },
+    "frontend": {
+      "status": "in_progress",
+      "plan": ".ai/super-run/product-readiness/frontend.md",
+      "validation_revision": 0,
+      "tasks": {
+        "dev": {
+          "status": "in_progress",
+          "agent_spec": "/home/compile/code/t-tools/agents/frontend-dev.md",
+          "references": [
+            ".ai/design/product-readiness.md",
+            ".ai/design/product-readiness/frontend.md",
+            ".ai/design/product-readiness/backend.md",
+            ".ai/prd/core/product-readiness.md",
+            ".ai/user-stories/core/product-readiness.md",
+            ".ai/decision-log/product-readiness.md",
+            ".ai/super-run/product-readiness/frontend.md",
+            "/home/compile/code/t-tools/guides/frontend/index.md",
+            "/home/compile/code/t-tools/guides/frontend/development.md",
+            "/home/compile/code/t-tools/guides/frontend/ui-decisions.md",
+            "/home/compile/code/t-tools/guides/frontend/testing.md",
+            "/home/compile/code/t-tools/guides/frontend/validation.md",
+            "/home/compile/code/t-tools/guides/frontend/testid-standards.md"
+          ],
+          "evidence": []
+        },
+        "test": {
+          "status": "pending",
+          "agent_spec": "/home/compile/code/t-tools/agents/frontend-test.md",
+          "references": [
+            ".ai/design/product-readiness.md",
+            ".ai/design/product-readiness/frontend.md",
+            ".ai/design/product-readiness/backend.md",
+            ".ai/prd/core/product-readiness.md",
+            ".ai/user-stories/core/product-readiness.md",
+            ".ai/decision-log/product-readiness.md",
+            ".ai/super-run/product-readiness/frontend.md",
+            "/home/compile/code/t-tools/guides/frontend/testing.md",
+            "/home/compile/code/t-tools/guides/frontend/validation.md"
+          ],
+          "evidence": []
+        },
+        "accept": {
+          "status": "pending",
+          "agent_spec": "/home/compile/code/t-tools/agents/frontend-accept.md",
+          "references": [
+            ".ai/design/product-readiness.md",
+            ".ai/design/product-readiness/frontend.md",
+            ".ai/design/product-readiness/backend.md",
+            ".ai/prd/core/product-readiness.md",
+            ".ai/user-stories/core/product-readiness.md",
+            ".ai/decision-log/product-readiness.md",
+            ".ai/super-run/product-readiness/frontend.md",
+            "/home/compile/code/t-tools/guides/frontend/quality.md"
+          ],
+          "evidence": []
+        }
+      }
     }
   },
   "sources": {

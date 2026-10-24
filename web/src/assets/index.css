@@ -181,13 +181,30 @@
       monospace;
   }
 }
-/* ---break---
- */
-@layer base {
-  * {
-    @apply border-border outline-ring/50;
+/* Keep compact desktop tables while giving touch users full-sized targets. */
+@media (pointer: coarse) {
+  button,
+  [role='button'],
+  [role='checkbox'],
+  [role='combobox'],
+  a,
+  input:not([type='checkbox']):not([type='radio']),
+  select {
+    min-height: calc(var(--spacing) * 11);
+    min-width: calc(var(--spacing) * 11);
   }
-  body {
-    @apply bg-background text-foreground;
+
+  input[type='checkbox'],
+  input[type='radio'] {
+    width: calc(var(--spacing) * 11);
+    height: calc(var(--spacing) * 11);
+  }
+
+  label:has(input[type='checkbox']),
+  label:has(input[type='radio']) {
+    display: inline-flex;
+    align-items: center;
+    min-height: calc(var(--spacing) * 11);
+    min-width: calc(var(--spacing) * 11);
   }
 }

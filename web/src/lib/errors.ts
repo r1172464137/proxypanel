@@ -50,7 +50,11 @@ const HINTS: Record<string, string> = {
   MALFORMED_RESPONSE: '面板返回了非契约结构，可能是版本不匹配。',
   FORMAT_UNSUPPORTED: '该客户端格式无法表示当前节点参数；服务端会说明不兼容的节点/字段。',
   UNSUPPORTED_FORMAT: '该客户端格式无法表示当前节点参数；服务端会说明不兼容的节点/字段。',
-  RECOVERY_MODE: '面板处于恢复协调模式，普通变更被暂停。',
+  RECOVERY_MODE: '面板处于恢复核对中，普通授权变更暂不可用；账号救援仍可用。',
+  READINESS_BLOCKED: '升级预检已阻断，请先核对列出的资料或历史问题，不要强行继续。',
+  LEDGER_UNATTRIBUTABLE: '用量区间暂时无法核对，系统不会自动补算或改变历史，请联系管理员处理。',
+  CURSOR_INVALID: '列表已过期，请回到第一页重新读取并核对选择范围。',
+  SUBSCRIPTION_NOT_BINDABLE: '此服务方案暂不可分配，请选择其他方案或先核对方案状态。',
 }
 
 export function errorHint(value: unknown): string | undefined {
@@ -61,11 +65,16 @@ export function errorHint(value: unknown): string | undefined {
 export function errorTitle(value: unknown): string {
   const error = toApiError(value)
   if (error.code === 'NETWORK_ERROR') return '无法连接面板'
+  if (error.code === 'CURSOR_INVALID') return '列表已过期'
+  if (error.code === 'READINESS_BLOCKED') return '升级预检已阻断'
+  if (error.code === 'LEDGER_UNATTRIBUTABLE') return '用量资料需核对'
+  if (error.code === 'SUBSCRIPTION_NOT_BINDABLE') return '服务方案不可分配'
   if (error.status === 401) return '未登录或会话失效'
   if (error.status === 403) return '权限不足'
   if (error.status === 404) return '对象不存在'
   if (error.status === 409) return '存在冲突'
-  if (error.status === 422) return '参数无法被该客户端格式表示'
+  if (error.status === 422) return error.code === 'PROTOCOL_NOT_SUPPORTED' || error.code === 'FORMAT_UNSUPPORTED' || error.code === 'UNSUPPORTED_FORMAT'
+    ? '参数无法被该客户端格式表示' : '请求内容需核对'
   if (error.status === 429) return '请求过于频繁'
   if (error.status >= 500) return '面板或依赖服务故障'
   if (error.status === 400) return '提交内容有误'

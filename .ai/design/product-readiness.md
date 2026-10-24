@@ -40,7 +40,7 @@
 | DEC-product-readiness-001 | Applied | §1/§4/§6及分端决策表 | 沿用已确认产品边界或明确的D2选择，不扩大范围 |
 | DEC-product-readiness-002 | Applied | §1/§4/§6及分端决策表 | 沿用已确认产品边界或明确的D2选择，不扩大范围 |
 | DEC-product-readiness-003 | Applied | §1/§4/§6及分端决策表 | 沿用已确认产品边界或明确的D2选择，不扩大范围 |
-| DEC-product-readiness-012 | Applied | §1/§4/§6及分端决策表 | 沿用已确认产品边界或明确的D2选择，不扩大范围 |
+| DEC-product-readiness-014 | Applied | §1/§4/§6及分端决策表 | 沿用已确认产品边界或明确的D2选择，不扩大范围 |
 | DEC-product-readiness-005 | Applied | §1/§4/§6及分端决策表 | 沿用已确认产品边界或明确的D2选择，不扩大范围 |
 | DEC-product-readiness-006 | Applied | §1/§4/§6及分端决策表 | 沿用已确认产品边界或明确的D2选择，不扩大范围 |
 | DEC-product-readiness-007 | Applied | §1/§4/§6及分端决策表 | 沿用已确认产品边界或明确的D2选择，不扩大范围 |

@@ -103,6 +103,16 @@ describe('request', () => {
     expect(error.retryable).toBe(true)
   })
 
+  it('非契约纯文本诊断也不向页面暴露凭据形状正文', async () => {
+    const { fetchImpl } = fetcher(() => rawResponse(503, 'PANEL_MASTER_KEY=synthetic-private-diagnostic'))
+    const caught = await request('/api/v1/admin/overview', { fetchImpl }).catch((error: unknown) => error)
+    expect(caught).toBeInstanceOf(ApiError)
+    const error = caught as ApiError
+    expect(error.message).not.toContain('synthetic-private')
+    expect(error.message).not.toContain('PANEL_MASTER_KEY')
+    expect(error.retryable).toBe(true)
+  })
+
   it('网络失败映射为 NETWORK_ERROR 且可重试', async () => {
     const fetchImpl = (async () => {
       throw new TypeError('failed to fetch')
