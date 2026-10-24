@@ -960,5 +960,82 @@
       "US-PR-018"
     ],
     "requires": []
+  },
+  {
+    "id": "remaining/cmd-panel",
+    "packages": ["./cmd/panel"],
+    "run": "^Test(CookieSameSiteDefaultsToStrict|CookieSameSiteNoneRequiresSecure|CookieSameSiteParsesValues|CookieSameSiteRejectsUnknown|TransportRejectsIncompleteTLS|TransportRequiresExplicitHTTPOptIn)$",
+    "expected_tests": ["TestCookieSameSiteDefaultsToStrict", "TestCookieSameSiteNoneRequiresSecure", "TestCookieSameSiteParsesValues", "TestCookieSameSiteRejectsUnknown", "TestTransportRejectsIncompleteTLS", "TestTransportRequiresExplicitHTTPOptIn"],
+    "stories": ["US-PR-017"], "requires": []
+  },
+  {
+    "id": "remaining/agent-config",
+    "packages": ["./internal/agent/config"],
+    "run": "^Test(CheckRuntimeRequiresFile|IsLoopbackHost|LoadAppliesDefaults|LoadRejectsUnknownField|PlainHTTPRequiresLoopbackOptIn|ValidateRejectsUnsafeInput)$",
+    "expected_tests": ["TestCheckRuntimeRequiresFile", "TestIsLoopbackHost", "TestLoadAppliesDefaults", "TestLoadRejectsUnknownField", "TestPlainHTTPRequiresLoopbackOptIn", "TestValidateRejectsUnsafeInput"],
+    "stories": ["US-PR-003"], "requires": []
+  },
+  {
+    "id": "remaining/agent-control",
+    "packages": ["./internal/agent/control"],
+    "run": "^Test(AppliedRequiresAccepted|BackoffIsBoundedAndGrows|HeartbeatSendsBearerAndPayload|MissingDataEnvelopeIsAnError|RegisterRejects204|SnapshotHTTPErrorIsTyped|SnapshotReturnsNilOn204|SnapshotUnwrapsDataEnvelope|UnauthorizedIsNotRetryable|UsagePropagatesAck)$",
+    "expected_tests": ["TestAppliedRequiresAccepted", "TestBackoffIsBoundedAndGrows", "TestHeartbeatSendsBearerAndPayload", "TestMissingDataEnvelopeIsAnError", "TestRegisterRejects204", "TestSnapshotHTTPErrorIsTyped", "TestSnapshotReturnsNilOn204", "TestSnapshotUnwrapsDataEnvelope", "TestUnauthorizedIsNotRetryable", "TestUsagePropagatesAck"],
+    "stories": ["US-PR-003"], "requires": []
+  },
+  {
+    "id": "remaining/agent-telemetry",
+    "packages": ["./internal/agent/telemetry"],
+    "run": "^TestCollectReturnsSaneMetrics$",
+    "expected_tests": ["TestCollectReturnsSaneMetrics"],
+    "stories": ["US-PR-003"], "requires": []
+  },
+  {
+    "id": "remaining/panel-access",
+    "packages": ["./internal/panel/access"],
+    "run": "^Test(DecideAllowsAuthorizedNodesOnly|DecideArchivedAccount|DecideBlockedAccountIgnoresOverrides|DecideExpiredBinding|DecideNoBinding|DecideNoNodesAuthorized|DecideOverQuota|DecideProxyPaused|DecideStepOrder|DecideSubscriptionPausedAndArchived|DecideUnlimitedQuota|EffectiveQuotaSources)$",
+    "expected_tests": ["TestDecideAllowsAuthorizedNodesOnly", "TestDecideArchivedAccount", "TestDecideBlockedAccountIgnoresOverrides", "TestDecideExpiredBinding", "TestDecideNoBinding", "TestDecideNoNodesAuthorized", "TestDecideOverQuota", "TestDecideProxyPaused", "TestDecideStepOrder", "TestDecideSubscriptionPausedAndArchived", "TestDecideUnlimitedQuota", "TestEffectiveQuotaSources"],
+    "stories": ["US-PR-005"], "requires": []
+  },
+  {
+    "id": "remaining/panel-usagecalc",
+    "packages": ["./internal/panel/usagecalc"],
+    "run": "^Test(AllocateBackfillIntoClosedCycleIsCorrection|AllocateCrossesBoundaryAndFlagsCorrection|LargeTrafficIsNotPayloadSize|PayloadHashIsStableAndContentSensitive|RejectCodePriority|ValidateAcceptsWellFormedBatch|ValidateClockSkew|ValidateRejectsForeignNode|ValidateRejectsMissingHistory|ValidateRejectsNegativeAndInverted|ValidateRejectsUnknownNode|ValidateSchemaAndSize)$",
+    "expected_tests": ["TestAllocateBackfillIntoClosedCycleIsCorrection", "TestAllocateCrossesBoundaryAndFlagsCorrection", "TestLargeTrafficIsNotPayloadSize", "TestPayloadHashIsStableAndContentSensitive", "TestRejectCodePriority", "TestValidateAcceptsWellFormedBatch", "TestValidateClockSkew", "TestValidateRejectsForeignNode", "TestValidateRejectsMissingHistory", "TestValidateRejectsNegativeAndInverted", "TestValidateRejectsUnknownNode", "TestValidateSchemaAndSize"],
+    "stories": ["US-PR-008", "US-PR-013"], "requires": []
+  },
+  {
+    "id": "remaining/panel-protocol",
+    "packages": ["./internal/panel/protocol"],
+    "run": "^Test(EndpointForExplicitCertificatePin|EndpointForReality|EndpointForShadowsocks2022CarriesServerPSK|EndpointForTLSDerivesCertificatePin|EndpointForTLSDerivesCertificatePinFromLineArray|EndpointForTransportParams|EndpointMissingRealityParams|EndpointUsesExternalPortForClients|ExternalPortValidation|GenerateX25519|NormalizeCertSHA256|RealityAcceptedForVLESS|RealityRejectedForNonVLESSProtocols|RealityWithoutParametersStillReportsFields|ValidateFlowTransportCombination|ValidateRealityRequirements|ValidateRejectsAdminSuppliedClients|ValidateRejectsLegacyFlow|ValidateRejectsUnknownProtocolAndTransport|ValidateShadowsocks2022|ValidateShadowsocksRejectsMultiUserUnsupportedMethod|ValidateVMessAndTrojan)$",
+    "expected_tests": ["TestEndpointForExplicitCertificatePin", "TestEndpointForReality", "TestEndpointForShadowsocks2022CarriesServerPSK", "TestEndpointForTLSDerivesCertificatePin", "TestEndpointForTLSDerivesCertificatePinFromLineArray", "TestEndpointForTransportParams", "TestEndpointMissingRealityParams", "TestEndpointUsesExternalPortForClients", "TestExternalPortValidation", "TestGenerateX25519", "TestNormalizeCertSHA256", "TestRealityAcceptedForVLESS", "TestRealityRejectedForNonVLESSProtocols", "TestRealityWithoutParametersStillReportsFields", "TestValidateFlowTransportCombination", "TestValidateRealityRequirements", "TestValidateRejectsAdminSuppliedClients", "TestValidateRejectsLegacyFlow", "TestValidateRejectsUnknownProtocolAndTransport", "TestValidateShadowsocks2022", "TestValidateShadowsocksRejectsMultiUserUnsupportedMethod", "TestValidateVMessAndTrojan"],
+    "stories": ["US-PR-004"], "requires": []
+  },
+  {
+    "id": "remaining/panel-api",
+    "packages": ["./internal/panel/api"],
+    "run": "^Test(AcceptanceBoundarySplitAndQuotaChange|AcceptanceInheritanceAndOverrideCannotBypass|AcceptanceInvitationRedeemsOnce|AcceptanceLastAdminProtection|AcceptanceNodeGroupPropagationAndDedupe|AcceptanceSessionRevocationAndScope|AcceptanceSubscriptionRuleEditKeepsRunningCycle|AcceptanceSwitchSubscriptionKeepsTokenUsageAndCycle|AcceptanceTwoAdminsConcurrentCrossChanges|CORSAllowsWhitelistedOrigin|CORSDisabledByDefault|CORSPreflightShortCircuits|CORSRejectsForeignOrigin|ClientIPPrefersRemoteWhenDirect|ClientIPUsesXFFBehindTrustedProxy|DecorateMemberSetsFlatDerivedValues|IsTrustedProxy|MemberPatchClearsExpiryOverrideAndBinding|MemberPatchOmittedFieldsAndValidation|PanelFlow|ParseAllowedOrigins|PatchWithoutVersionIsRejected|RecoveryModeBlocksMemberSelfServiceWrites|RotationScopeIsValidated|ServerPatchNullSemantics|SubscriptionAffectsMembersCountsExplicitNull|SubscriptionPatchDistinguishesOmittedNullAndValue|SubscriptionPatchRejectsUnknownInvalidsAndKeepsStrictDecoding|UsageWindowParsing|ValidatePreviewValuesKeepsExplicitNulls)$",
+    "expected_tests": ["TestAcceptanceBoundarySplitAndQuotaChange", "TestAcceptanceInheritanceAndOverrideCannotBypass", "TestAcceptanceInvitationRedeemsOnce", "TestAcceptanceLastAdminProtection", "TestAcceptanceNodeGroupPropagationAndDedupe", "TestAcceptanceSessionRevocationAndScope", "TestAcceptanceSubscriptionRuleEditKeepsRunningCycle", "TestAcceptanceSwitchSubscriptionKeepsTokenUsageAndCycle", "TestAcceptanceTwoAdminsConcurrentCrossChanges", "TestCORSAllowsWhitelistedOrigin", "TestCORSDisabledByDefault", "TestCORSPreflightShortCircuits", "TestCORSRejectsForeignOrigin", "TestClientIPPrefersRemoteWhenDirect", "TestClientIPUsesXFFBehindTrustedProxy", "TestDecorateMemberSetsFlatDerivedValues", "TestIsTrustedProxy", "TestMemberPatchClearsExpiryOverrideAndBinding", "TestMemberPatchOmittedFieldsAndValidation", "TestPanelFlow", "TestParseAllowedOrigins", "TestPatchWithoutVersionIsRejected", "TestRecoveryModeBlocksMemberSelfServiceWrites", "TestRotationScopeIsValidated", "TestServerPatchNullSemantics", "TestSubscriptionAffectsMembersCountsExplicitNull", "TestSubscriptionPatchDistinguishesOmittedNullAndValue", "TestSubscriptionPatchRejectsUnknownInvalidsAndKeepsStrictDecoding", "TestUsageWindowParsing", "TestValidatePreviewValuesKeepsExplicitNulls"],
+    "stories": ["US-PR-005", "US-PR-006", "US-PR-013", "US-PR-017"], "requires": ["postgres"], "timeout_seconds": 180
+  },
+  {
+    "id": "remaining/panel-maintenance",
+    "packages": ["./internal/panel/maintenance"],
+    "run": "^Test(BackoffCapIsIndependentOfTheConfiguredBase|BackoffIsExponentialAndBounded|BackoffIsMonotonicUpToTheCap|ClipBoundsMessagesWithoutBreakingRunes|DedupeKind|EndpointIsPinnedToTelegram|MaintenanceBackoffIsMeasuredFromDatabaseClock|MaintenanceDeliversWhenPanelClockLagsDatabase|MaintenanceIntegrationDeliveryFailure|ReconcileAdoptsLedgerOverQuotaEvent|ReconcileIgnoresForeignKinds|ReconcileKeepsAlertsOfTruncatedScans|ReconcileRaisesThenAdopts|ReconcileRecoversOnlyWhenTheConditionIsGone|RedactRemovesTheToken|RunOnceWithoutStoreFails|SanitizeErrorDropsURLAndToken|SendBodyCarriesChatAndText|SendIsBoundedByTheTimeout|SendRecordsNetworkFailureWithoutLeakingTheURL|SendRequiresHTTP200AndOKTrue)$",
+    "expected_tests": ["TestBackoffCapIsIndependentOfTheConfiguredBase", "TestBackoffIsExponentialAndBounded", "TestBackoffIsMonotonicUpToTheCap", "TestClipBoundsMessagesWithoutBreakingRunes", "TestDedupeKind", "TestEndpointIsPinnedToTelegram", "TestMaintenanceBackoffIsMeasuredFromDatabaseClock", "TestMaintenanceDeliversWhenPanelClockLagsDatabase", "TestMaintenanceIntegrationDeliveryFailure", "TestReconcileAdoptsLedgerOverQuotaEvent", "TestReconcileIgnoresForeignKinds", "TestReconcileKeepsAlertsOfTruncatedScans", "TestReconcileRaisesThenAdopts", "TestReconcileRecoversOnlyWhenTheConditionIsGone", "TestRedactRemovesTheToken", "TestRunOnceWithoutStoreFails", "TestSanitizeErrorDropsURLAndToken", "TestSendBodyCarriesChatAndText", "TestSendIsBoundedByTheTimeout", "TestSendRecordsNetworkFailureWithoutLeakingTheURL", "TestSendRequiresHTTP200AndOKTrue"],
+    "stories": ["US-PR-010", "US-PR-012"], "requires": ["postgres"]
+  },
+  {
+    "id": "remaining/panel-clientconfig-render",
+    "packages": ["./internal/panel/clientconfig"],
+    "run": "^Test(ExplicitCertificatePinRejectedWhereUnsupported|HTTPUpgradeProjectionAndExplicitIncompatibility|LegacyShadowsocksKeepsMemberSecret|MatrixFixtureExportsEveryFormat|MatrixFixtureShadowsocks2022CarriesServerPSK|MatrixFixtureTrojanTLSUsesCertificatePin|MihomoPlaintextTrojanIsExplicit|MihomoWSKTLSCarriesAllowInsecure|NormalizeFormat|RenderDedupesRemarks|RenderMihomo|RenderSingboxRealityAndWS|RenderTemplatePreservesGeneratedFields|RenderV2rayN|RenderV2rayNBase64Wrapper|RenderXrayEmptyNodesStillValid|RenderXrayRealityHasNoServerSecret|Shadowsocks2022CredentialsCarryServerPSK|Shadowsocks2022WithoutServerPSKIsExplicit|UnsupportedTransportIsExplicit|WSTLSClientsOfferHTTP11|WSTLSPinAndAllowInsecureStaysExplicit|XrayAllowInsecureWithoutPinIsExplicit|XrayTLSReplacesAllowInsecureWithPin)$",
+    "expected_tests": ["TestExplicitCertificatePinRejectedWhereUnsupported", "TestHTTPUpgradeProjectionAndExplicitIncompatibility", "TestLegacyShadowsocksKeepsMemberSecret", "TestMatrixFixtureExportsEveryFormat", "TestMatrixFixtureShadowsocks2022CarriesServerPSK", "TestMatrixFixtureTrojanTLSUsesCertificatePin", "TestMihomoPlaintextTrojanIsExplicit", "TestMihomoWSKTLSCarriesAllowInsecure", "TestNormalizeFormat", "TestRenderDedupesRemarks", "TestRenderMihomo", "TestRenderSingboxRealityAndWS", "TestRenderTemplatePreservesGeneratedFields", "TestRenderV2rayN", "TestRenderV2rayNBase64Wrapper", "TestRenderXrayEmptyNodesStillValid", "TestRenderXrayRealityHasNoServerSecret", "TestShadowsocks2022CredentialsCarryServerPSK", "TestShadowsocks2022WithoutServerPSKIsExplicit", "TestUnsupportedTransportIsExplicit", "TestWSTLSClientsOfferHTTP11", "TestWSTLSPinAndAllowInsecureStaysExplicit", "TestXrayAllowInsecureWithoutPinIsExplicit", "TestXrayTLSReplacesAllowInsecureWithPin"],
+    "stories": ["US-PR-004"], "requires": []
+  },
+  {
+    "id": "remaining/agent-state-unix-permissions",
+    "packages": ["./internal/agent/state"],
+    "run": "^TestStateDirPermissions$",
+    "expected_tests": ["TestStateDirPermissions"],
+    "stories": ["US-PR-003"], "requires": ["unix"]
   }
 ]

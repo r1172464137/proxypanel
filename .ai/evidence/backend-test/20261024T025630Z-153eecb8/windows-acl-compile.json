@@ -1,0 +1,23 @@
+{
+  "status": "compiled_not_executed",
+  "test": "TestStateDirACLIsRestricted",
+  "command": [
+    "go",
+    "test",
+    "-c",
+    "-o",
+    "/home/compile/Work/proxypanel-worktrees/pi-web-agent-34b8aaf2-7c62-4cbf-a9d6-767e7d95e8f4/.ai/evidence/backend-test/20261024T025630Z-153eecb8/state-windows-amd64.test.exe",
+    "./internal/agent/state"
+  ],
+  "environment": {
+    "GOOS": "windows",
+    "GOARCH": "amd64",
+    "CGO_ENABLED": "0"
+  },
+  "exit_code": 0,
+  "executed": false,
+  "reason": "Windows-only DACL semantics cannot be executed on Linux",
+  "created_at": "2026-10-24T02:57:38.669472+00:00",
+  "binary_sha256": "d715eb15af202dae0e05e31039c4be0082fcf44c2f455206f8ded93e70e288cb",
+  "binary_bytes": 12240896
+}

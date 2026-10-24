@@ -1,0 +1,294 @@
+{
+  "base_commit": "3b86336",
+  "run": "20261024T025630Z-153eecb8",
+  "input_sha256": "0fa95445dc0298cfbb7cf4ddbc6d6adec2e3c8af12311f72d1b6a4514e9a7b5d",
+  "inputs_stable": true,
+  "expected_top_level": 145,
+  "top_level_counts": {
+    "passed": 140,
+    "failed": 5,
+    "skipped": 0,
+    "missing": 0
+  },
+  "inventory_subset_and_exact_discovery_selection_verified": true,
+  "results": [
+    {
+      "id": "remaining/cmd-panel",
+      "expected": 6,
+      "status": "passed",
+      "passed": [
+        "TestCookieSameSiteDefaultsToStrict",
+        "TestCookieSameSiteNoneRequiresSecure",
+        "TestCookieSameSiteParsesValues",
+        "TestCookieSameSiteRejectsUnknown",
+        "TestTransportRejectsIncompleteTLS",
+        "TestTransportRequiresExplicitHTTPOptIn"
+      ],
+      "failed": [],
+      "skipped": [],
+      "missing": []
+    },
+    {
+      "id": "remaining/agent-config",
+      "expected": 6,
+      "status": "passed",
+      "passed": [
+        "TestCheckRuntimeRequiresFile",
+        "TestIsLoopbackHost",
+        "TestLoadAppliesDefaults",
+        "TestLoadRejectsUnknownField",
+        "TestPlainHTTPRequiresLoopbackOptIn",
+        "TestValidateRejectsUnsafeInput"
+      ],
+      "failed": [],
+      "skipped": [],
+      "missing": []
+    },
+    {
+      "id": "remaining/agent-control",
+      "expected": 10,
+      "status": "passed",
+      "passed": [
+        "TestAppliedRequiresAccepted",
+        "TestBackoffIsBoundedAndGrows",
+        "TestHeartbeatSendsBearerAndPayload",
+        "TestMissingDataEnvelopeIsAnError",
+        "TestRegisterRejects204",
+        "TestSnapshotHTTPErrorIsTyped",
+        "TestSnapshotReturnsNilOn204",
+        "TestSnapshotUnwrapsDataEnvelope",
+        "TestUnauthorizedIsNotRetryable",
+        "TestUsagePropagatesAck"
+      ],
+      "failed": [],
+      "skipped": [],
+      "missing": []
+    },
+    {
+      "id": "remaining/agent-telemetry",
+      "expected": 1,
+      "status": "passed",
+      "passed": [
+        "TestCollectReturnsSaneMetrics"
+      ],
+      "failed": [],
+      "skipped": [],
+      "missing": []
+    },
+    {
+      "id": "remaining/panel-access",
+      "expected": 12,
+      "status": "passed",
+      "passed": [
+        "TestDecideAllowsAuthorizedNodesOnly",
+        "TestDecideArchivedAccount",
+        "TestDecideBlockedAccountIgnoresOverrides",
+        "TestDecideExpiredBinding",
+        "TestDecideNoBinding",
+        "TestDecideNoNodesAuthorized",
+        "TestDecideOverQuota",
+        "TestDecideProxyPaused",
+        "TestDecideStepOrder",
+        "TestDecideSubscriptionPausedAndArchived",
+        "TestDecideUnlimitedQuota",
+        "TestEffectiveQuotaSources"
+      ],
+      "failed": [],
+      "skipped": [],
+      "missing": []
+    },
+    {
+      "id": "remaining/panel-usagecalc",
+      "expected": 12,
+      "status": "passed",
+      "passed": [
+        "TestAllocateBackfillIntoClosedCycleIsCorrection",
+        "TestAllocateCrossesBoundaryAndFlagsCorrection",
+        "TestLargeTrafficIsNotPayloadSize",
+        "TestPayloadHashIsStableAndContentSensitive",
+        "TestRejectCodePriority",
+        "TestValidateAcceptsWellFormedBatch",
+        "TestValidateClockSkew",
+        "TestValidateRejectsForeignNode",
+        "TestValidateRejectsMissingHistory",
+        "TestValidateRejectsNegativeAndInverted",
+        "TestValidateRejectsUnknownNode",
+        "TestValidateSchemaAndSize"
+      ],
+      "failed": [],
+      "skipped": [],
+      "missing": []
+    },
+    {
+      "id": "remaining/panel-protocol",
+      "expected": 22,
+      "status": "passed",
+      "passed": [
+        "TestEndpointForExplicitCertificatePin",
+        "TestEndpointForReality",
+        "TestEndpointForShadowsocks2022CarriesServerPSK",
+        "TestEndpointForTLSDerivesCertificatePin",
+        "TestEndpointForTLSDerivesCertificatePinFromLineArray",
+        "TestEndpointForTransportParams",
+        "TestEndpointMissingRealityParams",
+        "TestEndpointUsesExternalPortForClients",
+        "TestExternalPortValidation",
+        "TestGenerateX25519",
+        "TestNormalizeCertSHA256",
+        "TestRealityAcceptedForVLESS",
+        "TestRealityRejectedForNonVLESSProtocols",
+        "TestRealityWithoutParametersStillReportsFields",
+        "TestValidateFlowTransportCombination",
+        "TestValidateRealityRequirements",
+        "TestValidateRejectsAdminSuppliedClients",
+        "TestValidateRejectsLegacyFlow",
+        "TestValidateRejectsUnknownProtocolAndTransport",
+        "TestValidateShadowsocks2022",
+        "TestValidateShadowsocksRejectsMultiUserUnsupportedMethod",
+        "TestValidateVMessAndTrojan"
+      ],
+      "failed": [],
+      "skipped": [],
+      "missing": []
+    },
+    {
+      "id": "remaining/panel-api",
+      "expected": 30,
+      "status": "failed",
+      "passed": [
+        "TestAcceptanceInheritanceAndOverrideCannotBypass",
+        "TestAcceptanceInvitationRedeemsOnce",
+        "TestAcceptanceLastAdminProtection",
+        "TestAcceptanceNodeGroupPropagationAndDedupe",
+        "TestAcceptanceSessionRevocationAndScope",
+        "TestAcceptanceTwoAdminsConcurrentCrossChanges",
+        "TestCORSAllowsWhitelistedOrigin",
+        "TestCORSDisabledByDefault",
+        "TestCORSPreflightShortCircuits",
+        "TestCORSRejectsForeignOrigin",
+        "TestClientIPPrefersRemoteWhenDirect",
+        "TestClientIPUsesXFFBehindTrustedProxy",
+        "TestDecorateMemberSetsFlatDerivedValues",
+        "TestIsTrustedProxy",
+        "TestMemberPatchClearsExpiryOverrideAndBinding",
+        "TestMemberPatchOmittedFieldsAndValidation",
+        "TestParseAllowedOrigins",
+        "TestPatchWithoutVersionIsRejected",
+        "TestRotationScopeIsValidated",
+        "TestServerPatchNullSemantics",
+        "TestSubscriptionAffectsMembersCountsExplicitNull",
+        "TestSubscriptionPatchDistinguishesOmittedNullAndValue",
+        "TestSubscriptionPatchRejectsUnknownInvalidsAndKeepsStrictDecoding",
+        "TestUsageWindowParsing",
+        "TestValidatePreviewValuesKeepsExplicitNulls"
+      ],
+      "failed": [
+        "TestAcceptanceBoundarySplitAndQuotaChange",
+        "TestAcceptanceSubscriptionRuleEditKeepsRunningCycle",
+        "TestAcceptanceSwitchSubscriptionKeepsTokenUsageAndCycle",
+        "TestPanelFlow",
+        "TestRecoveryModeBlocksMemberSelfServiceWrites"
+      ],
+      "skipped": [],
+      "missing": []
+    },
+    {
+      "id": "remaining/panel-maintenance",
+      "expected": 21,
+      "status": "passed",
+      "passed": [
+        "TestBackoffCapIsIndependentOfTheConfiguredBase",
+        "TestBackoffIsExponentialAndBounded",
+        "TestBackoffIsMonotonicUpToTheCap",
+        "TestClipBoundsMessagesWithoutBreakingRunes",
+        "TestDedupeKind",
+        "TestEndpointIsPinnedToTelegram",
+        "TestMaintenanceBackoffIsMeasuredFromDatabaseClock",
+        "TestMaintenanceDeliversWhenPanelClockLagsDatabase",
+        "TestMaintenanceIntegrationDeliveryFailure",
+        "TestReconcileAdoptsLedgerOverQuotaEvent",
+        "TestReconcileIgnoresForeignKinds",
+        "TestReconcileKeepsAlertsOfTruncatedScans",
+        "TestReconcileRaisesThenAdopts",
+        "TestReconcileRecoversOnlyWhenTheConditionIsGone",
+        "TestRedactRemovesTheToken",
+        "TestRunOnceWithoutStoreFails",
+        "TestSanitizeErrorDropsURLAndToken",
+        "TestSendBodyCarriesChatAndText",
+        "TestSendIsBoundedByTheTimeout",
+        "TestSendRecordsNetworkFailureWithoutLeakingTheURL",
+        "TestSendRequiresHTTP200AndOKTrue"
+      ],
+      "failed": [],
+      "skipped": [],
+      "missing": []
+    },
+    {
+      "id": "remaining/panel-clientconfig-render",
+      "expected": 24,
+      "status": "passed",
+      "passed": [
+        "TestExplicitCertificatePinRejectedWhereUnsupported",
+        "TestHTTPUpgradeProjectionAndExplicitIncompatibility",
+        "TestLegacyShadowsocksKeepsMemberSecret",
+        "TestMatrixFixtureExportsEveryFormat",
+        "TestMatrixFixtureShadowsocks2022CarriesServerPSK",
+        "TestMatrixFixtureTrojanTLSUsesCertificatePin",
+        "TestMihomoPlaintextTrojanIsExplicit",
+        "TestMihomoWSKTLSCarriesAllowInsecure",
+        "TestNormalizeFormat",
+        "TestRenderDedupesRemarks",
+        "TestRenderMihomo",
+        "TestRenderSingboxRealityAndWS",
+        "TestRenderTemplatePreservesGeneratedFields",
+        "TestRenderV2rayN",
+        "TestRenderV2rayNBase64Wrapper",
+        "TestRenderXrayEmptyNodesStillValid",
+        "TestRenderXrayRealityHasNoServerSecret",
+        "TestShadowsocks2022CredentialsCarryServerPSK",
+        "TestShadowsocks2022WithoutServerPSKIsExplicit",
+        "TestUnsupportedTransportIsExplicit",
+        "TestWSTLSClientsOfferHTTP11",
+        "TestWSTLSPinAndAllowInsecureStaysExplicit",
+        "TestXrayAllowInsecureWithoutPinIsExplicit",
+        "TestXrayTLSReplacesAllowInsecureWithPin"
+      ],
+      "failed": [],
+      "skipped": [],
+      "missing": []
+    },
+    {
+      "id": "remaining/agent-state-unix-permissions",
+      "expected": 1,
+      "status": "passed",
+      "passed": [
+        "TestStateDirPermissions"
+      ],
+      "failed": [],
+      "skipped": [],
+      "missing": []
+    }
+  ],
+  "blocked": [
+    {
+      "tests": [
+        "TestLocalCoreClientMatrix",
+        "TestLocalCoreCredentialGuards"
+      ],
+      "reason": "corematrix tag exists; absent SING_BOX_BIN/MIHOMO_BIN, pinned versions not verified; no launch pending coordination"
+    },
+    {
+      "tests": [
+        "TestReviewReservedTags"
+      ],
+      "reason": "mixed structural/real test; absent SING_BOX_BIN; excluded intact, no default skip"
+    },
+    {
+      "tests": [
+        "TestStateDirACLIsRestricted"
+      ],
+      "reason": "Windows-only runtime unavailable; cross-compile succeeded, not executed"
+    }
+  ],
+  "excluded": "Supervisor real 9 already green; DataPlane, Docker, client matrix and tagged core not launched; measurement_candidate state regression outside ordinary subset"
+}
