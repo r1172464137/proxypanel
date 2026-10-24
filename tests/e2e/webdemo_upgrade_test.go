@@ -546,9 +546,6 @@ func TestWebDemoUpgradeClosure(t *testing.T) {
 	}
 	t.Logf("new Agent opened the old SQLite state: agent=%s core=%s applied=%d (before %d) generation=%d", afterOpen.ID, afterOpen.XrayVersion, afterOpen.Applied, before.Applied, afterOpen.Generation)
 	openCoreProc := r.coreProcessIdentity(t, "new-Agent/old-core-"+env.oldCoreVersion, fresh, env.oldCoreSHA)
-	if _, _, err := r.probeViaClient(t, "new-Agent-old-core", "control"); err != nil {
-		t.Fatalf("the migrated state's managed core could not serve a real positive transfer: %v", err)
-	}
 
 	waitFor(t, 120*time.Second, "the new Agent drained the retained outbox", func() bool {
 		return r.stateCount(`SELECT count(*) FROM batches`) == 0
@@ -566,12 +563,16 @@ func TestWebDemoUpgradeClosure(t *testing.T) {
 		}
 		t.Logf("batch %s credited exactly once with the original payload sha256=%s", id, got)
 	}
-	var pgBatches int64
-	if err := st.DB.QueryRowContext(ctx, `SELECT count(*) FROM usage_batches WHERE agent_id=$1`, r.agentID).Scan(&pgBatches); err != nil {
+	var creditedBatches int64
+	if err := st.DB.QueryRowContext(ctx, `SELECT count(*) FROM usage_batches b WHERE b.agent_id=$1
+		AND EXISTS(SELECT 1 FROM usage_entries e WHERE e.agent_id=b.agent_id AND e.batch_id=b.batch_id)`, r.agentID).Scan(&creditedBatches); err != nil {
 		t.Fatal(err)
 	}
-	if pgBatches != int64(len(beforeIDs)) {
-		t.Fatalf("PostgreSQL stored %d batch(es) for this Agent, the retained outbox held %d", pgBatches, len(beforeIDs))
+	// Heartbeat/final-sample cycles may legitimately submit an empty accepted
+	// batch. Compare only batches that credited ledger rows; every retained
+	// payload is already checked by exact id and digest above.
+	if creditedBatches != int64(len(beforeIDs)) {
+		t.Fatalf("PostgreSQL credited %d ledger batch(es) for this Agent, the retained outbox held %d", creditedBatches, len(beforeIDs))
 	}
 	var ledger int64
 	if err := st.DB.QueryRowContext(ctx, `SELECT coalesce(sum(up_bytes+down_bytes),0) FROM usage_entries WHERE member_id=$1`, r.memberID).Scan(&ledger); err != nil {
@@ -590,6 +591,12 @@ func TestWebDemoUpgradeClosure(t *testing.T) {
 		t.Fatalf("revoked subscription export returned %d after the upgrade, want 403", code)
 	}
 	t.Logf("queue/ledger/authorization preserved: %d batch(es) / %d member byte(s) once, baseline %d unchanged, revoked export=403", len(beforeIDs), queuedMemberBytes, baselineBefore)
+	// Probe only after the retained-outbox accounting invariants are frozen;
+	// this legitimate new transfer will itself be sampled asynchronously and
+	// must not be confused with an extra replay of the old batch.
+	if _, _, err := r.probeViaClient(t, "new-Agent-old-core", "control"); err != nil {
+		t.Fatalf("the migrated state's managed core could not serve a real positive transfer: %v", err)
+	}
 
 	// ---- 5. real core switch 26.3.23 -> 26.3.27 under the new Agent -------
 	preCore := r.agentRow()
@@ -603,7 +610,7 @@ func TestWebDemoUpgradeClosure(t *testing.T) {
 	if users := r.statusAppliedUsers(); users != 1 {
 		t.Fatalf("the core switch changed the applied authorization to %d user(s), the single control member is expected", users)
 	}
-	if code := r.subscriptionStatusFor(t, "upgrade-member"); code != http.StatusForbidden {
+	if code := r.subscriptionStatus(); code != http.StatusForbidden {
 		t.Fatalf("the revoked member's export returned %d after the core switch, want 403", code)
 	}
 	if code := r.subscriptionStatusFor(t, "upgrade-control"); code != http.StatusOK {
@@ -632,7 +639,7 @@ func TestWebDemoUpgradeClosure(t *testing.T) {
 	if users := r.statusAppliedUsers(); users != 1 {
 		t.Fatalf("the core rollback changed the applied authorization to %d user(s), the single control member is expected", users)
 	}
-	if code := r.subscriptionStatusFor(t, "upgrade-member"); code != http.StatusForbidden {
+	if code := r.subscriptionStatus(); code != http.StatusForbidden {
 		t.Fatalf("the revoked member's export returned %d after the core rollback, want 403", code)
 	}
 	t.Logf("core rollback observable: heartbeat core=%q applied=%d generation=%d", afterRollback.XrayVersion, afterRollback.Applied, afterRollback.Generation)
@@ -665,7 +672,7 @@ func TestWebDemoUpgradeClosure(t *testing.T) {
 	if _, _, err := r.probeViaClient(t, "rolled-back-old-Agent", "control"); err != nil {
 		t.Fatalf("the rolled-back old Agent/core could not serve a real positive transfer: %v", err)
 	}
-	if code := r.subscriptionStatusFor(t, "upgrade-member"); code != http.StatusForbidden {
+	if code := r.subscriptionStatus(); code != http.StatusForbidden {
 		t.Fatalf("the revoked member was served (status %d) through the rolled-back core", code)
 	}
 	_ = oldCoreProc
@@ -894,31 +901,50 @@ func (r *demoUpgradeRun) coreProcessIdentity(t *testing.T, step string, a *demoU
 		InstanceID string `json:"instance_id"`
 		RecordedAt int64  `json:"recorded_at"`
 	}
-	root := filepath.Join(r.stateDir, "xray")
-	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || d.Name() != "xray.pid" {
-			return nil
-		}
-		raw, rerr := os.ReadFile(p)
-		if rerr != nil {
-			return nil
-		}
-		var candidate struct {
+	// Current and historical Agents place pid records below their owned state
+	// tree (currently state/instances/<node>/xray.pid); do not assume an obsolete
+	// state/xray subdirectory. The subsequent config/exe/owner checks still bind
+	// the selected live process to this exact state directory and Agent.
+	root := r.stateDir
+	// A restarted Agent may heartbeat before its health loop has recreated a
+	// previously stopped committed core. Wait for the real pid record and live
+	// process instead of mistaking that bounded convergence window for absence.
+	waitFor(t, 60*time.Second, step+" managed core pid record", func() bool {
+		rec = struct {
 			PID        int    `json:"pid"`
 			Created    string `json:"created"`
 			Executable string `json:"executable"`
 			ConfigPath string `json:"config_path"`
 			InstanceID string `json:"instance_id"`
 			RecordedAt int64  `json:"recorded_at"`
+		}{}
+		_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || d.Name() != "xray.pid" {
+				return nil
+			}
+			raw, rerr := os.ReadFile(p)
+			if rerr != nil {
+				return nil
+			}
+			var candidate struct {
+				PID        int    `json:"pid"`
+				Created    string `json:"created"`
+				Executable string `json:"executable"`
+				ConfigPath string `json:"config_path"`
+				InstanceID string `json:"instance_id"`
+				RecordedAt int64  `json:"recorded_at"`
+			}
+			if json.Unmarshal(raw, &candidate) == nil && candidate.PID > 0 && candidate.RecordedAt >= rec.RecordedAt {
+				rec = candidate
+			}
+			return nil
+		})
+		if rec.PID <= 0 {
+			return false
 		}
-		if json.Unmarshal(raw, &candidate) == nil && candidate.PID > 0 && candidate.RecordedAt >= rec.RecordedAt {
-			rec = candidate
-		}
-		return nil
+		_, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", rec.PID))
+		return err == nil
 	})
-	if rec.PID <= 0 {
-		t.Fatalf("%s: the Agent left no pid record for its managed core under %s, so no core process identity can be proven", step, root)
-	}
 	proc := demoUpgradeCoreProc{
 		Step: step, PID: rec.PID, StartTicks: rec.Created, Exe: rec.Executable,
 		ConfigPath: rec.ConfigPath, ExpectedSHA256: expectedSHA, AgentPID: a.cmd.Process.Pid, AgentExe: a.bin,

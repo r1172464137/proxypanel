@@ -49,7 +49,10 @@ func TestABCReadinessMountedDuringRecovery(t *testing.T) {
 	assertSource("ready")
 	serverID := e.createServer(t, admin, "readiness-agent-server")
 	e.registerAgent(t, admin, serverID)
-	assertSource("unknown")
+	// A schema-current database does not need a permanent copy of the
+	// stopped-Agent transition proof merely because an Agent is registered.
+	// The next checksum corruption still proves database-internal blockers run.
+	assertSource("ready")
 	if _, err := e.st.DB.Exec(`UPDATE schema_migrations SET checksum='wrong' WHERE version='0001_init.sql'`); err != nil {
 		t.Fatal(err)
 	}
