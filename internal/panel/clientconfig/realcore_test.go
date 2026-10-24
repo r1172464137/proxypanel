@@ -37,6 +37,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -127,17 +128,7 @@ func localCheck(t *testing.T, bin string, args ...string) error {
 	return nil
 }
 
-// Only a running core's nonzero check exit is a configuration rejection.
-// Missing executables, cancellation and wall timeouts are infrastructure failures.
-func localRequireConfigRejection(t *testing.T, err error) {
-	t.Helper()
-	var exit *exec.ExitError
-	if !errors.As(err, &exit) || exit.ExitCode() <= 0 {
-		t.Fatalf("core check failed without a configuration rejection: %v", err)
-	}
-}
-
-func localRequireTrafficRejection(t *testing.T, err error) {
+func localRequireTrafficRejection(t *testing.T, err error, diagnostics, expected string) {
 	t.Helper()
 	if err == nil {
 		t.Fatal("invalid credentials still produced traffic")
@@ -146,6 +137,10 @@ func localRequireTrafficRejection(t *testing.T, err error) {
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		t.Fatalf("traffic timeout is not evidence of credential rejection: %v", err)
 	}
+	if !strings.Contains(diagnostics, expected) {
+		t.Fatalf("not_proven: transport failure without expected %q diagnostic: %v", expected, err)
+	}
+	t.Logf("guard_oracle client_diagnostic=%q", expected)
 }
 
 func localAssertPayload(t *testing.T, client, body, want string) {
@@ -549,17 +544,21 @@ func localRunXrayClient(t *testing.T, bin string, n NodeConfig, dir, targetURL, 
 	}
 	path := localWrite(t, dir, "xray-client.json", localJSON(t, cfg))
 	if err := localCheck(t, bin, "run", "-test", "-c", path); err != nil {
-		if pinOverride != "" {
-			localRequireConfigRejection(t, err)
-			return // a rejected config also enforces the pin
-		}
 		t.Fatalf("pinned Xray rejects the exported client config: %v", err)
 	}
-	stop := localStart(t, bin, []string{"run", "-c", path}, socks)
-	defer stop()
+	var diagnostics func() string
+	if pinOverride != "" {
+		// Enable only test diagnostics, keeping the exported TLS policy intact.
+		cfg["log"] = map[string]any{"loglevel": "debug"}
+		localWrite(t, dir, "xray-client.json", localJSON(t, cfg))
+		diagnostics = localGuardStart(t, bin, []string{"run", "-c", path}, socks, localGuardLogPath(dir, "wrong-pin-client"))
+	} else {
+		stop := localStart(t, bin, []string{"run", "-c", path}, socks)
+		defer stop()
+	}
 	body, err := localFetch(socks, targetURL)
 	if pinOverride != "" {
-		localRequireTrafficRejection(t, err)
+		localRequireTrafficRejection(t, err, diagnostics(), "transport/internet/tls: peer cert is unrecognized (against pinnedPeerCertSha256)")
 		return
 	}
 	if err != nil {
@@ -646,7 +645,7 @@ func localRunMihomoClient(t *testing.T, bin string, n NodeConfig, dir, targetURL
 
 // TestLocalCoreCredentialGuards proves the two credential fixes are enforced by
 // the cores, not only by the exporter: the wrong form fails, the exported form
-// works (the positive case already runs in TestLocalCoreClientMatrix).
+// works before and after each negative in this selection itself.
 func TestLocalCoreCredentialGuards(t *testing.T) {
 	cores := localPinnedCores(t)
 	certPEM, keyPEM, pin := localCertificate(t)
@@ -673,7 +672,7 @@ func TestLocalCoreCredentialGuards(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		dir := t.TempDir()
+		dir := localGuardDir(t)
 		srvPath := localWrite(t, dir, "server.json", serverDoc)
 		stop := localStart(t, cores.xray, []string{"run", "-c", srvPath}, port)
 		defer stop()
@@ -682,6 +681,7 @@ func TestLocalCoreCredentialGuards(t *testing.T) {
 		// A different certificate hash must break the connection.
 		wrong := strings.Repeat("00", 32)
 		localRunXrayClient(t, cores.xray, NodeConfig{Endpoint: ep, Credential: credential}, dir, target.URL, localPayload(), wrong)
+		localRunXrayClient(t, cores.xray, NodeConfig{Endpoint: ep, Credential: credential}, dir, target.URL, localPayload(), "")
 	})
 
 	t.Run("ss2022-user-psk-only-fails", func(t *testing.T) {
@@ -700,12 +700,33 @@ func TestLocalCoreCredentialGuards(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		dir := t.TempDir()
-		srvPath := localWrite(t, dir, "server.json", serverDoc)
-		stop := localStart(t, cores.xray, []string{"run", "-c", srvPath}, node.Port)
-		defer stop()
-		// The exporter's credential (serverPSK:userPSK) works ...
-		localRunXrayClient(t, cores.xray, NodeConfig{Endpoint: ep, Credential: userPSK}, dir, target.URL, localPayload(), "")
+		dir := localGuardDir(t)
+		srvPath := localGuardDebugServer(t, serverDoc, dir)
+		if err := localCheck(t, cores.xray, "run", "-test", "-c", srvPath); err != nil {
+			t.Fatalf("valid production server config: %v", err)
+		}
+		serverLog := localGuardStart(t, cores.xray, []string{"run", "-c", srvPath}, node.Port, localGuardLogPath(dir, "server"))
+		var before, after, invalid, plaintext, other atomic.Int64
+		origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/before":
+				before.Add(1)
+			case "/after":
+				after.Add(1)
+			case "/invalid":
+				invalid.Add(1)
+			case "/plaintext":
+				plaintext.Add(1)
+			default:
+				other.Add(1)
+			}
+			_, _ = io.WriteString(w, localPayload())
+		}))
+		defer origin.Close()
+		positive := func(phase string) {
+			localRunXrayClient(t, cores.xray, NodeConfig{Endpoint: ep, Credential: userPSK}, dir, origin.URL+"/"+phase, localPayload(), "")
+		}
+		positive("before")
 		// ... while the bare user PSK, the pre-fix export, is rejected.
 		// The exporter itself refuses to emit it (see the unit tests); here the
 		// password is replaced directly to prove the core needs the prefix.
@@ -727,7 +748,7 @@ func TestLocalCoreCredentialGuards(t *testing.T) {
 		server["password"] = userPSK
 		// Same doc, but bypassing the exporter's guard: prove the core rejects it.
 		brokenDoc := map[string]any{
-			"log": map[string]any{"loglevel": "warning"},
+			"log": map[string]any{"loglevel": "debug"},
 			"inbounds": []any{map[string]any{
 				"tag": "socks-in", "listen": "127.0.0.1", "port": localFreePort(t), "protocol": "socks",
 				"settings": map[string]any{"udp": true, "auth": "noauth"},
@@ -738,13 +759,51 @@ func TestLocalCoreCredentialGuards(t *testing.T) {
 		socks := localMap(localArray(brokenDoc["inbounds"])[0])["port"].(int)
 		path := localWrite(t, dir, "xray-user-psk-only.json", localJSON(t, brokenDoc))
 		if err := localCheck(t, cores.xray, "run", "-test", "-c", path); err != nil {
-			localRequireConfigRejection(t, err)
-			return // the core rejected the config outright
+			// A bare PSK is a valid single-user client config. Unexpected check
+			// failures are infrastructure failures, never authentication proof.
+			t.Fatalf("not_proven: bare-PSK config check failed: %v", err)
 		}
-		stopClient := localStart(t, cores.xray, []string{"run", "-c", path}, socks)
-		defer stopClient()
-		_, err = localFetch(socks, target.URL)
-		localRequireTrafficRejection(t, err)
+		clientLog := localGuardStart(t, cores.xray, []string{"run", "-c", path}, socks, localGuardLogPath(dir, "bare-psk-client"))
+		_ = clientLog // retained privately; server identity diagnostic is the oracle
+		offset := len(serverLog())
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		finished := make(chan error, 1)
+		requestDone := make(chan struct{})
+		go func() {
+			defer close(requestDone)
+			finished <- localGuardRequest(ctx, socks, origin.URL+"/invalid")
+		}()
+		// Xray d2758a0 uses sing-shadowsocks v0.2.7: this diagnostic is
+		// ErrInvalidRequest at the encrypted identity-header user lookup,
+		// not a transport EOF or a generic bad/short handshake header.
+		localGuardAwait(t, serverLog, offset, "shadowsocks: serve TCP from 127.0.0.1:", finished)
+		cancel()
+		select {
+		case <-requestDone:
+		case <-time.After(2 * time.Second):
+			t.Fatal("request did not stop after oracle cancellation")
+		}
+		// A separate raw plaintext request must not reach the origin either.
+		offset = len(serverLog())
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", node.Port), time.Second)
+		if err != nil {
+			t.Fatalf("plaintext dial is infrastructure failure: %v", err)
+		}
+		t.Logf("plaintext_connection=%s log_offset=%d", conn.LocalAddr(), offset)
+		_ = conn.SetDeadline(time.Now().Add(12 * time.Second))
+		_, err = fmt.Fprintf(conn, "GET %s/plaintext HTTP/1.1\r\nHost: synthetic.invalid\r\nX-Padding: %s\r\n\r\n", origin.URL, strings.Repeat("p", 128))
+		if err != nil {
+			conn.Close()
+			t.Fatal(err)
+		}
+		localGuardAwait(t, serverLog, offset, "shadowsocks: serve TCP from "+conn.LocalAddr().String()+": invalid request", nil)
+		_ = conn.Close()
+		positive("after")
+		t.Logf("origin_counts before=%d after=%d invalid=%d plaintext=%d other=%d", before.Load(), after.Load(), invalid.Load(), plaintext.Load(), other.Load())
+		if before.Load() != 1 || after.Load() != 1 || invalid.Load() != 0 || plaintext.Load() != 0 || other.Load() != 0 {
+			t.Fatal("origin request isolation failed")
+		}
 	})
 }
 
