@@ -23,7 +23,7 @@ cleanup() {
   rc=$?; trap - EXIT
   audit >"$EVIDENCE/owned-before-cleanup.txt"
   for name in "$WEB" "$APP" "$DB" "$EXTRACT"; do
-    if [ "$(docker inspect -f '{{index .Config.Labels "io.proxypanel.dual-hosting"}}' "$name" 2>/dev/null || true)" = "$PREFIX" ]; then
+    if [ "$(label_of "$name")" = "$PREFIX" ]; then
       docker logs "$name" >"$EVIDENCE/$name.log" 2>&1 || true
       docker rm -fv "$name" >/dev/null || true
     fi
@@ -41,6 +41,12 @@ trap 'exit 124' TERM INT
 printf '%s\n' "$PREFIX" >"$EVIDENCE/run-id"
 audit >"$EVIDENCE/owned-before-create.txt"
 fail() { echo "FAIL: $*" >&2; exit 1; }
+# Read a container label without failing when the image/container has no Labels
+# map at all: buildx-built images and containers created without a label have no
+# .Config.Labels entry, and `index` aborts the whole template in that case.
+label_of() {
+  docker inspect -f '{{if .Config.Labels}}{{index .Config.Labels "io.proxypanel.dual-hosting"}}{{end}}' "$1" 2>/dev/null || true
+}
 code() { curl -ksS --max-time 10 -o /dev/null -w '%{http_code}' "$1"; }
 wait_http() {
   for i in $(seq 1 90); do
@@ -68,7 +74,7 @@ for MODE in spa api; do
   for PHASE in current upgrade; do
     ACTIVE=$IMAGE; [ "$PHASE" = upgrade ] && ACTIVE=$UPGRADE_IMAGE
     OUT="$EVIDENCE/$MODE-$PHASE"; mkdir -p "$OUT"
-    docker image inspect "$ACTIVE" --format '{{.Id}} {{json .Config.Labels}} {{json .Config.Env}}' >"$OUT/image.txt"
+    docker image inspect "$ACTIVE" --format '{{.Id}} {{json .Config.Labels}} {{json .Config.Env}}' >"$OUT/image.txt" 2>/dev/null || docker image inspect "$ACTIVE" --format '{{.Id}} null {{json .Config.Env}}' >"$OUT/image.txt"
     # Copy OUT of a newly labelled extraction container only. Never into any container.
     docker create --label "$LABEL" --name "$EXTRACT" "$ACTIVE" >/dev/null
     rm -rf "$TMP/dist" "$TMP/migrations"
