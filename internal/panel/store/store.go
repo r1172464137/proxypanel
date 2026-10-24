@@ -339,6 +339,11 @@ func dbErr(err error) error {
 	}
 	var pg *pgconn.PgError
 	if errors.As(err, &pg) {
+		// SQLSTATE class 08 is a connection failure. Shutdown/restart errors
+		// are also transient, even when delivered on a pooled connection.
+		if strings.HasPrefix(pg.Code, "08") || pg.Code == "57P01" || pg.Code == "57P02" || pg.Code == "57P03" {
+			return domain.E(domain.CodeDBUnavailable, http.StatusServiceUnavailable, "database unavailable").WithRetryable(true)
+		}
 		switch pg.Code {
 		case "23505": // unique_violation
 			return domain.Conflict(domain.CodeConflict, "a record with the same unique value already exists")
