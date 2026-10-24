@@ -62,6 +62,19 @@ F：真实部署/两托管TLS/安装systemd能力与安全隔离验证，专用w
 - 未改变的源码/fixture/锁/环境有效证据复用。必要失败先按TEST/DATA/FRONTEND/BACKEND/AUTH/ENV归因，生产修复不归测试角色：主切dev规范或明确委派DS owned代码，不能改弱断言。
 - 基线先冻结为706f0ba实际代码（后续.ai交接commit不算业务变化）。最终整合只重开受影响验证，不每路独立跑全300/542。
 
+## 调度检查点
+
+六路基线均为e92c6ba（非.ai业务源码仍706f0ba），各worktree独立；实际执行中的报告未被主采信为PASS，必须合并复查/相关复验。
+
+| 组 | inspectable session | 边界 |
+|---|---|---|
+| A | 01a16d01-efee-75a9-8640-ad6722136dbb | UI故事/真实主链；已知根入口观察待定位 |
+| B | 01a16d01-effa-75a9-8640-ad6d8bece8be | 双Agent/offline/UDP/partial |
+| C | 01a16d01-eff7-75a9-8640-ad6ba6c3ca18 | 真实备份恢复/历史守恒 |
+| D | 01a16d01-efe5-75a9-8640-ad63001064fa | old Agent/SQLite与core跨版 |
+| E | 01a16d01-eff4-75a9-8640-ad69ff316078 | Vision与实际支持矩阵 |
+| F | 01a16d01-efeb-75a9-8640-ad64709b3e75 | 部署/安装安全能力与验证 |
+
 ## 完成/停止
 
 每US001..018在最终矩阵列出成功、关键异常、证据与未验证，不以17技术probe代替18完整故事。上游旧11Docker套件逐个实际运行或逐断言等价关系；触碰旧fixture的helper不执行并说明真正目标如何覆盖。发现缺设备/权限等外部条件先明确解除条件，不能无限空转。只在正式accept放行且全部active phase与必要验收证据闭合后宣称整个feature完成；否则列实际未验证和责任。
