@@ -1,0 +1,92 @@
+{
+  "id": "webdemo-clients-group-e-v1",
+  "owner": "web-demo/E",
+  "runner": "flock -w600 /home/compile/Work/.locks/proxypanel-webdemo-local-runtime.lock uv run tests/e2e/run_webdemo_clients.py",
+  "plain_runner": "uv run tests/e2e/run_webdemo_clients.py",
+  "isolation": "loopback-only owned cores, fresh X25519/self-signed material, t.TempDir; no panel, Agent lab, preview 8445, old 8443, .devdb or shared PG/Redis",
+  "pinned_binaries": {
+    "XRAY_BIN": {
+      "path": "/home/compile/Work/bin/xray",
+      "version": "26.3.27",
+      "sha256": "8255dd939c34cf966cc91517b6324dd3c8d0bcf49ffac8beca049a38c46845ed"
+    },
+    "SING_BOX_BIN": {
+      "path": "/home/compile/Work/bin/sing-box",
+      "version": "1.14.3",
+      "sha256": "768d31fa7f68debc067bb4626539498a1e8751d36a7b99e1a54bee6a23815f93"
+    },
+    "MIHOMO_BIN": {
+      "path": "/home/compile/Work/bin/mihomo",
+      "version": "1.19.33",
+      "sha256": "09c2cb429cf45fb56884ceb91a0e5b17cc8b2c866c07811bcf75dfb59fef7662"
+    }
+  },
+  "external_platform_boundary": {
+    "v2rayN": "not_supported_as_evidence: GUI import has no official non-GUI interface; only share-link shape can be verified",
+    "clash_for_windows": "not_supported_as_evidence: no Windows App host in this environment; Mihomo core-level only",
+    "windows_apps": "not_run: no Windows host or GUI harness; core-level library/config evidence only",
+    "mobile": "not_run: no iOS/Android device; only exported URI/config shape"
+  },
+  "declared_supported_cells": [
+    "vless/tcp/none",
+    "vless/ws/tls",
+    "vless/tcp/reality+vision",
+    "vmess/tcp/none",
+    "trojan/tcp/tls",
+    "trojan/tcp/none (xray, sing-box only)",
+    "shadowsocks/aes-128-gcm",
+    "shadowsocks/2022-blake3-aes-128-gcm"
+  ],
+  "selections": [
+    {
+      "id": "webdemo-vision",
+      "package": "./tests/e2e",
+      "run": "^(TestWebDemoVisionTrafficStatsAndStop|TestWebDemoRealityCrossClient)$",
+      "expected_cells": 3,
+      "assertions": [
+        "full 69632-byte payload through each exported client config with SHA-256",
+        "per-user uplink/downlink counters read from the same server StatsService",
+        "post-stop dial is ECONNREFUSED (never a timeout) and the live client core logs a concrete refused dial",
+        "restart of the same document serves the exact content again on the same REALITY keys"
+      ],
+      "requires": [
+        "xray",
+        "sing-box",
+        "mihomo"
+      ]
+    },
+    {
+      "id": "webdemo-local-matrix",
+      "package": "./internal/panel/clientconfig",
+      "run": "^TestLocalCore",
+      "build_tags": [
+        "corematrix"
+      ],
+      "expected_cells": 21,
+      "reused_evidence": true,
+      "note": "20 supported cells + 1 Mihomo Trojan/TCP/none declared rejection; reused only after confirming the same pinned cores and unchanged client projection",
+      "requires": [
+        "xray",
+        "sing-box",
+        "mihomo"
+      ]
+    }
+  ],
+  "not_run": [
+    "TestDockerClientMatrix (54-cell historical Docker matrix): not run; its environment is the old acceptance stack",
+    "Windows GUI import for v2rayN/Clash Verge: no host",
+    "public network / real public CA REALITY target: no authority"
+  ],
+  "pins_environment": {
+    "note": "the wrapper sets these explicitly; binaries are never modified or upgraded",
+    "XRAY_BIN_VERSION": "26.3.27 (clientconfig helper default)",
+    "SING_BOX_BIN_VERSION": "1.14.3 (clientconfig helper default)",
+    "MIHOMO_BIN_VERSION": "1.19.33 (this stage; helper default is 1.19.32)"
+  },
+  "runner_flags": [
+    "--evidence-dir ABS",
+    "--only vision",
+    "--only matrix",
+    "--keep-temp"
+  ]
+}
