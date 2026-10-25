@@ -191,11 +191,23 @@ func Build(node domain.Node, clients []Client) (json.RawMessage, error) {
 	if err := inbound.Set("streamSettings", stream); err != nil {
 		return nil, err
 	}
-	if err := inbound.Set("sniffing", domain.Object{
-		"enabled":      json.RawMessage(`true`),
-		"destOverride": json.RawMessage(`["http","tls","quic"]`),
-	}); err != nil {
+	// Inbound-level objects, in the same shape Xray and 3x-ui use. sniffing used to
+	// be hard-coded here; the panel now stores it per node, and an empty object
+	// still yields the previous behaviour so upgraded nodes generate identical
+	// configs. allocate/externalProxy are emitted only when the operator set them,
+	// because an empty allocate object is not equivalent to "no allocate".
+	if err := inbound.Set("sniffing", sniffingObject(node.Sniffing)); err != nil {
 		return nil, err
+	}
+	if len(node.Allocate) > 0 {
+		if err := inbound.Set("allocate", node.Allocate); err != nil {
+			return nil, err
+		}
+	}
+	if len(node.ExternalProxy) > 0 {
+		if err := inbound.Set("externalProxy", node.ExternalProxy); err != nil {
+			return nil, err
+		}
 	}
 
 	doc := map[string]any{
@@ -222,4 +234,19 @@ func Build(node domain.Node, clients []Client) (json.RawMessage, error) {
 func ep(stream domain.Object) string {
 	v, _ := stream.String("security")
 	return v
+}
+
+// sniffingObject returns the inbound sniffing object. Historically the panel
+// always emitted {enabled:true, destOverride:[http,tls,quic]}; keeping that as the
+// default for an empty object means existing nodes keep generating the same
+// config, while an explicit object (including {"enabled":false}) is honoured
+// field by field.
+func sniffingObject(o domain.Object) domain.Object {
+	if len(o) == 0 {
+		return domain.Object{
+			"enabled":      json.RawMessage(`true`),
+			"destOverride": json.RawMessage(`["http","tls","quic"]`),
+		}
+	}
+	return o
 }

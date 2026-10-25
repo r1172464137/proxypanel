@@ -8,6 +8,7 @@
  * - 服务端私钥/密钥只用于管理端，不进入成员配置。
  */
 import { cloneJson, getPath, isRecord, parseJsonObject, setPath, unknownKeys, type JsonObject } from './json'
+import { STREAM_FIELDS, type StreamField, type StreamValue } from './streamSchema'
 import type { NodeProtocol, NodeRecord, NodeWrite } from '@/api/types'
 
 export const NETWORK_OPTIONS = ['tcp', 'ws', 'grpc', 'httpupgrade', 'xhttp'] as const
@@ -42,6 +43,13 @@ export interface NodeDraft {
   stream_settings: JsonObject
   protocol_settings: JsonObject
   client_settings: JsonObject
+  /**
+   * 入站级对象，与 Xray / 3x-ui 同名同层：sniffing / allocate / externalProxy。
+   * 它们既不在 streamSettings 里，也不在 settings 里，所以要单独持久化。
+   */
+  sniffing: JsonObject
+  allocate: JsonObject
+  external_proxy: unknown[]
 }
 
 export function emptyNodeDraft(): NodeDraft {
@@ -63,6 +71,9 @@ export function emptyNodeDraft(): NodeDraft {
     stream_settings: { network: 'tcp', security: 'none' },
     protocol_settings: { decryption: 'none' },
     client_settings: {},
+    sniffing: {},
+    allocate: {},
+    external_proxy: [],
   }
 }
 
@@ -87,6 +98,9 @@ export function draftFromNode(node: NodeRecord): NodeDraft {
     stream_settings: cloneJson(node.stream_settings ?? {}),
     protocol_settings: cloneJson(node.protocol_settings ?? {}),
     client_settings: cloneJson(node.client_settings ?? {}),
+    sniffing: cloneJson(node.sniffing ?? {}),
+    allocate: cloneJson(node.allocate ?? {}),
+    external_proxy: (cloneJson(node.external_proxy ?? []) as unknown[]) ?? [],
   }
 }
 
@@ -115,132 +129,223 @@ function setOrDelete(source: JsonObject, path: string, value: unknown): JsonObje
   return setPath(source, path, value)
 }
 
+/**
+ * 结构化视图：network / security 加上 streamSchema 声明的全部字段。
+ * 文本/数字/列表统一是 string（输入框直接绑定），布尔是 boolean。
+ * 具体键由 streamSchema 生成，改字段时两边要一起改（有单元测试核对）。
+ */
 export interface StreamView {
   network: string
   security: string
+  tcpHeaderType: string
+  wsPath: string
+  wsHost: string
+  wsMaxEarlyData: string
+  wsEarlyDataHeaderName: string
+  grpcServiceName: string
+  grpcAuthority: string
+  huPath: string
+  huHost: string
+  xhttpPath: string
+  xhttpHost: string
+  xhttpMode: string
+  kcpMtu: string
+  kcpTti: string
+  kcpUplink: string
+  kcpDownlink: string
+  kcpReadBuffer: string
+  kcpWriteBuffer: string
+  kcpHeaderType: string
+  kcpSeed: string
   tlsServerName: string
   tlsAlpn: string
+  tlsMinVersion: string
+  tlsMaxVersion: string
+  tlsCipherSuites: string
+  tlsFingerprint: string
+  tlsAllowInsecure: string
+  tlsEchConfigList: string
   tlsCertFile: string
   tlsKeyFile: string
   realityDest: string
+  realityXver: string
   realityServerNames: string
-  realityPrivateKey: string
   realityShortIds: string
-  realityPublicKey: string
-  realityFingerprint: string
-  realitySpiderX: string
-  /** sockopt.acceptProxyProtocol — inbound only, requires a PROXY-emitting proxy. */
+  realityPrivateKey: string
+  realityMinClientVer: string
+  realityMaxClientVer: string
+  realityMaxTimeDiff: string
+  realityMldsa65Seed: string
+  sockTcpFastOpen: string
+  sockTproxy: string
+  sockDomainStrategy: string
+  sockDialerProxy: string
+  sockTcpKeepAliveIdle: string
+  sockTcpKeepAliveInterval: string
+  sockTcpUserTimeout: string
+  sockTcpcongestion: string
+  sockTcpMaxSeg: string
+  sockMark: string
+  sockInterface: string
+  sockTcpWindowClamp: string
   acceptProxyProtocol: boolean
-  /** tcpSettings/rawSettings header type: "none" or "http". */
-  tcpHeaderType: string
+  grpcMultiMode: boolean
+  kcpCongestion: boolean
+  tlsRejectUnknownSni: boolean
+  realityShow: boolean
+  sockTcpMptcp: boolean
+  sockV6Only: boolean
+  /** 声明之外的键仍可按 StreamValue 访问（用于 schema 驱动渲染）。 */
+  [key: string]: StreamValue
 }
 
+
+/** 读取：按 paths 顺序回退，兼容旧位置与别名。 */
 export function streamView(stream: JsonObject): StreamView {
-  const certificates = getPath(stream, 'tlsSettings.certificates')
-  const firstCert = Array.isArray(certificates) && isRecord(certificates[0]) ? (certificates[0] as JsonObject) : {}
-  return {
+  const view: StreamView = {
     network: String(stream.network ?? 'tcp'),
     security: String(stream.security ?? 'none'),
-    tlsServerName: String(getPath(stream, 'tlsSettings.serverName') ?? ''),
-    tlsAlpn: joinList(getPath(stream, 'tlsSettings.alpn')),
-    tlsCertFile: String(firstCert.certificateFile ?? getPath(stream, 'tlsSettings.certificateFile') ?? ''),
-    tlsKeyFile: String(firstCert.keyFile ?? getPath(stream, 'tlsSettings.keyFile') ?? ''),
-    realityDest: String(getPath(stream, 'realitySettings.dest') ?? getPath(stream, 'realitySettings.target') ?? ''),
-    realityServerNames: joinList(getPath(stream, 'realitySettings.serverNames')),
-    realityPrivateKey: String(getPath(stream, 'realitySettings.privateKey') ?? ''),
-    realityShortIds: joinList(getPath(stream, 'realitySettings.shortIds')),
-    // Historical rows stored these client-side values in a nested
-    // realitySettings.settings object that Xray's RealityObject does not have.
-    // Read the legacy location only so an old node still displays its values;
-    // applyStreamView never writes it back.
-    realityPublicKey: String(
-      getPath(stream, 'realitySettings.settings.publicKey') ?? getPath(stream, 'realitySettings.publicKey') ?? '',
-    ),
-    realityFingerprint: String(
-      getPath(stream, 'realitySettings.settings.fingerprint') ?? getPath(stream, 'realitySettings.fingerprint') ?? '',
-    ),
-    realitySpiderX: String(
-      getPath(stream, 'realitySettings.settings.spiderX') ?? getPath(stream, 'realitySettings.spiderX') ?? '',
-    ),
-    acceptProxyProtocol: getPath(stream, 'sockopt.acceptProxyProtocol') === true,
-    tcpHeaderType: String(
-      getPath(stream, 'tcpSettings.header.type') ?? getPath(stream, 'rawSettings.header.type') ?? 'none',
-    ),
+  } as StreamView
+  // Xray 26 把 tcp 传输层改名为 raw；视图里保留用户写下的名字，只在比较时归一化。
+  for (const field of STREAM_FIELDS) {
+    view[field.key] = readField(stream, field)
   }
+  // 证书文件在 certificates[] 数组里，不按点路径寻址。
+  const cert = firstCertificate(stream)
+  view.tlsCertFile = String(cert.certificateFile ?? getPath(stream, 'tlsSettings.certificateFile') ?? '')
+  view.tlsKeyFile = String(cert.keyFile ?? getPath(stream, 'tlsSettings.keyFile') ?? '')
+  return view
+}
+
+function firstCertificate(stream: JsonObject): JsonObject {
+  const existing = getPath(stream, 'tlsSettings.certificates')
+  return Array.isArray(existing) && isRecord(existing[0]) ? (existing[0] as JsonObject) : {}
+}
+
+function readField(stream: JsonObject, field: StreamField): StreamValue {
+  for (const path of field.paths) {
+    const raw = getPath(stream, path)
+    if (raw === undefined || raw === null) continue
+    if (field.kind === 'bool') return raw === true
+    if (field.kind === 'list') return joinList(raw)
+    if (field.kind === 'number') return typeof raw === 'number' ? String(raw) : String(raw)
+    if (raw === '') continue
+    return String(raw)
+  }
+  return field.kind === 'bool' ? false : ''
 }
 
 /**
- * 把结构化视图写回 stream_settings，保留其它键（sockopt、wsSettings 等）。
- * 切换 security 不删除另一分支的配置块；需要清理时由 UI 显式调用 removeSecurityBlock。
+ * 选择写入路径。
+ *
+ * rawSettings 是 Xray 26 的正式名，tcpSettings 是旧名。节点里已经有 tcpSettings
+ * 时继续写它，避免一次保存就产生两个同义块（核心不保证哪个生效）；新节点写
+ * rawSettings。acceptProxyProtocol 的旧 sockopt 位置只读不写 —— 那是历史上
+ * 放错的地方，写入统一到传输层自己的块里。
+ */
+function writerPath(stream: JsonObject, field: StreamField): string {
+  const primary = field.paths[0]
+  if (!primary.startsWith('rawSettings.')) return primary
+  const hasRaw = getPath(stream, 'rawSettings') !== undefined
+  const hasLegacy = getPath(stream, 'tcpSettings') !== undefined
+  if (hasRaw || !hasLegacy) return primary
+  const suffix = primary.slice('rawSettings.'.length)
+  return `tcpSettings.${suffix}`
+}
+
+/** 写入一个字段的规范化值；空字符串表示删除该键。 */
+function writeField(stream: JsonObject, field: StreamField, value: StreamValue): JsonObject {
+  const path = writerPath(stream, field)
+  if (field.kind === 'bool') {
+    // 布尔字段永远显式写 true/false：省略和 false 在 Xray 里语义不同，
+    // 省略会退回默认（例如 acceptProxyProtocol 默认 false，但显式 false 更可读）。
+    return setPath(stream, path, value === true)
+  }
+  const text = String(value ?? '').trim()
+  // target 与 dest 在 Xray 里互为别名。只写正名，并删掉旧别名，避免同一份
+  // 配置里出现两个取值不同的别名（核心不保证哪个生效）。
+  if (field.key === 'realityDest') {
+    const cleared = setPath(stream, 'realitySettings.dest', undefined)
+    return text === '' ? setPath(cleared, path, undefined) : setPath(cleared, path, text)
+  }
+  if (text === '') return setPath(stream, path, undefined)
+  if (field.kind === 'number' || field.numeric) {
+    // xver / tcpFastOpen 这类 select 的取值必须是数字，写成字符串核心会解析失败。
+    const n = Number(text)
+    return setPath(stream, path, Number.isFinite(n) ? n : text)
+  }
+  if (field.kind === 'list') {
+    // shortIds 允许空字符串作为「空 shortId」条目，不能用通用的 splitList 丢掉它。
+    return setPath(stream, path, field.key === 'realityShortIds' ? splitShortIds(text) : splitList(text))
+  }
+  return setPath(stream, path, text)
+}
+
+/**
+ * 把结构化视图写回 stream_settings，保留其它键（fallbacks、未声明的原生键等）。
+ * 切换 security 不删除另一分支的配置块；需要清理时由 UI 显式调用 clearSecurityBlock。
  */
 export function applyStreamView(stream: JsonObject, view: StreamView): JsonObject {
   const before = streamView(stream)
-  // The legacy nested block must be repaired even when the visible fields did
-  // not change, so this cannot short-circuit before the cleanup below.
-  const needsLegacyCleanup = getPath(stream, 'realitySettings.settings') !== undefined
-  if (!needsLegacyCleanup && JSON.stringify(before) === JSON.stringify(view)) return cloneJson(stream)
+  // 旧版本把客户端侧的 REALITY 参数写进 realitySettings.settings（Xray 没有这个
+  // 字段）。即使可见字段没变也要修掉，所以这里不能提前 return。
   let next = cloneJson(stream)
-  const update = (field: keyof StreamView, path: string, value: unknown) => {
-    if (view[field] !== before[field]) next = setOrDelete(next, path, value)
-  }
-  update('network', 'network', view.network)
-  update('security', 'security', view.security)
-
-  if (view.security === 'tls') {
-    update('tlsServerName', 'tlsSettings.serverName', view.tlsServerName)
-    update('tlsAlpn', 'tlsSettings.alpn', view.tlsAlpn ? splitList(view.tlsAlpn) : undefined)
-    if (view.tlsCertFile === before.tlsCertFile && view.tlsKeyFile === before.tlsKeyFile) return next
-    const existing = getPath(next, 'tlsSettings.certificates')
-    const template = Array.isArray(existing) && isRecord(existing[0]) ? (existing[0] as JsonObject) : {}
-    const cert: JsonObject = { ...template }
-    if (view.tlsCertFile) cert.certificateFile = view.tlsCertFile
-    else delete cert.certificateFile
-    if (view.tlsKeyFile) cert.keyFile = view.tlsKeyFile
-    else delete cert.keyFile
-    const remaining = Array.isArray(existing) ? existing.slice(1) : []
-    if (Object.keys(cert).length > 0) next = setPath(next, 'tlsSettings.certificates', [cert, ...remaining])
-    else next = setPath(next, 'tlsSettings.certificates', remaining.length ? remaining : undefined)
-  }
-  if (view.security === 'reality') {
-    update('realityDest', 'realitySettings.dest', view.realityDest)
-    update('realityServerNames', 'realitySettings.serverNames', view.realityServerNames ? splitList(view.realityServerNames) : undefined)
-    update('realityPrivateKey', 'realitySettings.privateKey', view.realityPrivateKey)
-    update('realityShortIds', 'realitySettings.shortIds', splitShortIds(view.realityShortIds))
-    // These are client-side REALITY parameters: they belong to
-    // client_settings (public_key / fingerprint / spiderX), not to the server
-    // realitySettings object. Older panel versions wrote a nested
-    // realitySettings.settings block that Xray's RealityObject does not define,
-    // so drop it unconditionally on every save rather than only when one of the
-    // three fields happens to change.
-    if (getPath(next, 'realitySettings.settings') !== undefined) {
-      next = setPath(next, 'realitySettings.settings', undefined)
+  if (JSON.stringify(before) !== JSON.stringify(view)) {
+    next = setOrDelete(next, 'network', view.network)
+    next = setOrDelete(next, 'security', view.security)
+    const security = String(view.security || 'none')
+    for (const field of STREAM_FIELDS) {
+      if (view[field.key] === before[field.key]) continue
+      // 证书走 certificates[] 数组，由 applyCertificateFiles 处理。
+      if (isCertificateField(field)) continue
+      // TLS/REALITY 只写自己那一块，避免切换 security 时把另一分支的配置也改掉。
+      const inScope = field.section === 'transport' || field.section === 'sockopt'
+        || (field.section === 'tls' && security === 'tls')
+        || (field.section === 'reality' && security === 'reality')
+      if (!inScope) continue
+      next = writeField(next, field, view[field.key])
     }
-  }
-
-  // Transport-level extras that apply to any security type. Xray 26 renamed the
-  // TCP transport to RAW, so keep whichever key name the node already stores
-  // instead of silently migrating an admin's configuration.
-  if (view.security === 'reality' || view.security === 'tls' || view.network === 'tcp' || view.network === 'raw') {
-    if (view.tcpHeaderType !== before.tcpHeaderType) {
-      const headerKey = getPath(next, 'rawSettings') !== undefined ? 'rawSettings' : 'tcpSettings'
-      next = setOrDelete(next, headerKey + '.header.type', view.tcpHeaderType === 'none' ? undefined : view.tcpHeaderType)
-      // "none" is the default; keep an explicit empty header object rather than
-      // dropping the whole transport block.
-      if (view.tcpHeaderType === 'none' && getPath(next, headerKey + '.header') === undefined) {
-        next = setPath(next, headerKey + '.header.type', 'none')
-      }
-    }
-    if (view.acceptProxyProtocol !== before.acceptProxyProtocol) {
-      if (view.acceptProxyProtocol) next = setPath(next, 'sockopt.acceptProxyProtocol', true)
-      else next = setPath(next, 'sockopt.acceptProxyProtocol', undefined)
+    // TLS 证书走 certificates[] 数组，不是普通标量键。
+    if (security === 'tls') next = applyCertificateFiles(next, view, before)
+    if (security === 'tcp' || security === 'none' || true) {
+      // 清理空的 sockopt 容器，避免写出 "sockopt": {}
       const sockopt = getPath(next, 'sockopt')
-      if (isRecord(sockopt) && Object.keys(sockopt).length === 0) {
-        next = setPath(next, 'sockopt', undefined)
-      }
+      if (isRecord(sockopt) && Object.keys(sockopt).length === 0) next = setPath(next, 'sockopt', undefined)
     }
+  }
+  if (securityOf(view) === 'reality' && getPath(next, 'realitySettings.settings') !== undefined) {
+    // 客户端侧参数属于 client_settings；这层是历史遗留的死结构，无条件清掉。
+    next = setPath(next, 'realitySettings.settings', undefined)
   }
   return next
 }
+
+function isCertificateField(field: StreamField): boolean {
+  return field.key === 'tlsCertFile' || field.key === 'tlsKeyFile'
+}
+
+function securityOf(view: StreamView): string {
+  return String(view.security || 'none')
+}
+
+/**
+ * 证书文件写在 tlsSettings.certificates[0]，其余数组项原样保留。
+ * 旧数据可能把 certificateFile/keyFile 放在 tlsSettings 顶层，读取已回退兼容。
+ */
+function applyCertificateFiles(next: JsonObject, view: StreamView, before: StreamView): JsonObject {
+  if (view.tlsCertFile === before.tlsCertFile && view.tlsKeyFile === before.tlsKeyFile) return next
+  const existing = getPath(next, 'tlsSettings.certificates')
+  const template = Array.isArray(existing) && isRecord(existing[0]) ? (existing[0] as JsonObject) : {}
+  const cert: JsonObject = { ...template }
+  if (String(view.tlsCertFile ?? '').trim()) cert.certificateFile = String(view.tlsCertFile).trim()
+  else delete cert.certificateFile
+  if (String(view.tlsKeyFile ?? '').trim()) cert.keyFile = String(view.tlsKeyFile).trim()
+  else delete cert.keyFile
+  const remaining = Array.isArray(existing) ? existing.slice(1) : []
+  if (Object.keys(cert).length > 0) return setPath(next, 'tlsSettings.certificates', [cert, ...remaining])
+  return setPath(next, 'tlsSettings.certificates', remaining.length ? remaining : undefined)
+}
+
 
 /** 显式清理（用户点击按钮时调用），不是保存时的隐式行为。 */
 export function removeSecurityBlock(stream: JsonObject, block: 'tls' | 'reality'): JsonObject {
@@ -303,6 +408,7 @@ export interface ClientView {
   publicKey: string
   shortId: string
   fingerprint: string
+  spiderX: string
   alpn: string
   allowInsecure: string
 }
@@ -311,6 +417,7 @@ export function clientView(settings: JsonObject): ClientView {
   return {
     serverName: String(settings.server_name ?? settings.serverName ?? settings.sni ?? ''),
     publicKey: String(settings.public_key ?? settings.publicKey ?? ''),
+    spiderX: String(settings.spider_x ?? settings.spiderX ?? ''),
     shortId: String(settings.short_id ?? settings.shortId ?? ''),
     fingerprint: String(settings.fingerprint ?? ''),
     alpn: joinList(settings.alpn),
@@ -344,8 +451,17 @@ export function protocolKnownKeys(protocol: NodeProtocol): string[] {
   return ['disableInsecureEncryption']
 }
 
+/**
+ * 结构化表单能编辑（或明确保留）的 stream_settings 顶层键。
+ * 其余键会作为「原样保留」提示出来；这里漏一个就会把用户自己写的配置误报成未知。
+ */
 export function streamKnownKeys(): string[] {
-  return ['network', 'security', 'tlsSettings', 'realitySettings']
+  return [
+    'network', 'security',
+    'rawSettings', 'tcpSettings', 'wsSettings', 'grpcSettings',
+    'httpupgradeSettings', 'xhttpSettings', 'kcpSettings',
+    'tlsSettings', 'realitySettings', 'sockopt',
+  ]
 }
 
 export function clientKnownKeys(): string[] {
@@ -423,11 +539,11 @@ export function validateNodeDraft(draft: NodeDraft): NodeValidation {
     if (!view.realityDest.trim()) err('reality-dest', 'REALITY 需要一个伪装目标，例如 www.microsoft.com:443')
     if (!view.realityServerNames.trim()) err('reality-server-names', 'REALITY 需要至少一个允许的域名')
     if (!view.realityPrivateKey.trim() && !draft.server_key.trim() && !draft.server_key_set) err('reality-private-key', 'REALITY 需要私钥，可点「生成一对」自动生成')
-    if ((view.realityPrivateKey.trim() || draft.server_key.trim()) && !String(draft.client_settings.public_key ?? draft.client_settings.publicKey ?? view.realityPublicKey).trim()) {
+    if ((view.realityPrivateKey.trim() || draft.server_key.trim()) && !String(draft.client_settings.public_key ?? draft.client_settings.publicKey).trim()) {
       err('reality-public-key', '更换 REALITY 密钥时私钥与公钥必须成对填写')
     }
     if (!view.realityShortIds.trim()) warn('reality-short-ids', '没填短 ID；客户端可能连不上，可以点「生成」')
-    if (!clientView(draft.client_settings).publicKey.trim() && !view.realityPublicKey.trim()) warn('client-public-key', '客户端公钥为空，成员配置会不可用')
+    if (!clientView(draft.client_settings).publicKey.trim()) warn('client-public-key', '客户端公钥为空，成员配置会不可用')
   }
   if (security === 'tls') {
     const view = streamView(draft.stream_settings)
@@ -513,6 +629,9 @@ export function buildNodeWrite(draft: NodeDraft, options: { omitServerKey?: bool
     stream_settings: cloneJson(draft.stream_settings),
     protocol_settings,
     client_settings: cloneJson(draft.client_settings),
+    sniffing: cloneJson(draft.sniffing),
+    allocate: cloneJson(draft.allocate),
+    external_proxy: cloneJson(draft.external_proxy),
     sort_order: Number(draft.sort_order),
   }
   if (!options.omitServerKey) payload.server_key = draft.server_key.trim()
@@ -523,7 +642,7 @@ export function buildNodeWrite(draft: NodeDraft, options: { omitServerKey?: bool
 export function realityRotationError(draft: NodeDraft, original: NodeRecord | null, rotate: boolean): string {
   if (!original || streamView(draft.stream_settings).security !== 'reality') return ''
   const privateKey = streamView(draft.stream_settings).realityPrivateKey.trim() || draft.server_key.trim()
-  const publicKey = clientView(draft.client_settings).publicKey.trim() || streamView(draft.stream_settings).realityPublicKey.trim()
+  const publicKey = clientView(draft.client_settings).publicKey.trim()
   const previousPublic = clientView(original.client_settings).publicKey
   if (!rotate && (privateKey || publicKey !== previousPublic)) return '更换 REALITY 私钥或公钥前必须显式勾选「更换 REALITY 密钥」'
   if (rotate && (!privateKey || !publicKey || publicKey === previousPublic)) return '更换 REALITY 密钥必须填写一对新的私钥与公钥（可点「生成一对」）'

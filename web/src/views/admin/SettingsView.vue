@@ -345,7 +345,7 @@ const hasTemplateDefaults = computed(() => {
                         :model-value="templateDefaults"
                         label="模板默认值（高级）"
                         hint="填写后会影响新建模板的初始结构。不熟悉时请保持为空。"
-                        @update:model-value="templateDefaults = $event"
+                        @update:model-value="templateDefaults = $event as JsonObject"
                         @update:error="templateJsonError = $event"
                       />
                     </div>
@@ -365,7 +365,7 @@ const hasTemplateDefaults = computed(() => {
                         :model-value="templateDefaults"
                         label="模板默认值（高级）"
                         hint="保存后立即生效。"
-                        @update:model-value="templateDefaults = $event"
+                        @update:model-value="templateDefaults = $event as JsonObject"
                         @update:error="templateJsonError = $event"
                       />
                     </div>

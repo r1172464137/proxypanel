@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getPath, jsonEqual, parseJsonObject, setPath, stringifyJson, unknownKeys } from './json'
+import { getPath, jsonEqual, parseJsonArray, parseJsonObject, setPath, stringifyJson, unknownKeys } from './json'
 
 describe('json helpers', () => {
   it('setPath 只改目标路径，其它键（含未知键）原样保留', () => {
@@ -48,5 +48,22 @@ describe('json helpers', () => {
     expect(stringifyJson({ a: 1 })).toBe('{\n  "a": 1\n}')
     expect(jsonEqual({ a: [1, 2] }, { a: [1, 2] })).toBe(true)
     expect(jsonEqual({ a: 1 }, { a: 2 })).toBe(false)
+  })
+})
+describe('parseJsonArray', () => {
+  it('接受数组并拒绝对象', () => {
+    const ok = parseJsonArray('[{"dest":"a.example","port":443}]', 'external_proxy')
+    expect(ok.ok).toBe(true)
+    if (ok.ok) expect(ok.value).toHaveLength(1)
+
+    const bad = parseJsonArray('{"dest":"a.example"}', 'external_proxy')
+    expect(bad.ok).toBe(false)
+    if (!bad.ok) expect(bad.error).toContain('数组')
+
+    const malformed = parseJsonArray('[oops', 'external_proxy')
+    expect(malformed.ok).toBe(false)
+
+    const empty = parseJsonArray('   ', 'external_proxy')
+    expect(empty.ok).toBe(false)
   })
 })

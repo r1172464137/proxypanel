@@ -7,8 +7,6 @@ import { allPages } from '@/lib/allPages'
 import type { NodeRecord, ServerRecord } from '@/api/types'
 import { NODE_PROTOCOL_LABELS } from '@/api/types'
 import {
-  NETWORK_OPTIONS,
-  SECURITY_OPTIONS,
   SS_METHOD_OPTIONS,
   applyClientView,
   applyProtocolView,
@@ -33,7 +31,9 @@ import {
 import { unknownKeys, getPath, isRecord, setPath, type JsonObject } from '@/lib/json'
 import { errorText, fieldErrorsOf } from '@/lib/errors'
 import { formatDateTime } from '@/lib/format'
-import { NODE_TEMPLATES, TLS_PLACEHOLDER_DOMAIN, newRealityKeyPair, newShortId, type NodeTemplate } from '@/lib/nodeTemplates'
+import { NODE_TEMPLATES, TLS_PLACEHOLDER_DOMAIN, newRealityKeyPair, type NodeTemplate } from '@/lib/nodeTemplates'
+import StreamFieldInput from '@/components/StreamFieldInput.vue'
+import { fieldsFor, NETWORK_OPTIONS as SCHEMA_NETWORKS, SECURITY_OPTIONS as SCHEMA_SECURITIES, type StreamField, type StreamSection, type StreamValue } from '@/lib/streamSchema'
 import { pushToast } from '@/lib/toast'
 import PageHeader from '@/components/PageHeader.vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
@@ -46,7 +46,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { Loader2 } from 'lucide-vue-next'
@@ -70,7 +69,7 @@ const saved = ref(false)
 const keyImpactConfirmed = ref(false)
 const rotateReality = ref(false)
 const versionConflict = ref(false)
-const jsonErrors = reactive({ stream: '', protocol: '', client: '' })
+const jsonErrors = reactive({ stream: '', protocol: '', client: '', sniffing: '', allocate: '', externalProxy: '' })
 const keepServerKey = ref(true)
 const tab = ref<'structured' | 'advanced'>('structured')
 const showTemplates = ref(false)
@@ -157,8 +156,8 @@ async function generateRealityKeys(): Promise<void> {
   try {
     const pair = await newRealityKeyPair()
     streamState.realityPrivateKey = pair.privateKey
-    streamState.realityPublicKey = pair.publicKey
-    if (!streamState.realityFingerprint) streamState.realityFingerprint = 'chrome'
+    clientState.publicKey = pair.publicKey
+    if (!clientState.fingerprint) clientState.fingerprint = 'chrome'
     // 成员配置读的是 client_settings.publicKey；只填服务端一侧会让成员拿到空公钥。
     clientState.publicKey = pair.publicKey
     templateNote.value = '已生成 REALITY 密钥对。'
@@ -297,6 +296,38 @@ const fieldErrors = computed(() => {
 function errorFor(field: string): string {
   return backendErrorsById.value[field] ?? fieldErrors.value[field] ?? ''
 }
+
+// ── 由 streamSchema 驱动的传输/安全字段 ────────────────────────────────────
+// 字段表在 lib/streamSchema.ts，这里只做渲染与错误定位。加字段时改表即可。
+const STREAM_SECTIONS: { id: StreamSection; title: string }[] = [
+  { id: 'transport', title: '传输层参数' },
+  { id: 'tls', title: 'TLS' },
+  { id: 'reality', title: 'REALITY' },
+  { id: 'sockopt', title: 'sockopt（底层连接）' },
+]
+
+function sectionFields(section: StreamSection): StreamField[] {
+  return fieldsFor(section, String(streamState.network || 'tcp'), String(streamState.security || 'none'))
+}
+
+/** 后端按 stream_settings.<path> 报错，本地校验按 form id 报错，两者都要能显示。 */
+function fieldError(field: StreamField): string {
+  for (const path of field.paths) {
+    const backend = backendFieldErrors.value[`stream_settings.${path}`]
+    if (backend) return backend
+  }
+  const formId = BACKEND_FIELD_TO_FORM_ID[`stream_settings.${field.paths[0]}`]
+  return formId ? (fieldErrors.value[formId] ?? '') : ''
+}
+
+/** 轮换 REALITY 私钥必须显式勾选，否则连输入框都不该可编辑。 */
+function fieldDisabled(field: StreamField): boolean {
+  return field.key === 'realityPrivateKey' && isEdit && !rotateReality.value
+}
+
+function setStreamValue(key: string, value: StreamValue): void {
+  ;(streamState as Record<string, StreamValue>)[key] = value
+}
 const showFallbacks = computed(() => draft.protocol === 'vless' || draft.protocol === 'trojan')
 const security = computed(() => String(streamState.security || 'none'))
 
@@ -319,9 +350,6 @@ const clientSummary = computed(() => {
 })
 
 function syncDraft(): void {
-  if (streamState.realityPublicKey && streamState.realityPublicKey !== streamView(draft.stream_settings).realityPublicKey) {
-    clientState.publicKey = streamState.realityPublicKey
-  }
   draft.stream_settings = applyStreamView(draft.stream_settings, streamState)
   draft.protocol_settings = applyProtocolView(draft.protocol_settings, draft.protocol, protocolState)
   draft.client_settings = applyClientView(draft.client_settings, clientState)
@@ -388,7 +416,8 @@ async function save(): Promise<void> {
   saveError.value = ''
   // 每次提交都从干净状态开始：旧的字段级错误不对应当前这次请求。
   backendFieldErrors.value = {}
-  if (jsonErrors.stream || jsonErrors.protocol || jsonErrors.client) {
+  if (jsonErrors.stream || jsonErrors.protocol || jsonErrors.client
+    || jsonErrors.sniffing || jsonErrors.allocate || jsonErrors.externalProxy) {
     saveError.value = '高级 JSON 存在解析错误，已阻止提交以免丢失参数'
     tab.value = 'advanced'
     return
@@ -440,16 +469,25 @@ function clearBlock(block: 'tls' | 'reality'): void {
   draft.stream_settings = removeSecurityBlock(draft.stream_settings, block)
 }
 
-function updateProtocolJson(value: JsonObject): void {
-  draft.protocol_settings = value
+function updateProtocolJson(value: unknown): void {
+  draft.protocol_settings = value as JsonObject
 }
 
-function updateStreamJson(value: JsonObject): void {
-  draft.stream_settings = value
+function updateStreamJson(value: unknown): void {
+  draft.stream_settings = value as JsonObject
 }
 
-function updateClientJson(value: JsonObject): void {
-  draft.client_settings = value
+function updateClientJson(value: unknown): void {
+  draft.client_settings = value as JsonObject
+}
+
+function updateInboundJson(key: 'sniffing' | 'allocate', value: unknown): void {
+  draft[key] = value as JsonObject
+}
+
+// externalProxy is an array, not an object, so it needs its own parser.
+function updateExternalProxyJson(value: unknown): void {
+  draft.external_proxy = Array.isArray(value) ? value : []
 }
 
 const cipherValue = computed({
@@ -836,200 +874,96 @@ const cipherValue = computed({
             <div class="grid gap-4 sm:grid-cols-2">
               <div class="space-y-1.5">
                 <Label for="stream-network">传输方式</Label>
-                <Input
-                  id="stream-network"
-                  v-model="streamState.network"
-                  class="font-mono"
-                  list="networks"
-                  :aria-invalid="Boolean(errorFor('stream-network'))"
-                  :class="errorFor('stream-network') ? 'border-destructive focus-visible:ring-destructive' : ''"
-                />
-                <datalist id="networks">
-                  <option v-for="network in NETWORK_OPTIONS" :key="network" :value="network" />
-                </datalist>
-                <p v-if="errorFor('stream-network')" class="text-xs text-destructive">{{ errorFor('stream-network') }}</p>
-                <p class="text-xs text-muted-foreground">常用 tcp / ws / grpc / httpupgrade；核心已移除的传输请勿声称支持。</p>
+                  <select
+                    id="stream-network"
+                    v-model="streamState.network"
+                    :aria-invalid="Boolean(errorFor('stream-network'))"
+                    :class="[
+                      'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                      errorFor('stream-network') ? 'border-destructive' : '',
+                    ]"
+                  >
+                    <option v-for="option in SCHEMA_NETWORKS" :key="option" :value="option">{{ option }}</option>
+                  </select>
+                  <p v-if="errorFor('stream-network')" class="text-xs text-destructive">{{ errorFor('stream-network') }}</p>
+                  <p class="text-xs text-muted-foreground">Xray 26 把 tcp 改名为 raw，两者互为别名；下面按所选传输层显示对应参数。</p>
+                </div>
+                <div class="space-y-1.5">
+                  <Label for="stream-security">加密层</Label>
+                  <select
+                    id="stream-security"
+                    v-model="streamState.security"
+                    :aria-invalid="Boolean(errorFor('stream-security'))"
+                    :class="[
+                      'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                      errorFor('stream-security') ? 'border-destructive' : '',
+                    ]"
+                  >
+                    <option v-for="option in SCHEMA_SECURITIES" :key="option" :value="option">{{ option }}</option>
+                  </select>
+                  <p v-if="errorFor('stream-security')" class="text-xs text-destructive">{{ errorFor('stream-security') }}</p>
+                </div>
               </div>
-              <div class="space-y-1.5">
-                <Label for="stream-security">加密层</Label>
-                <select
-                  id="stream-security"
-                  v-model="streamState.security"
-                  :aria-invalid="Boolean(errorFor('stream-security'))"
-                  :class="[
-                    'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                    errorFor('stream-security') ? 'border-destructive' : '',
-                  ]"
-                >
-                  <option v-for="option in SECURITY_OPTIONS" :key="option" :value="option">{{ option }}</option>
-                </select>
-                <p v-if="errorFor('stream-security')" class="text-xs text-destructive">{{ errorFor('stream-security') }}</p>
-              </div>
-              <div class="space-y-1.5">
-                <Label for="stream-proxy-protocol">PROXY protocol</Label>
-                <label class="flex min-h-10 items-center gap-2 text-sm">
-                  <Checkbox
-                    id="stream-proxy-protocol"
-                    :model-value="streamState.acceptProxyProtocol"
-                    @update:model-value="(value) => (streamState.acceptProxyProtocol = value === true)"
-                  />
-                  <span>接收前置代理发来的 PROXY protocol</span>
-                </label>
-                <p class="text-xs text-muted-foreground">
-                  仅当前置 nginx/HAProxy 用 <code>proxy_protocol on</code> 转发时开启。
-                  开启后若对端不发送该头，连接会被立即关闭。未开启时请保持不勾选。
-                </p>
-                <Label for="stream-tcp-header" class="pt-2">TCP 伪装头</Label>
-                <select
-                  id="stream-tcp-header"
-                  v-model="streamState.tcpHeaderType"
-                  class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                >
-                  <option value="none">none（不伪装）</option>
-                  <option value="http">http（HTTP 伪装，客户端须一致）</option>
-                </select>
-                <p class="text-xs text-muted-foreground">
-                  Xray 26 把 TCP 传输改名为 RAW；这里会沿用节点已有的 tcpSettings/rawSettings 键名，不会擅自迁移。
-                </p>
-              </div>
-            </div>
 
-            <template v-if="streamState.security === 'tls'">
-              <div class="flex items-center gap-3">
-                <span class="text-sm font-medium">TLS</span>
-                <Separator class="flex-1" />
-              </div>
-              <div class="grid gap-4 sm:grid-cols-2">
+              <!-- 客户端侧的 REALITY 参数写在 client_settings，不属于服务端 realitySettings -->
+              <div v-if="streamState.security === 'reality'" class="grid gap-4 sm:grid-cols-2">
                 <div class="space-y-1.5">
-                  <Label for="tls-sni">证书域名</Label>
-                  <Input id="tls-sni" v-model="streamState.tlsServerName" class="font-mono" />
+                  <Label for="reality-public-key">客户端公钥</Label>
+                  <Input id="reality-public-key" v-model="clientState.publicKey" class="font-mono" placeholder="留空则自动从私钥推导" />
+                  <p class="text-xs text-muted-foreground">留空时由服务端密钥自动推导，不用手填。</p>
                 </div>
                 <div class="space-y-1.5">
-                  <Label for="tls-alpn">协商协议</Label>
-                  <Input id="tls-alpn" v-model="streamState.tlsAlpn" class="font-mono" placeholder="h2, http/1.1" />
+                  <Label for="reality-fingerprint">客户端指纹</Label>
+                  <Input id="reality-fingerprint" v-model="clientState.fingerprint" class="font-mono" placeholder="chrome" />
                 </div>
                 <div class="space-y-1.5">
-                  <Label for="tls-cert-file">证书文件路径</Label>
-                  <Input
-                    id="tls-cert-file"
-                    v-model="streamState.tlsCertFile"
-                    class="font-mono"
-                    :aria-invalid="Boolean(errorFor('tls-cert-file'))"
-                    :class="errorFor('tls-cert-file') ? 'border-destructive focus-visible:ring-destructive' : ''"
-                  />
-                  <p v-if="errorFor('tls-cert-file')" class="text-xs text-destructive">{{ errorFor('tls-cert-file') }}</p>
+                  <Label for="reality-spider">客户端爬虫路径</Label>
+                  <Input id="reality-spider" v-model="clientState.spiderX" class="font-mono" placeholder="/" />
                 </div>
                 <div class="space-y-1.5">
-                  <Label for="tls-key">私钥文件路径</Label>
-                  <Input
-                    id="tls-key"
-                    v-model="streamState.tlsKeyFile"
-                    class="font-mono"
-                    :aria-invalid="Boolean(errorFor('tls-key'))"
-                    :class="errorFor('tls-key') ? 'border-destructive focus-visible:ring-destructive' : ''"
-                  />
-                  <p v-if="errorFor('tls-key')" class="text-xs text-destructive">{{ errorFor('tls-key') }}</p>
-                  <p class="text-xs text-muted-foreground">路径必须位于 Agent 受控目录；不接受任意路径注入。</p>
+                  <Label for="reality-client-sni">客户端域名</Label>
+                  <Input id="reality-client-sni" v-model="clientState.serverName" class="font-mono" placeholder="留空则用允许的域名" />
                 </div>
               </div>
-            </template>
 
-            <template v-if="streamState.security === 'reality'">
-              <div class="flex items-center gap-3">
-                <span class="text-sm font-medium">REALITY</span>
-                <Separator class="flex-1" />
-              </div>
-              <div class="grid gap-4 sm:grid-cols-2">
-                <div class="space-y-1.5">
-                  <Label for="reality-dest">回落目标</Label>
-                  <Input
-                    id="reality-dest"
-                    v-model="streamState.realityDest"
-                    class="font-mono"
-                    placeholder="回落目标，如 example.com:443"
-                    :aria-invalid="Boolean(errorFor('reality-dest'))"
-                    :class="errorFor('reality-dest') ? 'border-destructive focus-visible:ring-destructive' : ''"
-                  />
-                  <p v-if="errorFor('reality-dest')" class="text-xs text-destructive">{{ errorFor('reality-dest') }}</p>
-                </div>
-                <div class="space-y-1.5">
-                  <Label for="reality-server-names">允许的域名</Label>
-                  <Input
-                    id="reality-server-names"
-                    v-model="streamState.realityServerNames"
-                    class="font-mono"
-                    placeholder="逗号分隔"
-                    :aria-invalid="Boolean(errorFor('reality-server-names'))"
-                    :class="errorFor('reality-server-names') ? 'border-destructive focus-visible:ring-destructive' : ''"
-                  />
-                  <p v-if="errorFor('reality-server-names')" class="text-xs text-destructive">{{ errorFor('reality-server-names') }}</p>
-                </div>
-                <div class="space-y-1.5 sm:col-span-2">
-                  <Label for="reality-private-key">REALITY 私钥</Label>
-                  <div class="flex items-start gap-2">
-                    <div class="flex-1 space-y-1.5">
-                      <Input
-                        id="reality-private-key"
-                        v-model="streamState.realityPrivateKey"
-                        :disabled="isEdit && !rotateReality"
-                        placeholder="留空保持已设置的私钥"
-                        class="font-mono"
-                        type="password"
-                        autocomplete="off"
-                        :aria-invalid="Boolean(errorFor('reality-private-key'))"
-                        :class="errorFor('reality-private-key') ? 'border-destructive focus-visible:ring-destructive' : ''"
-                      />
-                      <p v-if="errorFor('reality-private-key')" class="text-xs text-destructive">{{ errorFor('reality-private-key') }}</p>
-                    </div>
-                    <Button type="button" variant="outline" size="sm" :disabled="isEdit && !rotateReality" @click="generateRealityKeys">生成一对</Button>
+              <template v-for="section in STREAM_SECTIONS" :key="section.id">
+                <template v-if="sectionFields(section.id).length">
+                  <div class="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
+                    <h3 class="text-sm font-medium">{{ section.title }}</h3>
+                    <Button
+                      v-if="section.id === 'reality'"
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      :disabled="isEdit && !rotateReality"
+                      @click="generateRealityKeys"
+                    >
+                      生成一对密钥
+                    </Button>
                   </div>
-                  <p class="text-xs text-muted-foreground">
-                    只有面板和节点自己知道，成员看不到。点「生成一对」会自动填好私钥和公钥。
-                  </p>
-                </div>
-                <div class="space-y-1.5 sm:col-span-2">
-                  <Label for="reality-short-ids">短 ID 列表</Label>
-                  <div class="flex items-start gap-2">
-                    <div class="flex-1 space-y-1.5">
-                      <Input
-                        id="reality-short-ids"
-                        v-model="streamState.realityShortIds"
-                        class="font-mono"
-                        placeholder="逗号分隔，十六进制"
-                        :aria-invalid="Boolean(errorFor('reality-short-ids'))"
-                        :class="errorFor('reality-short-ids') ? 'border-destructive focus-visible:ring-destructive' : ''"
-                      />
-                      <p v-if="errorFor('reality-short-ids')" class="text-xs text-destructive">{{ errorFor('reality-short-ids') }}</p>
-                    </div>
-                    <Button type="button" variant="outline" size="sm" @click="streamState.realityShortIds = newShortId(8)">生成</Button>
+                  <div class="grid gap-4 sm:grid-cols-2">
+                    <StreamFieldInput
+                      v-for="field in sectionFields(section.id)"
+                      :key="field.key"
+                      :field="field"
+                      :model-value="streamState[field.key]"
+                      :error="fieldError(field)"
+                      :disabled="fieldDisabled(field)"
+                      @update:model-value="setStreamValue(field.key, $event)"
+                    />
                   </div>
-                  <p class="text-xs text-muted-foreground">一串十六进制，用来区分同时使用同一域名的不同节点。留空也可以工作。</p>
-                </div>
-                <div class="space-y-1.5">
-                  <Label for="reality-public-key">REALITY 公钥</Label>
-                  <Input id="reality-public-key" v-model="streamState.realityPublicKey" class="font-mono" />
-                  <p class="text-xs text-muted-foreground">由私钥推出，会写进成员的客户端配置。点上面的「生成一对」会一起填好。</p>
-                </div>
-                <div class="space-y-1.5">
-                  <Label for="reality-fingerprint">指纹</Label>
-                  <Input id="reality-fingerprint" v-model="streamState.realityFingerprint" class="font-mono" placeholder="chrome" />
-                </div>
-                <div class="space-y-1.5">
-                  <Label for="reality-spider">爬虫路径</Label>
-                  <Input id="reality-spider" v-model="streamState.realitySpiderX" class="font-mono" />
-                </div>
-              </div>
-            </template>
+                </template>
+              </template>
 
-            <div class="flex flex-wrap items-center gap-2">
-              <Button v-if="streamState.security !== 'tls'" type="button" variant="outline" size="sm" @click="clearBlock('tls')">
-                移除 tlsSettings 块
-              </Button>
-              <Button v-if="streamState.security !== 'reality'" type="button" variant="outline" size="sm" @click="clearBlock('reality')">
-                移除 realitySettings 块
-              </Button>
-              <span class="text-xs text-muted-foreground">切换 security 不会删除另一分支的配置；需要清理时请显式点击。</span>
-            </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <Button v-if="streamState.security !== 'tls'" type="button" variant="outline" size="sm" @click="clearBlock('tls')">
+                  移除 tlsSettings 块
+                </Button>
+                <Button v-if="streamState.security !== 'reality'" type="button" variant="outline" size="sm" @click="clearBlock('reality')">
+                  移除 realitySettings 块
+                </Button>
+                <span class="text-xs text-muted-foreground">切换 security 不会删除另一分支的配置；需要清理时请显式点击。</span>
+              </div>
 
             <p v-if="preservedStream.length" class="rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
               未识别的 stream_settings 键共 {{ preservedStream.length }} 处，将原样保留：<span class="font-mono">{{ preservedStream.join(', ') }}</span>
@@ -1161,7 +1095,8 @@ const cipherValue = computed({
           <CardContent class="space-y-4">
             <Alert>
               <AlertDescription>
-                完整提交三个对象：stream_settings / protocol_settings / client_settings。JSON 解析失败时禁止保存，避免静默丢参数。
+                完整提交入站的全部对象：stream_settings / protocol_settings / client_settings，
+                以及入站级的 sniffing / allocate / external_proxy。JSON 解析失败时禁止保存，避免静默丢参数。
                 clients 由后端注入，保存时会被移除。
               </AlertDescription>
             </Alert>
@@ -1194,6 +1129,37 @@ const cipherValue = computed({
                 @update:error="jsonErrors.client = $event"
               />
               <p v-if="jsonErrors.client" class="text-xs text-destructive">client_settings 未通过解析，保存被阻止。</p>
+            </div>
+            <div class="space-y-1.5">
+              <JsonEditor
+                :model-value="draft.sniffing"
+                label="sniffing"
+                hint="域名嗅探。enabled / destOverride[] / metadataOnly / routeOnly；留空 {} 表示沿用默认（开启，http/tls/quic）。"
+                @update:model-value="updateInboundJson('sniffing', $event)"
+                @update:error="jsonErrors.sniffing = $event"
+              />
+              <p v-if="jsonErrors.sniffing" class="text-xs text-destructive">sniffing 未通过解析，保存被阻止。</p>
+            </div>
+            <div class="space-y-1.5">
+              <JsonEditor
+                :model-value="draft.allocate"
+                label="allocate"
+                hint="UDP 端口分配。strategy / refresh / concurrency；留空 {} 表示不生成该字段。"
+                @update:model-value="updateInboundJson('allocate', $event)"
+                @update:error="jsonErrors.allocate = $event"
+              />
+              <p v-if="jsonErrors.allocate" class="text-xs text-destructive">allocate 未通过解析，保存被阻止。</p>
+            </div>
+            <div class="space-y-1.5">
+              <JsonEditor
+                :model-value="draft.external_proxy"
+                shape="array"
+                label="external_proxy"
+                hint="对外暴露的代理地址（Xray 的 externalProxy）：每项包含 forceTls / dest / port / remark。留空 [] 表示不生成该字段。"
+                @update:model-value="updateExternalProxyJson"
+                @update:error="jsonErrors.externalProxy = $event"
+              />
+              <p v-if="jsonErrors.externalProxy" class="text-xs text-destructive">external_proxy 未通过解析，保存被阻止。</p>
             </div>
           </CardContent>
         </Card>

@@ -71,10 +71,10 @@ describe('nodeDraft 结构化视图', () => {
     expect(view.security).toBe('reality')
     expect(view.realityDest).toBe('www.example.com:443')
     expect(view.realityShortIds).toBe('ab12, ')
-    expect(view.realityPublicKey).toBe('reality-public')
     expect(draft.stream_settings.sockopt).toEqual({ tcpFastOpen: true, mark: 255 })
 
     const client = clientView(draft.client_settings)
+    expect(client.publicKey).toBe('reality-public')
     expect(client.serverName).toBe('www.example.com')
     expect(client.alpn).toBe('h2, http/1.1')
     expect(draft.client_settings.mux).toEqual({ enabled: true })
@@ -104,13 +104,25 @@ describe('nodeDraft 结构化视图', () => {
 
     const view = streamView(base)
     const enabled = applyStreamView(base, { ...view, acceptProxyProtocol: true, tcpHeaderType: 'http' })
-    expect((enabled.sockopt as Record<string, unknown>).acceptProxyProtocol).toBe(true)
+    // 这个节点没有任何传输层块，写正式名 rawSettings。
+    expect((enabled.rawSettings as Record<string, unknown>).acceptProxyProtocol).toBe(true)
+    expect(enabled.tcpSettings).toBeUndefined()
+    // 旧版本把 acceptProxyProtocol 写在 sockopt；那是放错的位置，只读不写。
+    expect((enabled.sockopt as Record<string, unknown>).acceptProxyProtocol).toBeUndefined()
     // Existing sockopt keys survive.
     expect((enabled.sockopt as Record<string, unknown>).mark).toBe(255)
-    expect((enabled.tcpSettings as Record<string, Record<string, unknown>>).header.type).toBe('http')
+    expect((enabled.rawSettings as Record<string, Record<string, unknown>>).header.type).toBe('http')
 
     const disabled = applyStreamView(enabled, { ...streamView(enabled), acceptProxyProtocol: false })
-    expect((disabled.sockopt as Record<string, unknown>).acceptProxyProtocol).toBeUndefined()
+    expect((disabled.rawSettings as Record<string, unknown>).acceptProxyProtocol).toBe(false)
+
+    // 已经有 tcpSettings 的节点继续用 tcpSettings：一次保存不该产生两个同义块。
+    const legacyBase = { ...base, tcpSettings: { header: { type: 'none' } } }
+    const legacyView = streamView(legacyBase)
+    const legacySaved = applyStreamView(legacyBase, { ...legacyView, acceptProxyProtocol: true, tcpHeaderType: 'http' })
+    expect((legacySaved.tcpSettings as Record<string, unknown>).acceptProxyProtocol).toBe(true)
+    expect(legacySaved.rawSettings).toBeUndefined()
+    expect((legacySaved.tcpSettings as Record<string, Record<string, unknown>>).header.type).toBe('http')
     expect((disabled.sockopt as Record<string, unknown>).mark).toBe(255)
   })
 
@@ -285,6 +297,8 @@ describe('buildNodeWrite', () => {
     const view = streamView(stream)
     const saved = applyStreamView(stream, { ...view, realityDest: '127.0.0.1:8443' })
     expect(getPath(saved, 'realitySettings.xver')).toBe(1)
-    expect(getPath(saved, 'realitySettings.dest')).toBe('127.0.0.1:8443')
+    // target 是正名，dest 是旧别名；写入只留一个，避免两个别名取值不同。
+    expect(getPath(saved, 'realitySettings.target')).toBe('127.0.0.1:8443')
+    expect(getPath(saved, 'realitySettings.dest')).toBeUndefined()
   })
 })
