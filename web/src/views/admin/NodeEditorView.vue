@@ -195,9 +195,13 @@ async function applyTemplate(tpl: NodeTemplate): Promise<void> {
         realitySettings: {
           ...realitySettings,
           privateKey: pair.privateKey,
-          settings: { publicKey: pair.publicKey, fingerprint: 'chrome', spiderX: '/' },
         },
       }
+      // The Xray RealityObject has no nested "settings" object: server-side
+      // fields sit directly on realitySettings, and the client public key /
+      // fingerprint / spiderX belong to client_settings (written just below).
+      // Emitting the old nested "settings" layer produced a value the core
+      // either rejects as an unknown field or silently ignores.
       // 公钥必须与刚生成的私钥配对：模板只带 shortId/serverName，
       // 公钥只能异步补进 client_settings（成员配置从这里取）。
       draft.client_settings = {

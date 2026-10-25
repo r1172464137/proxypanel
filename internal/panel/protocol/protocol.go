@@ -376,6 +376,17 @@ func Sanitize(n Node) (stream domain.Object, protocolSettings domain.Object, ser
 		issues = append(issues, NormalizeTLS(stream)...)
 	}
 	if rs, ok := stream.Sub("realitySettings"); ok {
+		// Older panel builds wrote a nested "settings" object holding the
+		// client public key. Xray's RealityObject has no such field: client
+		// parameters live in client_settings, and an unknown nested object is
+		// either rejected by the core or silently ignored. Drop it on save so
+		// an already-stored node is repaired instead of carrying dead data.
+		if rs.Has("settings") {
+			rs.Delete("settings")
+			if err := stream.Set("realitySettings", rs); err != nil {
+				issues = append(issues, Issue{Field: "stream_settings.realitySettings", Message: err.Error()})
+			}
+		}
 		if pk, ok := rs.String("privateKey"); ok && strings.TrimSpace(pk) != "" {
 			if serverKey == "" {
 				serverKey = strings.TrimSpace(pk)

@@ -124,18 +124,28 @@ func EndpointFor(node domain.Node) (Endpoint, []Issue) {
 
 	switch ep.Network {
 	case "tcp":
-		if tcp, ok := stream.Sub("tcpSettings"); ok {
-			if header, ok := tcp.Sub("header"); ok {
-				// Only a non-"none" header carries parameters a client must
-				// reproduce; "none" and an empty header stay absent so the export
-				// of an ordinary TCP node is unchanged.
-				if headerType, ok := header.String("type"); ok && strings.TrimSpace(headerType) != "" && !strings.EqualFold(strings.TrimSpace(headerType), "none") {
-					ep.TCPHeader = map[string]any{}
-					for key, raw := range header {
-						var value any
-						if err := json.Unmarshal(raw, &value); err == nil {
-							ep.TCPHeader[key] = value
-						}
+		// Xray 26 renamed the TCP transport to RAW: both tcpSettings and
+		// rawSettings are valid carriers, and an admin may legitimately use
+		// either name. Read both so a rawSettings.header is never silently
+		// dropped from the exported client config.
+		for _, key := range []string{"tcpSettings", "rawSettings"} {
+			tcp, ok := stream.Sub(key)
+			if !ok {
+				continue
+			}
+			header, ok := tcp.Sub("header")
+			if !ok {
+				continue
+			}
+			// Only a non-"none" header carries parameters a client must
+			// reproduce; "none" and an empty header stay absent so the export
+			// of an ordinary TCP node is unchanged.
+			if headerType, ok := header.String("type"); ok && strings.TrimSpace(headerType) != "" && !strings.EqualFold(strings.TrimSpace(headerType), "none") {
+				ep.TCPHeader = map[string]any{}
+				for hkey, raw := range header {
+					var value any
+					if err := json.Unmarshal(raw, &value); err == nil {
+						ep.TCPHeader[hkey] = value
 					}
 				}
 			}
