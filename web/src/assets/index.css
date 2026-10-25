@@ -7,6 +7,10 @@
  */
 @import 'tailwindcss';
 @import "tw-animate-css";
+/* vue-sonner 自带定位与动画（position:fixed、bottom/right 偏移、进出场过渡）。
+ * 不引入这份样式时 <ol data-sonner-toaster> 完全没有定位规则，会退化成普通文档流
+ * 元素，落在页面末尾——视觉上就是左下角压住侧边栏、还被视口裁掉。 */
+@import 'vue-sonner/style.css';
 
 /* 深色主题通过 <html class="dark"> 切换。 */
 @custom-variant dark (&:is(.dark *));
