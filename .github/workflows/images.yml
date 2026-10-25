@@ -106,6 +106,7 @@ jobs:
           # 必须包含 deploy/ 目录；只复制需要的脚本，避免把 compose/证书带进镜像。
           mkdir -p image-context/deploy
           cp deploy/deploy-agent.sh image-context/deploy/deploy-agent.sh
+          cp deploy/install.sh image-context/deploy/install.sh
           # 面板镜像在构建阶段构建前端；运行镜像不再包含 nginx。
           mkdir -p image-context/web
           # Copy the whole web tree: vite/tsc resolve files from the project root,
@@ -122,6 +123,7 @@ jobs:
           test -f image-context/web/package-lock.json
           test -f image-context/web/index.html
           test -f image-context/deploy/deploy-agent.sh
+          test -f image-context/deploy/install.sh
           test -x image-context/bin/amd64/agent
           test -x image-context/bin/arm64/agent
 

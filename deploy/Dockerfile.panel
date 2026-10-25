@@ -48,11 +48,12 @@ COPY --chown=65532:65532 bin/${TARGETARCH}/panel /app/panel
 COPY --chown=65532:65532 bin/amd64/agent /app/install/agents/linux-amd64/agent
 COPY --chown=65532:65532 bin/arm64/agent /app/install/agents/linux-arm64/agent
 COPY --chown=65532:65532 deploy/deploy-agent.sh /app/install/deploy-agent.sh
+COPY --chown=65532:65532 deploy/install.sh /app/install/install.sh
 COPY --chown=65532:65532 migrations /app/migrations
 # 前端产物：面板以 65532 身份读取，普通权限即可。
 COPY --from=web --chown=65532:65532 /web/dist /usr/share/proxypanel/web
 
-RUN chmod 0755 /app/panel /app/install/deploy-agent.sh \
+RUN chmod 0755 /app/panel /app/install/deploy-agent.sh /app/install/install.sh \
     /app/install/agents/linux-amd64/agent /app/install/agents/linux-arm64/agent
 
 # 面板在容器里必须监听所有接口，宿主机 nginx 才能通过容器网络连进来。

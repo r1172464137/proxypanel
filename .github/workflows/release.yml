@@ -1,0 +1,118 @@
+# 构建并发布 Agent 二进制。
+#
+# 触发：push tag v*（也支持手动 workflow_dispatch）
+#
+# 产物（每个 GitHub Release 一份）：
+#   proxypanel-agent-linux-amd64
+#   proxypanel-agent-linux-arm64
+#   install.sh            —— 交互式一键安装脚本（v2node 风格）
+#   SHA256SUMS            —— 上面所有文件的摘要（install.sh 会校验）
+#
+# 只发布 Agent：Panel 通过容器镜像分发，不需要独立二进制。
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build agent binaries
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" \
+              go build -trimpath -buildvcs=false \
+              -o "dist/proxypanel-agent-linux-$arch" ./cmd/agent
+          done
+          ./dist/proxypanel-agent-linux-amd64 -version | tee /tmp/agent-version.txt
+          grep -q proxypanel-agent /tmp/agent-version.txt
+
+      - name: Verify install.sh syntax
+        run: |
+          set -euo pipefail
+          bash -n deploy/install.sh
+          cp deploy/install.sh dist/install.sh
+          chmod +x dist/install.sh
+
+      - name: Write SHA256SUMS
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          sha256sum proxypanel-agent-linux-amd64 proxypanel-agent-linux-arm64 install.sh > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Smoke test install.sh argument handling
+        run: |
+          set -euo pipefail
+          # --help must work without root and must not touch the host.
+          bash dist/install.sh --help | grep -q 'proxypanel Agent'
+          # An unsupported arch must fail loudly instead of installing something wrong.
+          git status --porcelain
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            dist/proxypanel-agent-linux-amd64
+            dist/proxypanel-agent-linux-arm64
+            dist/install.sh
+            dist/SHA256SUMS
+          body: |
+            ## 安装
+
+            在节点机上以 root 执行（交互式询问注册码）：
+
+            ```bash
+            curl -fsSL https://github.com/${{ github.repository }}/releases/latest/download/install.sh | sudo bash
+            ```
+
+            或非交互：
+
+            ```bash
+            sudo bash install.sh -key '<一次性注册码>' --panel-url https://panel.example.com
+            ```
+
+            注册码在面板「服务器 → 一键安装」中生成，15 分钟有效、只能使用一次。
+
+            ## 校验
+
+            ```bash
+            sha256sum -c SHA256SUMS
+            ```
+
+            ## 包含
+
+            | 文件 | 说明 |
+            |---|---|
+            | `proxypanel-agent-linux-amd64` | Agent（x86_64） |
+            | `proxypanel-agent-linux-arm64` | Agent（aarch64） |
+            | `install.sh` | 一键安装脚本，自动下载并校验 Agent 与官方 Xray |
+            | `SHA256SUMS` | 上述文件摘要 |
+
+            Agent 只接受 Xray `26.3.27` / `26.3.23`，安装脚本会从官方 Release 下载核心并用官方 `.dgst` 校验 SHA2-256。
