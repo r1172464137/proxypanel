@@ -424,6 +424,22 @@ func GenerateX25519() (privB64 string, pubB64 string, err error) {
 		base64.RawURLEncoding.EncodeToString(priv.PublicKey().Bytes()), nil
 }
 
+// PublicKeyFor derives the X25519 public key that pairs with a REALITY private
+// key. Admins only ever need to supply or generate the private key: the public
+// key is a pure function of it, so requiring them to paste it as well is both
+// redundant and a source of mismatched pairs.
+func PublicKeyFor(privateB64 string) (string, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(privateB64))
+	if err != nil {
+		return "", fmt.Errorf("REALITY private key must be a base64url X25519 key")
+	}
+	key, err := ecdh.X25519().NewPrivateKey(raw)
+	if err != nil {
+		return "", fmt.Errorf("REALITY private key must contain 32 bytes")
+	}
+	return base64.RawURLEncoding.EncodeToString(key.PublicKey().Bytes()), nil
+}
+
 // ClientSetting reads a client setting accepting snake_case (canonical) and
 // camelCase aliases.
 func ClientSetting(o domain.Object, keys ...string) (string, bool) {

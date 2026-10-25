@@ -300,6 +300,24 @@ function errorFor(field: string): string {
 const showFallbacks = computed(() => draft.protocol === 'vless' || draft.protocol === 'trojan')
 const security = computed(() => String(streamState.security || 'none'))
 
+// One-line summary of the effective client parameters. Values are resolved the
+// same way the server does it, so the administrator can see what members will
+// actually receive without opening the advanced editor.
+const clientSummary = computed(() => {
+  const name = clientState.serverName
+    || streamState.realityServerNames.split(',')[0]?.trim()
+    || streamState.tlsServerName
+    || '未设置域名'
+  const shortId = clientState.shortId
+    || streamState.realityShortIds.split(',')[0]?.trim()
+    || '无'
+  const fingerprint = clientState.fingerprint || (security.value === 'reality' ? 'chrome' : '—')
+  const parts = [name, `shortId ${shortId}`, `指纹 ${fingerprint}`]
+  if (clientState.publicKey) parts.push('公钥已设置')
+  else if (security.value === 'reality') parts.push('公钥自动推导')
+  return parts.join(' · ')
+})
+
 function syncDraft(): void {
   if (streamState.realityPublicKey && streamState.realityPublicKey !== streamView(draft.stream_settings).realityPublicKey) {
     clientState.publicKey = streamState.realityPublicKey
@@ -1024,8 +1042,15 @@ const cipherValue = computed({
             <CardTitle class="text-base">客户端参数（client_settings）</CardTitle>
           </CardHeader>
           <CardContent class="space-y-4">
-            <p class="text-sm text-muted-foreground">面向成员客户端的非秘密参数；服务端私钥一律不写入此处。</p>
-            <div class="grid gap-4 sm:grid-cols-2">
+            <p class="text-sm text-muted-foreground">
+              面向成员客户端的非秘密参数；服务端私钥一律不写入此处。
+              <strong class="text-foreground">这些值大多由上面的节点配置自动推导，通常不用改。</strong>
+            </p>
+            <details class="rounded-md border border-border p-3" data-testid="client-settings-advanced">
+              <summary class="cursor-pointer text-sm" data-testid="client-settings-summary">
+                当前生效值：{{ clientSummary }}<span class="text-muted-foreground">（点击展开可覆盖）</span>
+              </summary>
+              <div class="mt-3 grid gap-4 sm:grid-cols-2">
               <div class="space-y-1.5">
                 <Label for="client-sni">域名</Label>
                 <Input
@@ -1036,7 +1061,7 @@ const cipherValue = computed({
                   :class="errorFor('client-sni') ? 'border-destructive focus-visible:ring-destructive' : ''"
                 />
                 <p v-if="errorFor('client-sni')" class="text-xs text-destructive">{{ errorFor('client-sni') }}</p>
-                <p class="text-xs text-muted-foreground">TLS / REALITY 必须填：成员客户端用这个域名握手（REALITY 通常与「允许的域名」一致）。</p>
+                <p class="text-xs text-muted-foreground">留空则使用「允许的域名」或 TLS 证书域名。</p>
               </div>
               <div class="space-y-1.5">
                 <Label for="client-public-key">公钥</Label>
@@ -1044,10 +1069,12 @@ const cipherValue = computed({
                   id="client-public-key"
                   v-model="clientState.publicKey"
                   class="font-mono"
+                  placeholder="留空则自动从私钥推导"
                   :aria-invalid="Boolean(errorFor('client-public-key'))"
                   :class="errorFor('client-public-key') ? 'border-destructive focus-visible:ring-destructive' : ''"
                 />
                 <p v-if="errorFor('client-public-key')" class="text-xs text-destructive">{{ errorFor('client-public-key') }}</p>
+                <p class="text-xs text-muted-foreground">留空时由服务端密钥自动推导，不用手填。</p>
               </div>
               <div class="space-y-1.5">
                 <Label for="client-short-id">短 ID</Label>
@@ -1080,10 +1107,11 @@ const cipherValue = computed({
                   <option value="true">true</option>
                 </select>
               </div>
-            </div>
-            <p v-if="preservedClient.length" class="rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
-              以下 client_settings 键将原样保留：<span class="font-mono">{{ preservedClient.join(', ') }}</span>
-            </p>
+              <p v-if="preservedClient.length" class="rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground sm:col-span-2">
+                  以下 client_settings 键将原样保留：<span class="font-mono">{{ preservedClient.join(', ') }}</span>
+                </p>
+              </div>
+            </details>
           </CardContent>
         </Card>
 
@@ -1097,8 +1125,18 @@ const cipherValue = computed({
             </p>
             <div class="space-y-1.5">
               <Label for="node-server-key">服务端密钥</Label>
-              <Input id="node-server-key" v-model="draft.server_key" class="font-mono" type="password" autocomplete="off" />
-              <p class="text-xs text-muted-foreground">节点级秘密（如 REALITY 私钥或 SS 主密钥）；不写入成员配置，页面与日志脱敏。</p>
+              <Input
+                id="node-server-key"
+                v-model="draft.server_key"
+                class="font-mono"
+                type="password"
+                autocomplete="off"
+                :placeholder="isEdit ? '留空保持现有密钥' : '留空自动生成（REALITY）'"
+              />
+              <p class="text-xs text-muted-foreground">
+                节点级秘密（REALITY 私钥或 SS 主密钥）；不写入成员配置，页面与日志脱敏。
+                新建 REALITY 节点时留空会自动生成一对密钥，公钥不用另填。
+              </p>
             </div>
             <div v-if="isEdit" class="flex items-start gap-2">
               <Checkbox

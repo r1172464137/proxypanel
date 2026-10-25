@@ -12,8 +12,8 @@
 |---|---|---|---|
 | `xray`（默认） | `xray-json` | `application/json` | Xray / v2rayA |
 | `mihomo` | `clash`、`clash-meta`、`meta` | `text/yaml` | Mihomo(Clash.Meta) |
-| `singbox` | `sing-box`、`sing_box` | `application/json` | sing-box |
-| `v2rayn` | `v2ray`、`v2rayng`、`links` | `text/plain` | v2rayN / v2rayNG |
+| `singbox` | `sing-box`、`sing_box` | `application/json` | sing-box（成员界面不展示） |
+| `v2rayn` | `v2ray`、`v2rayng`、`links` | `text/plain` | v2rayN / v2rayNG（成员界面不展示） |
 
 不带 `format` 时按 `User-Agent` 猜；猜不出就用 `xray`。
 实现与归一化逻辑在 `internal/panel/clientconfig/clientconfig.go` 的 `NormalizeFormat`。
@@ -21,6 +21,10 @@
 响应头只有 `Cache-Control: no-store`。**不发** `Subscription-Userinfo`
 或 `Profile-Update-Interval` —— 客户端不会从订阅响应头拿到配额/到期，
 成员要看用量得进面板 `/me/status`。
+
+> 成员导入页只展示 **Mihomo（Clash）** 与 **Xray** 两种格式。`v2rayn` 和 `singbox` 仍由
+> 服务端完整支持，`/sub/{token}?format=` 照常输出，已有链接不会失效 —— 隐藏是界面决定，
+> 不是移除能力。
 
 ## 四种格式的形状差异
 

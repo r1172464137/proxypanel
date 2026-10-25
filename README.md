@@ -263,12 +263,16 @@ proxypanel-agent -config /etc/proxypanel/agent.json -accept-generation <exact-ge
 
 ## 客户端与协议范围
 
-当前订阅输出：
+成员导入页只提供两种格式，覆盖实际在用的客户端形态：
 
-- Xray JSON；
-- sing-box JSON；
-- Mihomo YAML；
-- v2rayN 分享链接。
+- **Mihomo / Clash** YAML（Clash Verge Rev 等）
+- **Xray** 原生 JSON
+
+服务端仍完整支持 `sing-box` 与 `v2rayN` 分享链接，`/sub/{token}?format=` 照常可用 ——
+只是不在成员界面展示，已有链接不受影响。
+
+创建节点时的密钥与客户端参数也尽量自动完成：REALITY 节点留空「服务端密钥」会自动生成一对
+X25519 密钥，公钥无需另填；客户端参数只在需要覆盖默认推导时展开编辑。
 
 已使用固定版本官方核心验证真实配置加载、完整流量和关键拒绝：Xray 26.3.27、sing-box 1.14.3、Mihomo 1.19.33；覆盖 VLESS、VMess、Trojan、Shadowsocks、TLS、REALITY/Vision 及支持的传输组合。某个格式无法表达节点配置时会明确拒绝，不会删字段后假装可用。
 

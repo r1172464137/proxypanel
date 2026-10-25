@@ -37,24 +37,53 @@ func protocolNode(n *domain.Node) protocol.Node {
 // ensureRealityKeys generates a REALITY key pair when the administrator did not
 // supply one; only the public key reaches member output.
 func ensureRealityKeys(n *domain.Node) error {
-	if !strings.EqualFold(n.Protocol, protocol.VLESS) || n.ServerKey != "" {
+	if !strings.EqualFold(n.Protocol, protocol.VLESS) {
 		return nil
 	}
 	security, _ := n.StreamSettings.String("security")
 	if !strings.EqualFold(security, "reality") {
 		return nil
 	}
-	priv, pub, err := protocol.GenerateX25519()
-	if err != nil {
-		return err
+	if n.ServerKey == "" {
+		priv, pub, err := protocol.GenerateX25519()
+		if err != nil {
+			return err
+		}
+		n.ServerKey = priv
+		if _, ok := clientPublicKeyOf(n); !ok {
+			if err := n.ClientSettings.Set("public_key", pub); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
-	n.ServerKey = priv
-	if _, ok := n.ClientSettings.String("public_key"); !ok {
+	// The admin supplied (or imported) a private key but no matching public key.
+	// The pair is a pure function of the private key, so derive it instead of
+	// forcing a second paste that can silently disagree.
+	if _, ok := clientPublicKeyOf(n); !ok {
+		pub, err := protocol.PublicKeyFor(n.ServerKey)
+		if err != nil {
+			return err
+		}
 		if err := n.ClientSettings.Set("public_key", pub); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// clientPublicKeyOf reads the client-side REALITY public key from
+// client_settings, falling back to the legacy realitySettings.publicKey.
+func clientPublicKeyOf(n *domain.Node) (string, bool) {
+	if v, ok := protocol.ClientSetting(n.ClientSettings, "public_key", "publicKey", "password"); ok {
+		return v, true
+	}
+	if rs, ok := n.StreamSettings.Sub("realitySettings"); ok {
+		if v, ok := rs.String("publicKey"); ok && strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v), true
+		}
+	}
+	return "", false
 }
 
 // prepareBinding validates bindability and computes the member cycle.

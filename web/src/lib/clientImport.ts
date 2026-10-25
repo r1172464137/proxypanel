@@ -1,9 +1,16 @@
 import type { MeSubscription, SubscriptionFormat } from '@/api/types'
 
+/**
+ * Clients offered in the member import UI.
+ *
+ * Only Xray and Clash (Mihomo) are surfaced: they cover the two shapes members
+ * actually use (native JSON and Clash YAML), and keeping the list short avoids
+ * offering formats nobody asked for. The server still renders v2rayN and
+ * sing-box for /sub?format=..., so existing links keep working — this list only
+ * controls what the UI advertises.
+ */
 export const MEMBER_CLIENTS: { format: SubscriptionFormat; name: string; instruction: string }[] = [
-  { format: 'v2rayn', name: 'v2rayN · Windows', instruction: '在「订阅分组设置」中添加订阅地址，保存后更新订阅。' },
   { format: 'mihomo', name: 'Clash Verge Rev · Windows / macOS / Linux', instruction: '在「订阅」中粘贴链接并导入，更新后选择该配置。需要支持 Mihomo 的客户端版本。' },
-  { format: 'singbox', name: 'sing-box · 高级配置', instruction: '使用支持远程配置的 sing-box 客户端添加链接，或下载 JSON 后按客户端文档载入。版本兼容性需在客户端核对。' },
   { format: 'xray', name: 'Xray · 高级配置', instruction: '下载原生 JSON，按 Xray 文档载入；不支持直接添加订阅的客户端请勿粘贴该链接。' },
 ]
 
