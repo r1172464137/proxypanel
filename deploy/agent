@@ -1,0 +1,552 @@
+#!/usr/bin/env bash
+# proxypanel Agent 管理脚本（Linux + systemd）。
+#
+# 安装：随 Release 的 install.sh 一起放到 /usr/bin/proxypanel-agent
+#
+#   proxypanel-agent           交互式菜单
+#   proxypanel-agent status    直接执行子命令
+#   proxypanel-agent log -f
+#
+# 设计边界：本脚本只管理本机 Agent 服务与它自己的配置/升级。它不清空状态目录、
+# 不改账本、不代替面板的授权核对流程。换注册码只改配置；彻底重装请先 uninstall
+# 并明确选择是否保留状态。
+set -uo pipefail
+
+readonly MANAGER_VERSION="1.0"
+readonly RELEASE_REPO="r1172464137/proxypanel"
+readonly SERVICE_NAME="proxypanel-agent"
+readonly SERVICE_ACCOUNT="proxypanel-agent"
+readonly CONFIG_DIR="/etc/proxypanel"
+readonly CONFIG_FILE="$CONFIG_DIR/agent.json"
+readonly STATE_DIR="/var/lib/proxypanel-agent"
+readonly XRAY_BASE="/opt/proxypanel/xray"
+readonly AGENT_DIR="/opt/proxypanel/agent"
+readonly AGENT_BIN="$AGENT_DIR/agent"
+readonly UNIT_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+readonly SUPPORTED_XRAY_VERSIONS=("26.3.27" "26.3.23")
+
+if [ -t 1 ]; then
+  C_RESET=$'\033[0m'; C_BOLD=$'\033[1m'; C_DIM=$'\033[2m'
+  C_OK=$'\033[32m'; C_WARN=$'\033[33m'; C_ERR=$'\033[31m'; C_CYAN=$'\033[36m'
+else
+  C_RESET=""; C_BOLD=""; C_DIM=""; C_OK=""; C_WARN=""; C_ERR=""; C_CYAN=""
+fi
+
+info() { printf '%s\n' "$*"; }
+step() { printf '\n%s==>%s %s\n' "$C_BOLD" "$C_RESET" "$*"; }
+ok()   { printf '%s  ok%s %s\n' "$C_OK" "$C_RESET" "$*"; }
+warn() { printf '%s  警告%s %s\n' "$C_WARN" "$C_RESET" "$*" >&2; }
+die()  { printf '%s  错误%s %s\n' "$C_ERR" "$C_RESET" "$*" >&2; exit 1; }
+
+require_root() { [ "$(id -u)" -eq 0 ] || die "需要 root 权限运行（请用 sudo）"; }
+
+detect_arch() {
+  case "$(uname -m)" in
+    x86_64|amd64)  ARCH="amd64" ;;
+    aarch64|arm64) ARCH="arm64" ;;
+    *) die "不支持的架构：$(uname -m)" ;;
+  esac
+}
+
+is_installed() { [ -f "$AGENT_BIN" ] && [ -f "$UNIT_FILE" ]; }
+
+require_installed() {
+  is_installed || die "Agent 未安装。请先运行 install.sh（或本脚本菜单第 1 项）"
+}
+
+ask() {
+  local __var=$1 prompt=$2 default=${3:-} reply=""
+  if [ -n "$default" ]; then
+    read -r -p "$prompt [$default]: " reply || die "输入被中断"
+  else
+    read -r -p "$prompt: " reply || die "输入被中断"
+  fi
+  [ -z "$reply" ] && reply=$default
+  printf -v "$__var" '%s' "$reply"
+}
+
+ask_secret() {
+  local __var=$1 prompt=$2 reply=""
+  read -r -s -p "$prompt: " reply || die "输入被中断"
+  printf '\n'
+  printf -v "$__var" '%s' "$reply"
+}
+
+confirm() {
+  local prompt=$1 reply=""
+  read -r -p "$prompt [y/N]: " reply || die "输入被中断"
+  case "${reply:-n}" in y|Y|yes|YES) return 0 ;; *) return 1 ;; esac
+}
+
+# ---------------------------------------------------------------- 状态查询
+
+unit_state() { systemctl is-active "$SERVICE_NAME" 2>/dev/null || true; }
+unit_enabled() { systemctl is-enabled "$SERVICE_NAME" 2>/dev/null || echo "unknown"; }
+
+agent_version() {
+  [ -x "$AGENT_BIN" ] || { printf '未安装'; return; }
+  "$AGENT_BIN" -version 2>/dev/null | head -n1 || printf '无法读取'
+}
+
+xray_version() {
+  local path
+  path=$(config_value xray_path 2>/dev/null)
+  [ -n "$path" ] || { printf '未知'; return; }
+  [ -x "$path" ] || { printf '缺失'; return; }
+  "$path" version 2>/dev/null | head -n1 | awk '{print $2}' || printf '无法读取'
+}
+
+# config_value reads a flat string field from agent.json without jq.
+config_value() {
+  local key=$1
+  [ -f "$CONFIG_FILE" ] || return 1
+  python3 - "$CONFIG_FILE" "$key" <<'PY' 2>/dev/null
+import json,sys
+try:
+    with open(sys.argv[1]) as f:
+        d=json.load(f)
+except Exception:
+    raise SystemExit(1)
+v=d.get(sys.argv[2])
+if isinstance(v,bool):
+    print("true" if v else "false")
+elif v is None:
+    raise SystemExit(1)
+else:
+    print(v)
+PY
+}
+
+show_status() {
+  printf '\n%s proxypanel-agent 状态 %s\n' "$C_BOLD" "$C_RESET"
+  local st en
+  st=$(unit_state); en=$(unit_enabled)
+  case "$st" in
+    active)   printf '  服务状态   : %s已运行%s\n' "$C_OK" "$C_RESET" ;;
+    inactive) printf '  服务状态   : %s已停止%s\n' "$C_WARN" "$C_RESET" ;;
+    failed)   printf '  服务状态   : %s失败%s\n' "$C_ERR" "$C_RESET" ;;
+    *)        printf '  服务状态   : %s未安装/未知%s\n' "$C_ERR" "$C_RESET" ;;
+  esac
+  if [ "$en" = "enabled" ]; then
+    printf '  开机自启   : %s是%s\n' "$C_OK" "$C_RESET"
+  else
+    printf '  开机自启   : %s否%s\n' "$C_WARN" "$C_RESET"
+  fi
+  if is_installed; then
+    printf '  Agent 版本 : %s\n' "$(agent_version)"
+    printf '  Xray 版本  : %s\n' "$(xray_version)"
+    printf '  面板地址   : %s\n' "$(config_value panel_url || echo '未配置')"
+    local code
+    code=$(config_value registration_code || true)
+    if [ -n "$code" ]; then
+      printf '  注册码     : %s已写入（首次注册后可删除）%s\n' "$C_WARN" "$C_RESET"
+    else
+      printf '  注册码     : 无（已注册或未配置）\n'
+    fi
+    printf '  状态目录   : %s\n' "$STATE_DIR"
+  fi
+}
+
+# ---------------------------------------------------------------- 生命周期
+
+do_start() {
+  require_installed
+  local st
+  st=$(unit_state)
+  if [ "$st" = "active" ]; then
+    ok "已在运行，无需启动（如需重启用 restart）"
+    return 0
+  fi
+  systemctl start "$SERVICE_NAME" || die "启动失败，请查看：journalctl -u $SERVICE_NAME -n 100"
+  sleep 2
+  [ "$(unit_state)" = "active" ] && ok "启动成功" || die "启动后未进入 active，请查看日志"
+}
+
+do_stop() {
+  require_installed
+  systemctl stop "$SERVICE_NAME" || die "停止失败"
+  ok "已停止"
+}
+
+do_restart() {
+  require_installed
+  systemctl restart "$SERVICE_NAME" || die "重启失败，请查看：journalctl -u $SERVICE_NAME -n 100"
+  sleep 2
+  [ "$(unit_state)" = "active" ] && ok "重启成功" || die "重启后未进入 active，请查看日志"
+}
+
+do_enable() {
+  require_installed
+  systemctl enable "$SERVICE_NAME" >/dev/null 2>&1 || die "设置开机自启失败"
+  ok "已设置开机自启"
+}
+
+do_disable() {
+  require_installed
+  systemctl disable "$SERVICE_NAME" >/dev/null 2>&1 || die "取消开机自启失败"
+  ok "已取消开机自启"
+}
+
+do_log() {
+  require_installed
+  if [ "${1:-}" = "-f" ] || [ "${1:-}" = "--follow" ]; then
+    journalctl -u "$SERVICE_NAME" -f
+  else
+    journalctl -u "$SERVICE_NAME" -n "${1:-100}" --no-pager
+  fi
+}
+
+do_version() {
+  printf 'proxypanel-agent 管理脚本 v%s\n' "$MANAGER_VERSION"
+  printf 'Agent: %s\n' "$(agent_version)"
+  printf 'Xray : %s\n' "$(xray_version)"
+}
+
+# ---------------------------------------------------------------- 配置修改
+
+write_config_fields() {
+  local panel_url=$1 code=$2 xray_version=$3
+  local xray_path="$XRAY_BASE/$xray_version/xray"
+  [ -x "$xray_path" ] || die "Xray $xray_version 未安装（$xray_path 不存在）。请先安装该版本。"
+  umask 077
+  cat > "$CONFIG_FILE" <<EOF
+{
+  "panel_url": "${panel_url}",
+  "registration_code": "${code}",
+  "xray_path": "${xray_path}",
+  "state_dir": "${STATE_DIR}",
+  "poll_interval_seconds": 5,
+  "stats_interval_seconds": 5,
+  "heartbeat_interval_seconds": 15,
+  "allow_loopback_http": false
+}
+EOF
+  chown root:"$SERVICE_ACCOUNT" "$CONFIG_FILE"
+  chmod 0640 "$CONFIG_FILE"
+}
+
+do_config() {
+  require_installed
+  step "修改 Agent 配置"
+  info "当前值（直接回车保持不变）："
+  local cur_url cur_xray panel_url xray_version code
+  cur_url=$(config_value panel_url || echo "")
+  cur_xray=$(config_value xray_path || echo "")
+  cur_xray=$(basename "$(dirname "$cur_xray")" 2>/dev/null || echo "")
+
+  ask panel_url "面板地址" "$cur_url"
+  case "$panel_url" in
+    https://*) ;;
+    http://127.0.0.1*|http://localhost*) warn "允许回环 http，仅用于本机调试" ;;
+    http://*) die "面板地址必须是 https://" ;;
+    *) die "面板地址必须以 https:// 开头" ;;
+  esac
+  panel_url=${panel_url%/}
+
+  ask xray_version "Xray 版本（${SUPPORTED_XRAY_VERSIONS[*]}）" "${cur_xray:-${SUPPORTED_XRAY_VERSIONS[0]}}"
+  local supported=""
+  for v in "${SUPPORTED_XRAY_VERSIONS[@]}"; do [ "$v" = "$xray_version" ] && supported="yes"; done
+  [ -n "$supported" ] || die "不支持的 Xray 版本：$xray_version"
+
+  info ""
+  info "注册码只在需要重新注册时填写（面板「服务器 → 一键安装」生成，15 分钟有效）。"
+  info "留空表示保持已注册状态不变。"
+  ask_secret code "新的注册码（可留空）"
+
+  if [ -z "$code" ]; then
+    local existing
+    existing=$(config_value registration_code || echo "")
+    code="$existing"
+  fi
+
+  warn "改配置不会清空 $STATE_DIR（Agent 身份、计量基线、未上传队列都保留）。"
+  confirm "确认写入新配置？" || { info "已取消"; return 0; }
+
+  write_config_fields "$panel_url" "$code" "$xray_version"
+  ok "配置已写入 $CONFIG_FILE"
+
+  if [ "$(unit_state)" = "active" ]; then
+    info "重启服务以应用配置…"
+    do_restart
+  else
+    info "服务当前未运行；配置已保存，启动时生效"
+  fi
+}
+
+# ---------------------------------------------------------------- 升级
+
+do_update() {
+  require_installed
+  step "更新 Agent 到最新 Release"
+  local target=${1:-latest}
+  local base
+  if [ "$target" = "latest" ]; then
+    base="https://github.com/${RELEASE_REPO}/releases/latest/download"
+  else
+    base="https://github.com/${RELEASE_REPO}/releases/download/${target}"
+  fi
+  detect_arch
+  local asset="proxypanel-agent-linux-${ARCH}"
+  local tmp
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' RETURN
+
+  info "下载 $asset（$target）…"
+  curl -fsSL --retry 3 --connect-timeout 20 -o "$tmp/$asset" "$base/$asset" \
+    || die "下载失败：$base/$asset"
+  curl -fsSL --retry 3 --connect-timeout 20 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" \
+    || die "下载 SHA256SUMS 失败"
+
+  local expected actual
+  expected=$(awk -v f="$asset" '$2 == f || $2 == "./"f {print $1}' "$tmp/SHA256SUMS" | head -n1 | tr 'A-F' 'a-f')
+  [ -n "$expected" ] || die "SHA256SUMS 中没有 $asset 条目，拒绝更新"
+  actual=$(sha256sum "$tmp/$asset" | awk '{print $1}')
+  [ "$expected" = "$actual" ] || die "SHA256 不匹配（发布 $expected，实际 $actual）"
+  ok "摘要校验通过"
+
+  local new_version
+  new_version=$("$tmp/$asset" -version 2>&1 | head -n1)
+  case "$new_version" in
+    *proxypanel-agent*) ;;
+    *) die "下载的文件不是 Agent 构建（-version 输出：$new_version）" ;;
+  esac
+
+  local old_version
+  old_version=$(agent_version)
+  info "当前：$old_version"
+  info "目标：$new_version"
+
+  # Stop before replacing the binary so no process runs from a replaced inode.
+  local was_active=""
+  [ "$(unit_state)" = "active" ] && was_active="yes"
+  [ -n "$was_active" ] && systemctl stop "$SERVICE_NAME"
+
+  install -m 0755 "$tmp/$asset" "$AGENT_BIN"
+  ok "二进制已替换"
+
+  if [ -n "$was_active" ]; then
+    do_start
+  else
+    info "服务原本未运行，保持停止状态"
+  fi
+  ok "更新完成"
+}
+
+do_uninstall() {
+  require_installed
+  step "卸载 proxypanel-agent"
+  warn "这会移除服务单元和二进制，默认保留配置与状态目录。"
+  confirm "确认卸载？" || { info "已取消"; return 0; }
+
+  systemctl stop "$SERVICE_NAME" >/dev/null 2>&1 || true
+  systemctl disable "$SERVICE_NAME" >/dev/null 2>&1 || true
+  rm -f "$UNIT_FILE"
+  systemctl daemon-reload
+  rm -f "$AGENT_BIN"
+  rmdir "$AGENT_DIR" 2>/dev/null || true
+  ok "服务单元与二进制已移除"
+
+  info "保留：$CONFIG_FILE"
+  info "保留：$STATE_DIR（Agent 身份、计量基线、未上传用量队列）"
+  info ""
+  warn "删除状态目录会丢失未上传用量，且需要重新注册。"
+  if confirm "是否同时删除状态目录？（强烈建议先备份）"; then
+    warn "最后确认：将永久删除 $STATE_DIR"
+    if confirm "确定删除？"; then
+      rm -rf "$STATE_DIR"
+      ok "状态目录已删除"
+    else
+      info "已保留状态目录"
+    fi
+  else
+    info "已保留状态目录"
+  fi
+  if confirm "是否同时删除配置文件和已安装的 Xray？"; then
+    rm -f "$CONFIG_FILE"
+    warn "Xray 目录保留在 $XRAY_BASE（可能被其他工具使用），未自动删除"
+    ok "配置文件已删除"
+  fi
+}
+
+# ---------------------------------------------------------------- 维护（项目特有）
+
+do_accept_generation() {
+  require_installed
+  step "接受新的 control generation"
+  info "数据库恢复或代际轮换后，Agent 不会自动采纳新的 generation。"
+  info "先停 Agent、核对授权与账本，再在此输入面板显示的准确 generation。"
+  info ""
+  local generation
+  ask generation "control generation（面板显示的确切值）"
+  [ -n "$generation" ] || die "generation 不能为空"
+
+  if [ "$(unit_state)" = "active" ]; then
+    info "需要先停止 Agent…"
+    systemctl stop "$SERVICE_NAME" || die "停止失败"
+  fi
+  "$AGENT_BIN" -config "$CONFIG_FILE" -accept-generation "$generation" \
+    || die "接受 generation 失败（检查数值是否与面板一致）"
+  ok "已记录接受的 generation"
+  do_start
+}
+
+do_inspect_state() {
+  require_installed
+  step "导出停止状态证据（升级材料）"
+  info "该操作只读，不启动 Agent、不访问面板、不修改输入目录。"
+  info "输入必须是'已一致停止并完成 checkpoint'的状态备份目录。"
+  info ""
+  local dir
+  ask dir "状态备份目录路径"
+  [ -n "$dir" ] || die "路径不能为空"
+  [ -d "$dir" ] || die "目录不存在：$dir"
+  info ""
+  "$AGENT_BIN" -inspect-state "$dir" || die "导出失败（可能含未合并 WAL 或结构不受支持）"
+}
+
+# ---------------------------------------------------------------- 菜单
+
+show_menu() {
+  printf '\n%s proxypanel-agent 管理脚本 %s%s (v%s)\n' "$C_BOLD" "$C_RESET" "$C_DIM" "$MANAGER_VERSION"
+  printf '%s https://github.com/%s %s\n' "$C_DIM" "$RELEASE_REPO" "$C_RESET"
+  printf '\n'
+  is_installed && printf '  %s0.%s  修改配置\n' "$C_CYAN" "$C_RESET" || printf '  %s0.%s  修改配置（需先安装）\n' "$C_DIM" "$C_RESET"
+  printf '  ————————————————\n'
+  printf '  %s1.%s  安装 / 重新安装\n' "$C_CYAN" "$C_RESET"
+  printf '  %s2.%s  更新到最新版\n' "$C_CYAN" "$C_RESET"
+  printf '  %s3.%s  卸载\n' "$C_CYAN" "$C_RESET"
+  printf '  ————————————————\n'
+  printf '  %s4.%s  启动      %s5.%s  停止      %s6.%s  重启\n' "$C_CYAN" "$C_RESET" "$C_CYAN" "$C_RESET" "$C_CYAN" "$C_RESET"
+  printf '  %s7.%s  状态      %s8.%s  日志\n' "$C_CYAN" "$C_RESET" "$C_CYAN" "$C_RESET"
+  printf '  ————————————————\n'
+  printf '  %s9.%s  设置开机自启    %s10.%s 取消开机自启\n' "$C_CYAN" "$C_RESET" "$C_CYAN" "$C_RESET"
+  printf '  %s11.%s 查看版本        %s12.%s 升级本管理脚本\n' "$C_CYAN" "$C_RESET" "$C_CYAN" "$C_RESET"
+  printf '  ————————————————\n'
+  printf '  %s13.%s 接受新 control generation（恢复核对后）\n' "$C_CYAN" "$C_RESET"
+  printf '  %s14.%s 导出停止状态证据（升级材料）\n' "$C_CYAN" "$C_RESET"
+  printf '  ————————————————\n'
+  printf '  %s15.%s 退出\n' "$C_CYAN" "$C_RESET"
+  printf '\n'
+  show_status
+  printf '\n'
+  local num
+  read -r -p "请输入选择 [0-15]: " num
+  case "$num" in
+    0)  is_installed && do_config || die "请先安装" ;;
+    1)  do_install ;;
+    2)  do_update ;;
+    3)  do_uninstall ;;
+    4)  do_start ;;
+    5)  do_stop ;;
+    6)  do_restart ;;
+    7)  show_status ;;
+    8)  do_log ;;
+    9)  do_enable ;;
+    10) do_disable ;;
+    11) do_version ;;
+    12) do_update_shell ;;
+    13) do_accept_generation ;;
+    14) do_inspect_state ;;
+    15) exit 0 ;;
+    *)  warn "请输入 0-15 之间的数字" ;;
+  esac
+}
+
+do_install() {
+  step "安装 / 重新安装"
+  if is_installed; then
+    warn "已检测到安装。重新安装会保留配置与状态目录。"
+    confirm "继续？" || { info "已取消"; return 0; }
+  fi
+  local tmp
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' RETURN
+  info "下载 install.sh…"
+  curl -fsSL --retry 3 --connect-timeout 20 \
+    -o "$tmp/install.sh" "https://github.com/${RELEASE_REPO}/releases/latest/download/install.sh" \
+    || die "下载 install.sh 失败（检查本机能否访问 GitHub）"
+  info "运行安装脚本…"
+  bash "$tmp/install.sh" || die "安装失败"
+}
+
+do_update_shell() {
+  step "升级管理脚本"
+  local target="/usr/bin/proxypanel-agent"
+  [ -f "$target" ] || die "未找到 $target，本脚本未按发布方式安装"
+  local tmp
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' RETURN
+  curl -fsSL --retry 3 --connect-timeout 20 \
+    -o "$tmp/agent" "https://raw.githubusercontent.com/${RELEASE_REPO}/main/deploy/agent" \
+    || die "下载失败（检查本机能否访问 GitHub）"
+  bash -n "$tmp/agent" || die "下载的脚本语法错误，未替换"
+  install -m 0755 "$tmp/agent" "$target"
+  ok "已升级到 $target，请重新运行"
+  exit 0
+}
+
+show_usage() {
+  cat <<EOF
+proxypanel Agent 管理脚本 v${MANAGER_VERSION}
+
+用法：
+  proxypanel-agent               交互式菜单
+  proxypanel-agent <命令> [参数]
+
+命令：
+  install            安装 / 重新安装
+  update [TAG]       更新到最新版或指定版本
+  uninstall          卸载
+  start|stop|restart 服务控制
+  status             查看状态
+  log [N|-f]         查看日志（默认 100 行，-f 跟踪）
+  enable|disable     设置/取消开机自启
+  config             修改配置
+  version            查看版本
+  accept-generation G   接受新的 control generation
+  inspect-state DIR  导出停止状态证据
+  update-shell       升级本管理脚本
+  help               显示本帮助
+EOF
+}
+
+main() {
+  # Help must work without root (CI smoke test, docs, and a first look).
+  case "${1:-}" in
+    help|-h|--help) show_usage; return 0 ;;
+  esac
+  # An unknown subcommand is a usage error, not a privilege problem: report it
+  # before the root gate so a typo is not misreported as "needs sudo".
+  if [ $# -gt 0 ]; then
+    case "$1" in
+      install|update|uninstall|start|stop|restart|status|log|enable|disable|config|version|accept-generation|inspect-state|update-shell) ;;
+      *) show_usage; exit 2 ;;
+    esac
+  fi
+  require_root
+  if [ $# -eq 0 ]; then
+    show_menu
+    return 0
+  fi
+  case "$1" in
+    install)            do_install ;;
+    update)             do_update "${2:-latest}" ;;
+    uninstall)          do_uninstall ;;
+    start)              do_start ;;
+    stop)               do_stop ;;
+    restart)            do_restart ;;
+    status)             show_status ;;
+    log)                do_log "${2:-100}" ;;
+    enable)             do_enable ;;
+    disable)            do_disable ;;
+    config)             do_config ;;
+    version)            do_version ;;
+    accept-generation)  do_accept_generation ;;
+    inspect-state)      do_inspect_state ;;
+    update-shell)       do_update_shell ;;
+    help|-h|--help)     show_usage ;;
+    *)                  show_usage; exit 2 ;;
+  esac
+}
+
+main "$@"

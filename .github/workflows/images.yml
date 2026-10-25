@@ -107,6 +107,7 @@ jobs:
           mkdir -p image-context/deploy
           cp deploy/deploy-agent.sh image-context/deploy/deploy-agent.sh
           cp deploy/install.sh image-context/deploy/install.sh
+          cp deploy/agent image-context/deploy/agent
           # 面板镜像在构建阶段构建前端；运行镜像不再包含 nginx。
           mkdir -p image-context/web
           # Copy the whole web tree: vite/tsc resolve files from the project root,
@@ -124,6 +125,7 @@ jobs:
           test -f image-context/web/index.html
           test -f image-context/deploy/deploy-agent.sh
           test -f image-context/deploy/install.sh
+          test -x image-context/deploy/agent
           test -x image-context/bin/amd64/agent
           test -x image-context/bin/arm64/agent
 

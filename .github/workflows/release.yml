@@ -53,13 +53,15 @@ jobs:
           set -euo pipefail
           bash -n deploy/install.sh
           cp deploy/install.sh dist/install.sh
-          chmod +x dist/install.sh
+          cp deploy/agent dist/proxypanel-agent
+          chmod +x dist/install.sh dist/proxypanel-agent
+          bash -n dist/proxypanel-agent
 
       - name: Write SHA256SUMS
         working-directory: dist
         run: |
           set -euo pipefail
-          sha256sum proxypanel-agent-linux-amd64 proxypanel-agent-linux-arm64 install.sh > SHA256SUMS
+          sha256sum proxypanel-agent-linux-amd64 proxypanel-agent-linux-arm64 install.sh proxypanel-agent > SHA256SUMS
           cat SHA256SUMS
 
       - name: Smoke test install.sh argument handling
@@ -67,6 +69,7 @@ jobs:
           set -euo pipefail
           # --help must work without root and must not touch the host.
           bash dist/install.sh --help | grep -q 'proxypanel Agent'
+          bash dist/proxypanel-agent --help | grep -q '管理脚本'
           # An unsupported arch must fail loudly instead of installing something wrong.
           git status --porcelain
 
@@ -82,6 +85,7 @@ jobs:
             dist/proxypanel-agent-linux-amd64
             dist/proxypanel-agent-linux-arm64
             dist/install.sh
+            dist/proxypanel-agent
             dist/SHA256SUMS
           body: |
             ## 安装
@@ -113,6 +117,17 @@ jobs:
             | `proxypanel-agent-linux-amd64` | Agent（x86_64） |
             | `proxypanel-agent-linux-arm64` | Agent（aarch64） |
             | `install.sh` | 一键安装脚本，自动下载并校验 Agent 与官方 Xray |
+            | `proxypanel-agent` | 管理脚本：status/log/update/config/卸载/恢复核对 |
             | `SHA256SUMS` | 上述文件摘要 |
 
             Agent 只接受 Xray `26.3.27` / `26.3.23`，安装脚本会从官方 Release 下载核心并用官方 `.dgst` 校验 SHA2-256。
+
+            安装后可用管理脚本：
+
+            ```bash
+            proxypanel-agent            # 交互式菜单
+            proxypanel-agent status
+            proxypanel-agent log -f
+            proxypanel-agent update
+            proxypanel-agent config
+            ```

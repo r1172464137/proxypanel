@@ -28,6 +28,8 @@ readonly AGENT_BIN="$AGENT_DIR/agent"
 readonly UNIT_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 readonly CA_FILE="/usr/local/share/ca-certificates/proxypanel-panel.crt"
 readonly SUPPORTED_XRAY_VERSIONS=("26.3.27" "26.3.23")
+readonly MANAGER_BIN="/usr/bin/proxypanel-agent"
+readonly RELEASE_REPO="r1172464137/proxypanel"
 
 ARG_PANEL_URL="${PANEL_URL:-}"
 ARG_REGISTRATION_CODE="${REGISTRATION_CODE:-}"
@@ -321,6 +323,34 @@ install_agent_binary() {
     *proxypanel-agent*) ok "Agent 版本：$reported" ;;
     *) die "该文件不是预期的 Agent 构建（-version 输出：$reported）" ;;
   esac
+
+  install_manager
+}
+
+# install_manager ships the管理脚本 next to the service so the operator can use
+# `proxypanel-agent status|log|update|config` instead of raw systemctl.
+install_manager() {
+  local asset="proxypanel-agent"
+  if [ -f "$WORK_DIR/$asset" ]; then
+    bash -n "$WORK_DIR/$asset" || die "发布的管理脚本语法错误，拒绝安装"
+    install -m 0755 "$WORK_DIR/$asset" "$MANAGER_BIN"
+    ok "管理脚本已安装：$MANAGER_BIN"
+    return 0
+  fi
+  # Older releases did not ship it; fetch from the same release if available.
+  local base
+  if [ "$VERSION" = "latest" ]; then
+    base="https://github.com/${RELEASE_REPO}/releases/latest/download"
+  else
+    base="https://github.com/${RELEASE_REPO}/releases/download/${VERSION}"
+  fi
+  if curl -fsSL --retry 2 --connect-timeout 15 -o "$WORK_DIR/$asset" "$base/$asset" 2>/dev/null; then
+    bash -n "$WORK_DIR/$asset" || die "下载的管理脚本语法错误，拒绝安装"
+    install -m 0755 "$WORK_DIR/$asset" "$MANAGER_BIN"
+    ok "管理脚本已安装：$MANAGER_BIN"
+  else
+    warn "本次发布未包含管理脚本，只安装了服务（可用 systemctl 管理）"
+  fi
 }
 
 prepare_state() {
@@ -505,6 +535,12 @@ report() {
   info "  3. 用真实客户端连一次流量，才算真正可用"
   info ""
   info "常用命令："
+  if [ -x "$MANAGER_BIN" ]; then
+    info "  proxypanel-agent            # 交互式管理菜单"
+    info "  proxypanel-agent status"
+    info "  proxypanel-agent log -f"
+    info "  proxypanel-agent update"
+  fi
   info "  systemctl status $SERVICE_NAME"
   info "  journalctl -u $SERVICE_NAME -f"
   info "  systemctl restart $SERVICE_NAME"
