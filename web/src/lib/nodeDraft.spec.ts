@@ -84,12 +84,34 @@ describe('nodeDraft 结构化视图', () => {
     const base = vlessNode().stream_settings
     const changed = applyStreamView(base, { ...streamView(base), network: 'ws' })
     expect(changed.network).toBe('ws')
-    expect(changed.realitySettings).toEqual(base.realitySettings)
+    // The server-side REALITY block is preserved. The legacy nested
+    // realitySettings.settings layer is dropped on save: Xray's RealityObject
+    // has no such field, and the client values live in client_settings.
+    const { settings: legacy, ...realityWithoutLegacy } = base.realitySettings as Record<string, unknown>
+    expect(legacy).toBeDefined()
+    expect(changed.realitySettings).toEqual(realityWithoutLegacy)
     expect(changed.sockopt).toEqual({ tcpFastOpen: true, mark: 255 })
 
     const cleared = removeSecurityBlock(changed, 'reality')
     expect(cleared.realitySettings).toBeUndefined()
     expect(cleared.sockopt).toEqual({ tcpFastOpen: true, mark: 255 })
+  })
+
+  it('保存时清除旧版 realitySettings.settings，并支持 PROXY protocol 与 header', () => {
+    const base = vlessNode().stream_settings
+    const legacy = applyStreamView(base, streamView(base))
+    expect((legacy.realitySettings as Record<string, unknown>).settings).toBeUndefined()
+
+    const view = streamView(base)
+    const enabled = applyStreamView(base, { ...view, acceptProxyProtocol: true, tcpHeaderType: 'http' })
+    expect((enabled.sockopt as Record<string, unknown>).acceptProxyProtocol).toBe(true)
+    // Existing sockopt keys survive.
+    expect((enabled.sockopt as Record<string, unknown>).mark).toBe(255)
+    expect((enabled.tcpSettings as Record<string, Record<string, unknown>>).header.type).toBe('http')
+
+    const disabled = applyStreamView(enabled, { ...streamView(enabled), acceptProxyProtocol: false })
+    expect((disabled.sockopt as Record<string, unknown>).acceptProxyProtocol).toBeUndefined()
+    expect((disabled.sockopt as Record<string, unknown>).mark).toBe(255)
   })
 
   it('applyProtocolView 保留 fallbacks 与未知字段', () => {

@@ -129,6 +129,10 @@ export interface StreamView {
   realityPublicKey: string
   realityFingerprint: string
   realitySpiderX: string
+  /** sockopt.acceptProxyProtocol — inbound only, requires a PROXY-emitting proxy. */
+  acceptProxyProtocol: boolean
+  /** tcpSettings/rawSettings header type: "none" or "http". */
+  tcpHeaderType: string
 }
 
 export function streamView(stream: JsonObject): StreamView {
@@ -145,9 +149,23 @@ export function streamView(stream: JsonObject): StreamView {
     realityServerNames: joinList(getPath(stream, 'realitySettings.serverNames')),
     realityPrivateKey: String(getPath(stream, 'realitySettings.privateKey') ?? ''),
     realityShortIds: joinList(getPath(stream, 'realitySettings.shortIds')),
-    realityPublicKey: String(getPath(stream, 'realitySettings.settings.publicKey') ?? ''),
-    realityFingerprint: String(getPath(stream, 'realitySettings.settings.fingerprint') ?? ''),
-    realitySpiderX: String(getPath(stream, 'realitySettings.settings.spiderX') ?? ''),
+    // Historical rows stored these client-side values in a nested
+    // realitySettings.settings object that Xray's RealityObject does not have.
+    // Read the legacy location only so an old node still displays its values;
+    // applyStreamView never writes it back.
+    realityPublicKey: String(
+      getPath(stream, 'realitySettings.settings.publicKey') ?? getPath(stream, 'realitySettings.publicKey') ?? '',
+    ),
+    realityFingerprint: String(
+      getPath(stream, 'realitySettings.settings.fingerprint') ?? getPath(stream, 'realitySettings.fingerprint') ?? '',
+    ),
+    realitySpiderX: String(
+      getPath(stream, 'realitySettings.settings.spiderX') ?? getPath(stream, 'realitySettings.spiderX') ?? '',
+    ),
+    acceptProxyProtocol: getPath(stream, 'sockopt.acceptProxyProtocol') === true,
+    tcpHeaderType: String(
+      getPath(stream, 'tcpSettings.header.type') ?? getPath(stream, 'rawSettings.header.type') ?? 'none',
+    ),
   }
 }
 
@@ -157,7 +175,10 @@ export function streamView(stream: JsonObject): StreamView {
  */
 export function applyStreamView(stream: JsonObject, view: StreamView): JsonObject {
   const before = streamView(stream)
-  if (JSON.stringify(before) === JSON.stringify(view)) return cloneJson(stream)
+  // The legacy nested block must be repaired even when the visible fields did
+  // not change, so this cannot short-circuit before the cleanup below.
+  const needsLegacyCleanup = getPath(stream, 'realitySettings.settings') !== undefined
+  if (!needsLegacyCleanup && JSON.stringify(before) === JSON.stringify(view)) return cloneJson(stream)
   let next = cloneJson(stream)
   const update = (field: keyof StreamView, path: string, value: unknown) => {
     if (view[field] !== before[field]) next = setOrDelete(next, path, value)
@@ -185,9 +206,38 @@ export function applyStreamView(stream: JsonObject, view: StreamView): JsonObjec
     update('realityServerNames', 'realitySettings.serverNames', view.realityServerNames ? splitList(view.realityServerNames) : undefined)
     update('realityPrivateKey', 'realitySettings.privateKey', view.realityPrivateKey)
     update('realityShortIds', 'realitySettings.shortIds', splitShortIds(view.realityShortIds))
-    update('realityPublicKey', 'realitySettings.settings.publicKey', view.realityPublicKey)
-    update('realityFingerprint', 'realitySettings.settings.fingerprint', view.realityFingerprint)
-    update('realitySpiderX', 'realitySettings.settings.spiderX', view.realitySpiderX)
+    // These are client-side REALITY parameters: they belong to
+    // client_settings (public_key / fingerprint / spiderX), not to the server
+    // realitySettings object. Older panel versions wrote a nested
+    // realitySettings.settings block that Xray's RealityObject does not define,
+    // so drop it unconditionally on every save rather than only when one of the
+    // three fields happens to change.
+    if (getPath(next, 'realitySettings.settings') !== undefined) {
+      next = setPath(next, 'realitySettings.settings', undefined)
+    }
+  }
+
+  // Transport-level extras that apply to any security type. Xray 26 renamed the
+  // TCP transport to RAW, so keep whichever key name the node already stores
+  // instead of silently migrating an admin's configuration.
+  if (view.security === 'reality' || view.security === 'tls' || view.network === 'tcp' || view.network === 'raw') {
+    if (view.tcpHeaderType !== before.tcpHeaderType) {
+      const headerKey = getPath(next, 'rawSettings') !== undefined ? 'rawSettings' : 'tcpSettings'
+      next = setOrDelete(next, headerKey + '.header.type', view.tcpHeaderType === 'none' ? undefined : view.tcpHeaderType)
+      // "none" is the default; keep an explicit empty header object rather than
+      // dropping the whole transport block.
+      if (view.tcpHeaderType === 'none' && getPath(next, headerKey + '.header') === undefined) {
+        next = setPath(next, headerKey + '.header.type', 'none')
+      }
+    }
+    if (view.acceptProxyProtocol !== before.acceptProxyProtocol) {
+      if (view.acceptProxyProtocol) next = setPath(next, 'sockopt.acceptProxyProtocol', true)
+      else next = setPath(next, 'sockopt.acceptProxyProtocol', undefined)
+      const sockopt = getPath(next, 'sockopt')
+      if (isRecord(sockopt) && Object.keys(sockopt).length === 0) {
+        next = setPath(next, 'sockopt', undefined)
+      }
+    }
   }
   return next
 }

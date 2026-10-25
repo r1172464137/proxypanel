@@ -847,6 +847,33 @@ const cipherValue = computed({
                 </select>
                 <p v-if="errorFor('stream-security')" class="text-xs text-destructive">{{ errorFor('stream-security') }}</p>
               </div>
+              <div class="space-y-1.5">
+                <Label for="stream-proxy-protocol">PROXY protocol</Label>
+                <label class="flex min-h-10 items-center gap-2 text-sm">
+                  <Checkbox
+                    id="stream-proxy-protocol"
+                    :model-value="streamState.acceptProxyProtocol"
+                    @update:model-value="(value) => (streamState.acceptProxyProtocol = value === true)"
+                  />
+                  <span>接收前置代理发来的 PROXY protocol</span>
+                </label>
+                <p class="text-xs text-muted-foreground">
+                  仅当前置 nginx/HAProxy 用 <code>proxy_protocol on</code> 转发时开启。
+                  开启后若对端不发送该头，连接会被立即关闭。未开启时请保持不勾选。
+                </p>
+                <Label for="stream-tcp-header" class="pt-2">TCP 伪装头</Label>
+                <select
+                  id="stream-tcp-header"
+                  v-model="streamState.tcpHeaderType"
+                  class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="none">none（不伪装）</option>
+                  <option value="http">http（HTTP 伪装，客户端须一致）</option>
+                </select>
+                <p class="text-xs text-muted-foreground">
+                  Xray 26 把 TCP 传输改名为 RAW；这里会沿用节点已有的 tcpSettings/rawSettings 键名，不会擅自迁移。
+                </p>
+              </div>
             </div>
 
             <template v-if="streamState.security === 'tls'">
