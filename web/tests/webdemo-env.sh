@@ -200,7 +200,10 @@ log "fixture ready: $(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]))
 status=0
 # Hard wall clock for the browser runner. The Node runner also enforces its own
 # deadline (default 6 min); this outer bound is the last-resort lock guard.
-timeout --kill-after=30 "$NODE_HARD_TIMEOUT" node "$ROOT/web/tests/product-readiness-e2e.mjs" || status=$?
+# WEBDEMO_RUNNER lets a focused scenario reuse this exact fixture (own PG,
+# schema, real Agent and official core) without editing the shared runner.
+RUNNER=${WEBDEMO_RUNNER:-$ROOT/web/tests/product-readiness-e2e.mjs}
+timeout --kill-after=30 "$NODE_HARD_TIMEOUT" node "$RUNNER" || status=$?
 echo "browser_exit=$status" >> "$PRIVATE/manifest.txt"
 echo "node_deadline_ms=$NODE_DEADLINE_MS" >> "$PRIVATE/manifest.txt"
 echo "shell_timeout_s=$NODE_HARD_TIMEOUT" >> "$PRIVATE/manifest.txt"
