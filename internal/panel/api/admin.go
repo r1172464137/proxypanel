@@ -229,6 +229,9 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 		StreamSettings   domain.Object `json:"stream_settings"`
 		ProtocolSettings domain.Object `json:"protocol_settings"`
 		ClientSettings   domain.Object `json:"client_settings"`
+		Sniffing         domain.Object `json:"sniffing"`
+		Allocate         domain.Object `json:"allocate"`
+		ExternalProxy    []any         `json:"external_proxy"`
 		SortOrder        int           `json:"sort_order"`
 	}
 	if err := decodeJSON(r, &in); err != nil {
@@ -255,10 +258,16 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, fieldErrors(issues))
 		return
 	}
+	sniffing, allocate, externalProxy, inboundIssues := protocol.SanitizeInbound(in.Sniffing, in.Allocate, in.ExternalProxy)
+	if len(inboundIssues) > 0 {
+		s.writeError(w, r, fieldErrors(inboundIssues))
+		return
+	}
 	node := &domain.Node{ID: newID(ids.Node), ServerID: in.ServerID, Name: in.Name, Enabled: enabled,
 		Host: in.Host, Port: in.Port, ExternalPort: in.ExternalPort, Listen: listen,
 		Protocol: in.Protocol, Flow: in.Flow, Cipher: in.Cipher,
 		StreamSettings: stream, ProtocolSettings: ps, ClientSettings: in.ClientSettings,
+		Sniffing: sniffing, Allocate: allocate, ExternalProxy: externalProxy,
 		SortOrder: in.SortOrder, ServerKey: key}
 	if err := ensureRealityKeys(node); err != nil {
 		s.writeError(w, r, err)
@@ -304,6 +313,9 @@ func (s *Server) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 		StreamSettings   domain.Object `json:"stream_settings"`
 		ProtocolSettings domain.Object `json:"protocol_settings"`
 		ClientSettings   domain.Object `json:"client_settings"`
+		Sniffing         domain.Object `json:"sniffing"`
+		Allocate         domain.Object `json:"allocate"`
+		ExternalProxy    []any         `json:"external_proxy"`
 		SortOrder        *int          `json:"sort_order"`
 	}
 	if err := decodeJSON(r, &in); err != nil {
@@ -359,6 +371,13 @@ func (s *Server) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 		}
 		if in.ServerKey != nil {
 			n.ServerKey = *in.ServerKey
+		}
+		if in.Sniffing != nil || in.Allocate != nil || in.ExternalProxy != nil {
+			sniffing, allocate, externalProxy, inboundIssues := protocol.SanitizeInbound(n.Sniffing, n.Allocate, n.ExternalProxy)
+			if len(inboundIssues) > 0 {
+				return fieldErrors(inboundIssues)
+			}
+			n.Sniffing, n.Allocate, n.ExternalProxy = sniffing, allocate, externalProxy
 		}
 		stream, ps, key, issues := protocol.Sanitize(protocolNode(n))
 		if len(issues) > 0 {

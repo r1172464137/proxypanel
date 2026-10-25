@@ -42,6 +42,13 @@ export interface NodeDraft {
   stream_settings: JsonObject
   protocol_settings: JsonObject
   client_settings: JsonObject
+  /**
+   * 入站级对象，与 Xray / 3x-ui 同名同层：sniffing / allocate / externalProxy。
+   * 它们既不在 streamSettings 里，也不在 settings 里，所以要单独持久化。
+   */
+  sniffing: JsonObject
+  allocate: JsonObject
+  external_proxy: unknown[]
 }
 
 export function emptyNodeDraft(): NodeDraft {
@@ -63,6 +70,9 @@ export function emptyNodeDraft(): NodeDraft {
     stream_settings: { network: 'tcp', security: 'none' },
     protocol_settings: { decryption: 'none' },
     client_settings: {},
+    sniffing: {},
+    allocate: {},
+    external_proxy: [],
   }
 }
 
@@ -87,6 +97,9 @@ export function draftFromNode(node: NodeRecord): NodeDraft {
     stream_settings: cloneJson(node.stream_settings ?? {}),
     protocol_settings: cloneJson(node.protocol_settings ?? {}),
     client_settings: cloneJson(node.client_settings ?? {}),
+    sniffing: cloneJson(node.sniffing ?? {}),
+    allocate: cloneJson(node.allocate ?? {}),
+    external_proxy: (cloneJson(node.external_proxy ?? []) as unknown[]) ?? [],
   }
 }
 
@@ -513,6 +526,9 @@ export function buildNodeWrite(draft: NodeDraft, options: { omitServerKey?: bool
     stream_settings: cloneJson(draft.stream_settings),
     protocol_settings,
     client_settings: cloneJson(draft.client_settings),
+    sniffing: cloneJson(draft.sniffing),
+    allocate: cloneJson(draft.allocate),
+    external_proxy: cloneJson(draft.external_proxy),
     sort_order: Number(draft.sort_order),
   }
   if (!options.omitServerKey) payload.server_key = draft.server_key.trim()

@@ -70,7 +70,7 @@ const saved = ref(false)
 const keyImpactConfirmed = ref(false)
 const rotateReality = ref(false)
 const versionConflict = ref(false)
-const jsonErrors = reactive({ stream: '', protocol: '', client: '' })
+const jsonErrors = reactive({ stream: '', protocol: '', client: '', sniffing: '', allocate: '', externalProxy: '' })
 const keepServerKey = ref(true)
 const tab = ref<'structured' | 'advanced'>('structured')
 const showTemplates = ref(false)
@@ -388,7 +388,8 @@ async function save(): Promise<void> {
   saveError.value = ''
   // 每次提交都从干净状态开始：旧的字段级错误不对应当前这次请求。
   backendFieldErrors.value = {}
-  if (jsonErrors.stream || jsonErrors.protocol || jsonErrors.client) {
+  if (jsonErrors.stream || jsonErrors.protocol || jsonErrors.client
+    || jsonErrors.sniffing || jsonErrors.allocate || jsonErrors.externalProxy) {
     saveError.value = '高级 JSON 存在解析错误，已阻止提交以免丢失参数'
     tab.value = 'advanced'
     return
@@ -440,16 +441,25 @@ function clearBlock(block: 'tls' | 'reality'): void {
   draft.stream_settings = removeSecurityBlock(draft.stream_settings, block)
 }
 
-function updateProtocolJson(value: JsonObject): void {
-  draft.protocol_settings = value
+function updateProtocolJson(value: unknown): void {
+  draft.protocol_settings = value as JsonObject
 }
 
-function updateStreamJson(value: JsonObject): void {
-  draft.stream_settings = value
+function updateStreamJson(value: unknown): void {
+  draft.stream_settings = value as JsonObject
 }
 
-function updateClientJson(value: JsonObject): void {
-  draft.client_settings = value
+function updateClientJson(value: unknown): void {
+  draft.client_settings = value as JsonObject
+}
+
+function updateInboundJson(key: 'sniffing' | 'allocate', value: unknown): void {
+  draft[key] = value as JsonObject
+}
+
+// externalProxy is an array, not an object, so it needs its own parser.
+function updateExternalProxyJson(value: unknown): void {
+  draft.external_proxy = Array.isArray(value) ? value : []
 }
 
 const cipherValue = computed({
@@ -1161,7 +1171,8 @@ const cipherValue = computed({
           <CardContent class="space-y-4">
             <Alert>
               <AlertDescription>
-                完整提交三个对象：stream_settings / protocol_settings / client_settings。JSON 解析失败时禁止保存，避免静默丢参数。
+                完整提交入站的全部对象：stream_settings / protocol_settings / client_settings，
+                以及入站级的 sniffing / allocate / external_proxy。JSON 解析失败时禁止保存，避免静默丢参数。
                 clients 由后端注入，保存时会被移除。
               </AlertDescription>
             </Alert>
@@ -1194,6 +1205,37 @@ const cipherValue = computed({
                 @update:error="jsonErrors.client = $event"
               />
               <p v-if="jsonErrors.client" class="text-xs text-destructive">client_settings 未通过解析，保存被阻止。</p>
+            </div>
+            <div class="space-y-1.5">
+              <JsonEditor
+                :model-value="draft.sniffing"
+                label="sniffing"
+                hint="域名嗅探。enabled / destOverride[] / metadataOnly / routeOnly；留空 {} 表示沿用默认（开启，http/tls/quic）。"
+                @update:model-value="updateInboundJson('sniffing', $event)"
+                @update:error="jsonErrors.sniffing = $event"
+              />
+              <p v-if="jsonErrors.sniffing" class="text-xs text-destructive">sniffing 未通过解析，保存被阻止。</p>
+            </div>
+            <div class="space-y-1.5">
+              <JsonEditor
+                :model-value="draft.allocate"
+                label="allocate"
+                hint="UDP 端口分配。strategy / refresh / concurrency；留空 {} 表示不生成该字段。"
+                @update:model-value="updateInboundJson('allocate', $event)"
+                @update:error="jsonErrors.allocate = $event"
+              />
+              <p v-if="jsonErrors.allocate" class="text-xs text-destructive">allocate 未通过解析，保存被阻止。</p>
+            </div>
+            <div class="space-y-1.5">
+              <JsonEditor
+                :model-value="draft.external_proxy"
+                shape="array"
+                label="external_proxy"
+                hint="对外暴露的代理地址（Xray 的 externalProxy）：每项包含 forceTls / dest / port / remark。留空 [] 表示不生成该字段。"
+                @update:model-value="updateExternalProxyJson"
+                @update:error="jsonErrors.externalProxy = $event"
+              />
+              <p v-if="jsonErrors.externalProxy" class="text-xs text-destructive">external_proxy 未通过解析，保存被阻止。</p>
             </div>
           </CardContent>
         </Card>

@@ -134,6 +134,10 @@ export interface NodeRecord {
   stream_settings: Record<string, unknown>
   protocol_settings: Record<string, unknown>
   client_settings: Record<string, unknown>
+  /** 入站级对象，与 Xray / 3x-ui 同名：sniffing / allocate / externalProxy。 */
+  sniffing?: Record<string, unknown>
+  allocate?: Record<string, unknown>
+  external_proxy?: unknown[]
   sort_order: number
   /** 服务端是否已保存节点级秘密；明文 server_key 永不返回。 */
   server_key_set?: boolean
@@ -160,6 +164,9 @@ export interface NodeWrite {
   stream_settings: Record<string, unknown>
   protocol_settings: Record<string, unknown>
   client_settings: Record<string, unknown>
+  sniffing?: Record<string, unknown>
+  allocate?: Record<string, unknown>
+  external_proxy?: unknown[]
   sort_order: number
 }
 

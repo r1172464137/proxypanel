@@ -80,6 +80,24 @@ export function parseJsonObject(text: string, label = 'JSON'): JsonParseResult {
   return { ok: true, value: parsed }
 }
 
+/**
+ * 解析 JSON 数组。`externalProxy` 这类入站字段本身就是数组，用 parseJsonObject
+ * 会把合法的 `[{...}]` 判成错误。
+ */
+export function parseJsonArray(text: string, label = 'JSON'): { ok: true; value: unknown[] } | { ok: false; error: string } {
+  const trimmed = text.trim()
+  if (!trimmed) return { ok: false, error: `${label} 不能为空；如需清空数组请填写 []` }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(trimmed) as unknown
+  } catch (caught) {
+    const message = caught instanceof Error ? caught.message : String(caught)
+    return { ok: false, error: `${label} 解析失败：${message}` }
+  }
+  if (!Array.isArray(parsed)) return { ok: false, error: `${label} 必须是 JSON 数组（[...]）` }
+  return { ok: true, value: parsed }
+}
+
 export function stringifyJson(value: unknown): string {
   try {
     return JSON.stringify(value, null, 2) ?? '{}'

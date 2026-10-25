@@ -463,15 +463,17 @@ func (s *Store) DeleteNodeGroup(ctx context.Context, id string) error {
 // ─── nodes ─────────────────────────────────────────────────────────────────
 
 const nodeCols = `id, server_id, name, enabled, host, port, external_port, listen, protocol, flow, cipher, server_key_enc,
-	stream_settings, protocol_settings, client_settings, sort_order, archived, version, created_at, updated_at`
+	stream_settings, protocol_settings, client_settings, sniffing, allocate, external_proxy,
+	sort_order, archived, version, created_at, updated_at`
 
 func scanNode(row interface{ Scan(...any) error }, decrypt func([]byte) (string, error)) (*domain.Node, error) {
 	var v domain.Node
 	var keyEnc []byte
-	var stream, ps, cs []byte
+	var stream, ps, cs, sniff, alloc, extProxy []byte
 	var externalPort sql.NullInt64
 	if err := row.Scan(&v.ID, &v.ServerID, &v.Name, &v.Enabled, &v.Host, &v.Port, &externalPort, &v.Listen, &v.Protocol,
-		&v.Flow, &v.Cipher, &keyEnc, &stream, &ps, &cs, &v.SortOrder, &v.Archived, &v.Version,
+		&v.Flow, &v.Cipher, &keyEnc, &stream, &ps, &cs, &sniff, &alloc, &extProxy,
+		&v.SortOrder, &v.Archived, &v.Version,
 		&v.CreatedAt, &v.UpdatedAt); err != nil {
 		return nil, dbErr(err)
 	}
@@ -481,6 +483,9 @@ func scanNode(row interface{ Scan(...any) error }, decrypt func([]byte) (string,
 	v.StreamSettings = scanObject(stream)
 	v.ProtocolSettings = scanObject(ps)
 	v.ClientSettings = scanObject(cs)
+	v.Sniffing = scanObject(sniff)
+	v.Allocate = scanObject(alloc)
+	v.ExternalProxy = scanArray(extProxy)
 	if len(keyEnc) > 0 {
 		if plain, err := decrypt(keyEnc); err == nil {
 			v.ServerKey = plain
@@ -602,10 +607,11 @@ func (s *Store) CreateNode(ctx context.Context, v *domain.Node, coreInstanceID s
 			return dbErr(err)
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO nodes (`+nodeCols+`)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,false,1,now(),now())`,
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,false,1,now(),now())`,
 			v.ID, v.ServerID, v.Name, v.Enabled, v.Host, v.Port, nullableExternalPort(v.ExternalPort), v.Listen,
 			v.Protocol, v.Flow, v.Cipher,
 			keyEnc, encodeObject(v.StreamSettings), encodeObject(v.ProtocolSettings), encodeObject(v.ClientSettings),
+			encodeObject(v.Sniffing), encodeObject(v.Allocate), encodeJSON(v.ExternalProxy),
 			v.SortOrder); err != nil {
 			return dbErr(err)
 		}
@@ -662,11 +668,14 @@ func (s *Store) UpdateNode(ctx context.Context, id string, expectedVersion int64
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE nodes SET name=$2,server_id=$3,enabled=$4,host=$5,port=$6,external_port=$7,
 			listen=$8,protocol=$9,flow=$10,cipher=$11,server_key_enc=$12,stream_settings=$13,protocol_settings=$14,
-			client_settings=$15,sort_order=$16,archived=$17,version=$18,updated_at=$19 WHERE id=$1`,
+			client_settings=$15,sniffing=$16,allocate=$17,external_proxy=$18,
+			sort_order=$19,archived=$20,version=$21,updated_at=$22 WHERE id=$1`,
 			cur.ID, cur.Name, cur.ServerID, cur.Enabled, cur.Host, cur.Port, nullableExternalPort(cur.ExternalPort),
 			cur.Listen, cur.Protocol, cur.Flow,
 			cur.Cipher, keyEnc, encodeObject(cur.StreamSettings), encodeObject(cur.ProtocolSettings),
-			encodeObject(cur.ClientSettings), cur.SortOrder, cur.Archived, cur.Version, cur.UpdatedAt); err != nil {
+			encodeObject(cur.ClientSettings), encodeObject(cur.Sniffing), encodeObject(cur.Allocate),
+			encodeJSON(cur.ExternalProxy),
+			cur.SortOrder, cur.Archived, cur.Version, cur.UpdatedAt); err != nil {
 			return dbErr(err)
 		}
 		if cur.ServerID != "" {

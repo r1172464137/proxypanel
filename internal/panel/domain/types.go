@@ -168,19 +168,27 @@ type Node struct {
 	// ExternalPort 是客户端连接的端口；0/NULL 表示与 Port 相同。
 	// 用于「对外 443 → 实际监听 20101」这类中转场景：转发由运维在机器上配，
 	// 面板只负责把对外地址写进成员配置。
-	ExternalPort     int       `json:"external_port,omitempty"`
-	Listen           string    `json:"listen"`
-	Protocol         string    `json:"protocol"`
-	Flow             string    `json:"flow"`
-	Cipher           string    `json:"cipher"`
-	StreamSettings   Object    `json:"stream_settings"`
-	ProtocolSettings Object    `json:"protocol_settings"`
-	ClientSettings   Object    `json:"client_settings"`
-	SortOrder        int       `json:"sort_order"`
-	Archived         bool      `json:"archived"`
-	Version          int64     `json:"version"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	ExternalPort     int    `json:"external_port,omitempty"`
+	Listen           string `json:"listen"`
+	Protocol         string `json:"protocol"`
+	Flow             string `json:"flow"`
+	Cipher           string `json:"cipher"`
+	StreamSettings   Object `json:"stream_settings"`
+	ProtocolSettings Object `json:"protocol_settings"`
+	ClientSettings   Object `json:"client_settings"`
+	// Inbound-level Xray objects that sit beside streamSettings/settings rather
+	// than inside them. They follow the Xray/3x-ui shape 1:1 so the panel does not
+	// invent its own nesting: sniffing {enabled,destOverride,...}, allocate
+	// {strategy,refresh,concurrency}, externalProxy [{forceTls,dest,port,remark}].
+	// Sniffing used to be hard-coded and the other two were never generated.
+	Sniffing      Object    `json:"sniffing"`
+	Allocate      Object    `json:"allocate"`
+	ExternalProxy []any     `json:"external_proxy"`
+	SortOrder     int       `json:"sort_order"`
+	Archived      bool      `json:"archived"`
+	Version       int64     `json:"version"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 
 	// ServerKey is the node's server side secret (REALITY private key or
 	// Shadowsocks server password). It is encrypted at rest, write-only over

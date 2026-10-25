@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -426,6 +427,33 @@ func scanObject(raw []byte) domain.Object {
 	}
 	_ = o.UnmarshalJSON(raw)
 	return o
+}
+
+// encodeJSON marshals an arbitrary JSON value for a jsonb column. A nil value
+// becomes JSON null so an absent object is distinguishable from an empty one.
+func encodeJSON(v any) []byte {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return []byte("null")
+	}
+	return raw
+}
+
+// scanArray decodes a jsonb array column, tolerating NULL and any unexpected
+// shape (an object where an array was expected yields an empty slice rather than
+// panicking on an untyped value the operator typed into the JSON editor).
+func scanArray(raw []byte) []any {
+	if len(raw) == 0 {
+		return []any{}
+	}
+	var out []any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return []any{}
+	}
+	if out == nil {
+		return []any{}
+	}
+	return out
 }
 
 func utc(t time.Time) time.Time { return t.UTC() }
