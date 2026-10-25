@@ -14,9 +14,9 @@ import (
 )
 
 // AgentVersion is the version reported to the panel and in heartbeats. It is
-// bumped only when the shipped agent really changes; 0.1.1 carries the expiry
-// metadata, deadlock and lifecycle fixes of this round.
-const AgentVersion = "0.1.1"
+// bumped only when the shipped agent really changes; 0.1.2 carries the bundled
+// official core, the one-line installer and the day-two manager script.
+const AgentVersion = "0.1.2"
 
 // Default intervals decided in the implementation contract (5s poll, 5s stats,
 // 15s heartbeat).
