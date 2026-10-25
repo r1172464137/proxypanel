@@ -14,9 +14,11 @@ import (
 )
 
 // AgentVersion is the version reported to the panel and in heartbeats. It is
-// bumped only when the shipped agent really changes; 0.1.2 carries the bundled
-// official core, the one-line installer and the day-two manager script.
-const AgentVersion = "0.1.2"
+// bumped only when the shipped agent really changes. The version string is also
+// the only thing that ties a published binary to a release tag, so it is bumped
+// whenever a tag is cut even if only the panel changed; a tag that disagrees
+// with the binary makes incident triage guess.
+const AgentVersion = "0.1.3"
 
 // Default intervals decided in the implementation contract (5s poll, 5s stats,
 // 15s heartbeat).
