@@ -224,7 +224,8 @@ jobs:
           docker run --rm "$AGENT" -version | tee /tmp/agent-version.txt
           grep -q 'proxypanel-agent' /tmp/agent-version.txt
           echo "--- bundled xray ---"
-          docker run --rm --entrypoint /opt/xray/xray "$AGENT" version | head -1 | tee /tmp/xray-version.txt
+          docker run --rm --entrypoint /opt/xray/xray "$AGENT" version > /tmp/xray-version-all.txt
+          head -1 /tmp/xray-version-all.txt | tee /tmp/xray-version.txt
           grep -q '26\.3\.' /tmp/xray-version.txt
           echo "--- env-only config check ---"
           docker run --rm -e PANEL_URL=https://panel.example.invalid -e REGISTRATION_CODE=ci-check "$AGENT" -check | tee /tmp/agent-check.txt
@@ -276,7 +277,10 @@ jobs:
               sleep 1
             done
             curl -fsS "$URL/readyz"
-            curl -fsS "$URL/install-agent.sh" | grep -q 'PROXYPANEL_INSTALL_AGENT_SHA256_AMD64'
+            # Download then grep: `curl | grep -q` fails with exit 23 (SIGPIPE) as
+            # soon as grep finds the match, and pipefail turns that into a red step.
+            curl -fsS "$URL/install-agent.sh" -o /tmp/install-agent.sh
+            grep -q 'PROXYPANEL_INSTALL_AGENT_SHA256_AMD64' /tmp/install-agent.sh
             curl -fsS "$URL/install-agent/linux-amd64" -o /tmp/agent-from-panel
             chmod +x /tmp/agent-from-panel
             /tmp/agent-from-panel -version | grep -q proxypanel-agent
@@ -284,8 +288,10 @@ jobs:
             test "$(curl -s -o /dev/null -w '%{http_code}' "$URL/assets/missing.js")" = 404
             test "$(curl -s -o /dev/null -w '%{http_code}' "$URL/api/unknown")" = 404
             if [ "$MODE" = spa ]; then
-              curl -fsS "$URL/admin/nodes" | grep -q 'id="app"'
-              curl -fsSI "$URL/index.html" | grep -iq 'cache-control: no-store'
+              curl -fsS "$URL/admin/nodes" -o /tmp/spa-route.html
+              grep -q 'id="app"' /tmp/spa-route.html
+              curl -fsSI "$URL/index.html" -o /tmp/index-headers.txt
+              grep -iq 'cache-control: no-store' /tmp/index-headers.txt
             else
               test "$(curl -s -o /dev/null -w '%{http_code}' "$URL/")" = 404
             fi
