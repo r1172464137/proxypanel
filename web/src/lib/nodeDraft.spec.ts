@@ -15,7 +15,7 @@ import {
   validateNodeDraft,
   type NodeDraft,
 } from './nodeDraft'
-import { setPath } from './json'
+import { getPath, setPath } from './json'
 
 function vlessNode(): NodeRecord {
   return {
@@ -276,5 +276,15 @@ describe('buildNodeWrite', () => {
     draft.protocol_settings = setPath(vlessNode().protocol_settings, 'customField', 1)
     const warnings = validateNodeDraft(draft).warnings
     expect(warnings.some((warning) => warning.includes('customField'))).toBe(true)
+  })
+
+  it('realitySettings.xver 由原生 JSON 提供时不会被结构化编辑清掉', () => {
+    // xver 决定 REALITY 转发到 dest 时是否补 PROXY protocol 头。面板目前没有
+    // 这个字段的控件，所以用户只能写进原生 JSON；保存路径必须原样保留它。
+    const stream = setPath(vlessNode().stream_settings, 'realitySettings.xver', 1)
+    const view = streamView(stream)
+    const saved = applyStreamView(stream, { ...view, realityDest: '127.0.0.1:8443' })
+    expect(getPath(saved, 'realitySettings.xver')).toBe(1)
+    expect(getPath(saved, 'realitySettings.dest')).toBe('127.0.0.1:8443')
   })
 })
