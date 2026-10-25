@@ -19,17 +19,23 @@ readonly INSTALLER_VERSION="1.0"
 readonly RELEASE_REPO="r1172464137/proxypanel"
 readonly SERVICE_NAME="proxypanel-agent"
 readonly SERVICE_ACCOUNT="proxypanel-agent"
-readonly CONFIG_DIR="/etc/proxypanel"
+# PP_ROOT_PREFIX exists so the installer can be exercised end-to-end against a
+# throwaway prefix (CI, sandbox, dry evaluation) without touching the host.
+# It is empty in real installs.
+readonly ROOT_PREFIX="${PP_ROOT_PREFIX:-}"
+readonly CONFIG_DIR="${ROOT_PREFIX}/etc/proxypanel"
 readonly CONFIG_FILE="$CONFIG_DIR/agent.json"
-readonly STATE_DIR="/var/lib/proxypanel-agent"
-readonly XRAY_BASE="/opt/proxypanel/xray"
-readonly AGENT_DIR="/opt/proxypanel/agent"
+# PP_STATE_DIR only exists for prefix-based end-to-end tests: with a non-empty
+# PP_ROOT_PREFIX the default path would contain /var/lib and be rejected by the
+# state-dir deny list, which is correct for real installs but blocks sandboxing.
+readonly STATE_DIR="${PP_STATE_DIR:-${ROOT_PREFIX}/var/lib/proxypanel-agent}"
+readonly XRAY_BASE="${ROOT_PREFIX}/opt/proxypanel/xray"
+readonly AGENT_DIR="${ROOT_PREFIX}/opt/proxypanel/agent"
 readonly AGENT_BIN="$AGENT_DIR/agent"
-readonly UNIT_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
-readonly CA_FILE="/usr/local/share/ca-certificates/proxypanel-panel.crt"
+readonly UNIT_FILE="${ROOT_PREFIX}/etc/systemd/system/${SERVICE_NAME}.service"
+readonly CA_FILE="${ROOT_PREFIX}/usr/local/share/ca-certificates/proxypanel-panel.crt"
 readonly SUPPORTED_XRAY_VERSIONS=("26.3.27" "26.3.23")
-readonly MANAGER_BIN="/usr/bin/proxypanel-agent"
-readonly RELEASE_REPO="r1172464137/proxypanel"
+readonly MANAGER_BIN="${ROOT_PREFIX}/usr/bin/proxypanel-agent"
 
 ARG_PANEL_URL="${PANEL_URL:-}"
 ARG_REGISTRATION_CODE="${REGISTRATION_CODE:-}"
@@ -463,6 +469,9 @@ install_unit() {
   had_exit_trap=$(trap -p EXIT)
   trap "rm -f -- '$unit_tmp'" EXIT
   render_unit > "$unit_tmp" || die "无法生成 systemd 单元"
+  # The unit directory may not exist yet on a minimal host (and is always new
+  # under PP_ROOT_PREFIX), so create it before installing the file.
+  install -d -m 0755 "$(dirname "$UNIT_FILE")"
   install -m 0644 "$unit_tmp" "$UNIT_FILE"
   rm -f -- "$unit_tmp"
   if [ -n "$had_exit_trap" ]; then eval "$had_exit_trap"; else trap - EXIT; fi
