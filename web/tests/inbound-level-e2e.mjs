@@ -122,6 +122,101 @@ await rec('invalid-sniffing-is-rejected', async () => {
   return { status: 422 }
 })
 
+
+await rec('structured-form-covers-3xui-fields', async () => {
+  const res = await (await ctx.request.get(`${base}/api/v1/admin/nodes?limit=50`)).json()
+  const node = (res.items ?? []).find(n => n.name === 'inbound node')
+  assert.ok(node, 'node missing')
+  await page.goto(`${base}/admin/nodes/${node.id}`)
+  await page.waitForTimeout(400)
+  // 字段按 security 分支显示；先切到 REALITY 才能看到它那一组。
+  await page.locator('#stream-security').selectOption('reality')
+  await page.waitForTimeout(300)
+
+  // REALITY + tcp: these controls must exist in the structured form, not only in
+  // raw JSON, otherwise "copy 3x-ui" is not actually delivered.
+  for (const label of ['伪装目标', 'PROXY protocol 版本', '允许的域名', 'shortIds', '调试日志']) {
+    assert.ok(await page.getByLabel(label, { exact: true }).count(),
+      `missing REALITY control: ${label}`)
+  }
+  // 传输层 RAW 的两个开关。
+  await page.locator('#stream-network').selectOption('tcp')
+  await page.waitForTimeout(200)
+  for (const label of ['接收 PROXY protocol', 'TCP 伪装头']) {
+    assert.ok(await page.getByText(label, { exact: true }).count(), `missing RAW control: ${label}`)
+  }
+  // 切到 ws 后应出现 ws 专有字段，且 RAW 字段消失。
+  await page.locator('#stream-network').selectOption('ws')
+  await page.waitForTimeout(200)
+  assert.ok(await page.getByLabel('路径', { exact: true }).count(), 'missing ws path control')
+  assert.equal(await page.getByText('接收 PROXY protocol', { exact: true }).count(), 0,
+    'RAW-only control still shown for ws')
+  await page.locator('#stream-network').selectOption('tcp')
+
+  // sockopt 分区必须存在。
+  for (const label of ['tcpFastOpen', 'domainStrategy', 'tcpcongestion']) {
+    assert.ok(await page.getByLabel(label, { exact: true }).count(), `missing sockopt control: ${label}`)
+  }
+  return { reality: 5, raw: 2, sockopt: 3 }
+})
+
+await rec('structured-form-saves-xver-and-raw-settings', async () => {
+  const sent = []
+  page.on('request', (req) => {
+    if (req.method() === 'PATCH' && /\/api\/v1\/admin\/nodes\//.test(req.url())) {
+      sent.push(req.postData() ?? '')
+    }
+  })
+  const res = await (await ctx.request.get(`${base}/api/v1/admin/nodes?limit=50`)).json()
+  const node = (res.items ?? []).find(n => n.name === 'inbound node')
+  await page.goto(`${base}/admin/nodes/${node.id}`)
+  await page.waitForTimeout(400)
+  await page.locator('#stream-security').selectOption('reality')
+  await page.waitForTimeout(300)
+  // 编辑已有节点时，生成/填写私钥前必须先显式勾选「更换 REALITY 密钥」。
+  await page.getByTestId('node-reality-rotate-checkbox').check()
+  await page.waitForTimeout(200)
+  // REALITY 必须有私钥；用界面上的「生成一对密钥」，顺带验证公钥自动推导链路。
+  await page.getByRole('button', { name: '生成一对密钥' }).click()
+  await page.waitForTimeout(600)
+  await page.getByLabel('伪装目标', { exact: true }).fill('127.0.0.1:8443')
+  // REALITY 还要求允许的域名与 shortIds，否则保存会被校验挡住。
+  await page.getByLabel('允许的域名', { exact: true }).fill('ai.cutk.de')
+  await page.getByLabel('shortIds', { exact: true }).fill('0123abcd')
+  await page.getByLabel('PROXY protocol 版本', { exact: true }).selectOption('1')
+  await page.getByLabel('接收 PROXY protocol', { exact: true }).check()
+  await page.getByLabel('TCP 伪装头', { exact: true }).selectOption('http')
+  // 改安全配置前必须显式确认影响，否则 save() 直接返回、不发请求。
+  await page.getByRole('checkbox', { name: /我已了解客户端须更新|如更换密钥或安全配置/ }).check()
+  const patch = page.waitForResponse(
+    (r) => r.request().method() === 'PATCH' && /\/api\/v1\/admin\/nodes\//.test(r.url()),
+    { timeout: 20000 },
+  ).catch(() => null)
+  await page.getByTestId('node-save-button').click()
+  const response = await patch
+  if (!response) {
+    const alerts = await page.locator('[role="alert"], .text-destructive').allInnerTexts().catch(() => [])
+    throw new Error(`no PATCH was sent; alerts=${JSON.stringify(alerts).slice(0, 400)}`)
+  }
+  assert.ok(response.status() < 400, `PATCH failed with ${response.status()}: ${(await response.text()).slice(0, 300)}`)
+  await page.waitForTimeout(800)
+
+  const after = await (await ctx.request.get(`${base}/api/v1/admin/nodes?limit=50`)).json()
+  const saved = (after.items ?? []).find(n => n.name === 'inbound node')
+  const rs = saved.stream_settings?.realitySettings ?? {}
+  if (!rs.target) {
+    const payload = sent.length ? sent[sent.length - 1] : '<no PATCH observed>'
+    throw new Error(`realitySettings empty; stream_settings=${JSON.stringify(saved.stream_settings).slice(0, 300)}; payload=${String(payload).slice(0, 500)}`)
+  }
+  const raw = saved.stream_settings?.rawSettings ?? saved.stream_settings?.tcpSettings ?? {}
+  assert.equal(rs.target, '127.0.0.1:8443', `target not saved: ${JSON.stringify(rs)}`)
+  assert.equal(rs.dest, undefined, 'legacy dest alias must not be written alongside target')
+  assert.equal(rs.xver, 1, `xver not saved: ${JSON.stringify(rs)}`)
+  assert.equal(raw.acceptProxyProtocol, true, `acceptProxyProtocol not in the transport block: ${JSON.stringify(raw)}`)
+  assert.equal(raw.header?.type, 'http', `header type not saved: ${JSON.stringify(raw)}`)
+  return { target: rs.target, xver: rs.xver, raw }
+})
+
 await browser.close()
 const failed = results.filter(r => r.status === 'FAIL')
 const report = { results, failed: failed.length }
