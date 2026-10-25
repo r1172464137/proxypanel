@@ -70,7 +70,21 @@ done
 BROWSER_FAILED=0
 for MODE in spa api; do
   # Each hosting mode must independently exercise the old schema, not reuse 0006.
-  docker exec "$DB" createdb -U postgres "$MODE"
+  # postgres:17-alpine starts a temporary server to run initdb and then restarts it,
+  # so a single pg_isready can land in that window and the next statement dies with
+  # "terminating connection due to administrator command". Retry until it really
+  # holds instead of trusting the first ready signal.
+  CREATED=0
+  for i in $(seq 1 60); do
+    if docker exec "$DB" createdb -U postgres "$MODE" 2>/dev/null; then CREATED=1; break; fi
+    if docker exec "$DB" psql -U postgres -lqt 2>/dev/null | cut -d'|' -f1 | grep -qx " *$MODE"; then CREATED=1; break; fi
+    sleep 1
+  done
+  if [ "$CREATED" != 1 ]; then
+    echo "could not create database $MODE" >&2
+    docker logs "$DB" 2>&1 | tail -20 >&2
+    exit 1
+  fi
   for PHASE in current upgrade; do
     ACTIVE=$IMAGE; [ "$PHASE" = upgrade ] && ACTIVE=$UPGRADE_IMAGE
     OUT="$EVIDENCE/$MODE-$PHASE"; mkdir -p "$OUT"
