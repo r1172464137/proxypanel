@@ -68,8 +68,11 @@ jobs:
         run: |
           set -euo pipefail
           # --help must work without root and must not touch the host.
-          bash dist/install.sh --help | grep -q 'proxypanel Agent'
-          bash dist/proxypanel-agent --help | grep -q '管理脚本'
+          # 先落盘再 grep：管道下游提前退出会让上游收到 SIGPIPE。
+          bash dist/install.sh --help > /tmp/install-help.txt
+          grep -q 'proxypanel Agent' /tmp/install-help.txt
+          bash dist/proxypanel-agent --help > /tmp/agent-help.txt
+          grep -q '管理脚本' /tmp/agent-help.txt
           # An unsupported arch must fail loudly instead of installing something wrong.
           git status --porcelain
 

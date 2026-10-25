@@ -159,7 +159,11 @@ jobs:
             -t proxypanel-agent:ci image-context
           docker run --rm proxypanel-agent:ci -version > /tmp/agent-local-version.txt
           grep -q proxypanel-agent /tmp/agent-local-version.txt
-          docker run --rm --entrypoint /opt/xray/xray proxypanel-agent:ci version | head -1 | grep -q '26\.3\.'
+          # 不要 `docker run ... | head -1 | grep -q`：head 立刻关闭管道，docker
+          # 写 stdout 时收到 EPIPE，报 "write /dev/stdout: broken pipe" 并让整步失败。
+          docker run --rm --entrypoint /opt/xray/xray proxypanel-agent:ci version > /tmp/xray-local.txt
+          head -1 /tmp/xray-local.txt
+          grep -q '26\.3\.' /tmp/xray-local.txt
           docker run --rm -e PANEL_URL=https://panel.example.invalid -e REGISTRATION_CODE=ci-check proxypanel-agent:ci -check > /tmp/agent-env-check.txt
           grep -q 'configuration ok' /tmp/agent-env-check.txt
           bash scripts/verify-panel-image.sh proxypanel-panel:ci
@@ -283,7 +287,8 @@ jobs:
             grep -q 'PROXYPANEL_INSTALL_AGENT_SHA256_AMD64' /tmp/install-agent.sh
             curl -fsS "$URL/install-agent/linux-amd64" -o /tmp/agent-from-panel
             chmod +x /tmp/agent-from-panel
-            /tmp/agent-from-panel -version | grep -q proxypanel-agent
+            /tmp/agent-from-panel -version > /tmp/agent-from-panel.txt
+            grep -q proxypanel-agent /tmp/agent-from-panel.txt
             rm -f /tmp/agent-from-panel
             test "$(curl -s -o /dev/null -w '%{http_code}' "$URL/assets/missing.js")" = 404
             test "$(curl -s -o /dev/null -w '%{http_code}' "$URL/api/unknown")" = 404

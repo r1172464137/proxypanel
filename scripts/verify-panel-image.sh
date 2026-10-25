@@ -120,7 +120,10 @@ for MODE in spa api; do
     if [ "$MODE" = api ]; then
       [ "$(code "$API/")" = 404 ] || fail 'explicit empty PANEL_WEB_ROOT did not disable SPA'
     else
-      curl -fsS "$API/admin/nodes" | grep -q 'id="app"' || fail 'default SPA missing'
+      # 先落盘再 grep：`curl | grep -q` 会让 curl 收到 SIGPIPE（exit 23），
+      # 在 pipefail 下把一次成功的检查变成失败。
+      curl -fsS "$API/admin/nodes" -o "$TMP/spa-route.html"
+      grep -q 'id="app"' "$TMP/spa-route.html" || fail 'default SPA missing'
     fi
     python3 - "$ROOT/deploy/nginx.conf.example" "$TMP/default.conf" "$MODE" "$APP" <<'PY'
 import sys
