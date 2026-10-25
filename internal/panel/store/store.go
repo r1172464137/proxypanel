@@ -36,7 +36,11 @@ type Store struct {
 
 	readOnly            bool
 	upgradeEvidenceFile string
-	migrationsDir       string
+	// upgradeEvidenceRequired is the scope decision for the controlled migration
+	// run, fixed from the pending set before the first DDL and reused verbatim by
+	// every in-run recheck. Set only while migrating.
+	upgradeEvidenceRequired bool
+	migrationsDir           string
 }
 
 // Options configures the pool.
@@ -210,6 +214,9 @@ func (s *Store) migrate(ctx context.Context, dir string, postflight bool) error 
 	if proof.Status != "ready" {
 		return readinessBlocked(fmt.Sprintf("upgrade preflight %s: %v", proof.Status, proof.Checks), proof)
 	}
+	// Freeze the evidence scope for this run before any DDL. Recomputing it later
+	// from a shrinking pending set would let the requirement change mid-run.
+	s.upgradeEvidenceRequired = s.pendingTouchesAccounting(proof.Pending)
 	expected := proof.DatabaseSHA256
 	applied := false
 

@@ -202,10 +202,11 @@ func TestUpgradeOpenControlledMigration(t *testing.T) {
 				t.Fatalf("controlled Open failed after registry=%d: %v", versions, err)
 			}
 			opened.Close()
-			if versions != 6 {
-				t.Fatalf("registry=%d", versions)
+			// 迁移总数随目录变化，不能写死：否则每加一个迁移都要改测试，掩盖真正的回归。
+			if want := countShippedMigrations(t); versions != want {
+				t.Fatalf("registry=%d, want %d (all shipped migrations applied)", versions, want)
 			}
-			t.Logf("prefix=%d: no-pending ready; controlled Open committed through 0006 and passed final verification", prefix)
+			t.Logf("prefix=%d: no-pending ready; controlled Open committed every pending migration and passed final verification", prefix)
 			again, err := Open(ctx, opts)
 			if err != nil {
 				t.Fatalf("schema-current later Open must not reuse or require the expired transition proof: %v", err)

@@ -374,11 +374,21 @@ func (s *Store) checkUpgradeReadinessWithBaselineQ(ctx context.Context, q querie
 		return nil, err
 	}
 	// External stopped-Agent evidence is an upgrade-transition proof, not a
-	// permanent licence required for every later restart. Consume configured
-	// evidence while migrations are pending (including an empty new database,
-	// where an explicitly broken manifest still remains an operator error), or
-	// while the same controlled migration run verifies its short-lived baseline.
-	requireExternalEvidence := len(r.Pending) != 0 || baseline != ""
+	// permanent licence required for every later restart. It is demanded when a
+	// pending migration could actually touch usage accounting — those are the
+	// only migrations where un-uploaded Agent batches could be lost or
+	// mis-attributed. See pendingTouchesAccounting for why the default is
+	// "demand it".
+	//
+	// A non-empty baseline means we are inside a controlled migration run. That
+	// run fixes the decision once, before its first DDL, and reuses it for every
+	// in-run recheck: otherwise the first applied file turns the pending set into
+	// a different question and a schema-only run would demand evidence halfway
+	// through, which no operator can satisfy.
+	requireExternalEvidence := s.pendingTouchesAccounting(r.Pending)
+	if baseline != "" {
+		requireExternalEvidence = s.upgradeEvidenceRequired
+	}
 	var evidence *UpgradeEvidence
 	if requireExternalEvidence {
 		evidence, err = LoadUpgradeEvidence(s.upgradeEvidenceFile)

@@ -1,3 +1,9 @@
+-- readiness: schema-only
+--
+-- 只给 nodes 加三个 jsonb 列，默认空对象/空数组，不读写任何计量数据：
+--   usage_entries / usage_batches / batches / batch_items / members / tasks 全都不碰。
+-- 因此升级预检不需要外部 Agent 停止态证据（见 store/pending_scope.go）。
+-- 只要这份迁移以后开始改写已有行或触碰计量表，就必须删掉上面那行声明。
 -- 入站级字段：sniffing / allocate / external_proxy
 --
 -- 之前面板只持久化三个对象 —— stream_settings（streamSettings）、

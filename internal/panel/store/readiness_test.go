@@ -128,7 +128,7 @@ func upgradeSeedAgent(t *testing.T, st *Store) {
 func TestUpgradeReadinessEmptyReadOnlyAndMigrate(t *testing.T) {
 	st := upgradeTestStore(t, false)
 	r := upgradeReady(t, st)
-	if r.Status != "ready" || len(r.Pending) != 6 {
+	if r.Status != "ready" || len(r.Pending) != countShippedMigrations(t) {
 		t.Fatalf("%+v", r)
 	}
 	var count int
@@ -157,7 +157,7 @@ func TestUpgradeReadinessEmptyReadOnlyAndMigrate(t *testing.T) {
 		t.Fatal(err)
 	}
 	r = upgradeReady(t, st)
-	if r.Status != "ready" || len(r.Applied) != 6 {
+	if r.Status != "ready" || len(r.Applied) != countShippedMigrations(t) {
 		t.Fatalf("%+v", r)
 	}
 }

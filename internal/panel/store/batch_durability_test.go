@@ -327,8 +327,9 @@ func TestBatchDurabilityLegacyBackfill(t *testing.T) {
 	req.PreviewID = "other-preview"
 	_, err = st.SubmitBatch(ctx, req)
 	durabilityCode(t, err, domain.CodeIdempotencyKeyReused)
-	if retryScalarInt(t, st, `SELECT count(*) FROM schema_migrations`) != 6 {
-		t.Fatal("migration prefix registration mismatch")
+	// 迁移总数随目录变化，按实际文件数断言，避免每加一个迁移就误报。
+	if got, want := retryScalarInt(t, st, `SELECT count(*) FROM schema_migrations`), int64(countShippedMigrations(t)); got != want {
+		t.Fatalf("migration prefix registration mismatch: %d/%d", got, want)
 	}
 }
 

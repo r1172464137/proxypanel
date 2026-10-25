@@ -109,7 +109,7 @@ func TestReadinessPublicContractUnverifiedSchema(t *testing.T) {
 	st := upgradeTestStore(t, false)
 	empty := upgradeReady(t, st)
 	initial := assertReadinessContract(t, empty)
-	if empty.Status != "ready" || len(empty.Pending) != 6 || initial["schema"].(map[string]any)["checksum_ok"] != true {
+	if empty.Status != "ready" || len(empty.Pending) != countShippedMigrations(t) || initial["schema"].(map[string]any)["checksum_ok"] != true {
 		t.Fatalf("empty schema must preserve preflight semantics: %+v", initial)
 	}
 	upgradeExec(t, st, `CREATE TABLE unrelated(id int)`)
