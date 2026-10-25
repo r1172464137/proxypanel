@@ -91,3 +91,19 @@ func TestInboundAcceptsValidExternalProxy(t *testing.T) {
 		t.Fatalf("proxy = %+v", proxy)
 	}
 }
+
+// asBool returns (value, ok). Reading it as (ok, _) inverted the meaning and made
+// an explicit `false` fail validation, which the browser E2E caught by trying to
+// turn sniffing off.
+func TestInboundAcceptsExplicitFalseBooleans(t *testing.T) {
+	for _, raw := range []string{
+		`{"enabled":false}`,
+		`{"enabled":true}`,
+		`{"metadataOnly":false,"routeOnly":false}`,
+		`{"enabled":false,"destOverride":["http"],"routeOnly":true}`,
+	} {
+		if _, _, _, issues := SanitizeInbound(objFrom(t, raw), nil, nil); len(issues) != 0 {
+			t.Fatalf("%s rejected: %+v", raw, issues)
+		}
+	}
+}

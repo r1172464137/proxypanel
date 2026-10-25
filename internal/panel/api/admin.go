@@ -372,6 +372,17 @@ func (s *Server) handlePatchNode(w http.ResponseWriter, r *http.Request) {
 		if in.ServerKey != nil {
 			n.ServerKey = *in.ServerKey
 		}
+		// Assign before validating: SanitizeInbound has to see the submitted
+		// values, not the row loaded from the database.
+		if in.Sniffing != nil {
+			n.Sniffing = in.Sniffing
+		}
+		if in.Allocate != nil {
+			n.Allocate = in.Allocate
+		}
+		if in.ExternalProxy != nil {
+			n.ExternalProxy = in.ExternalProxy
+		}
 		if in.Sniffing != nil || in.Allocate != nil || in.ExternalProxy != nil {
 			sniffing, allocate, externalProxy, inboundIssues := protocol.SanitizeInbound(n.Sniffing, n.Allocate, n.ExternalProxy)
 			if len(inboundIssues) > 0 {

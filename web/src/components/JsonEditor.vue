@@ -17,12 +17,16 @@ const text = ref(stringifyJson(props.modelValue))
 const error = ref('')
 const fieldId = useId()
 
+// externalProxy 之类是数组；形状由调用方声明，不能只认对象。
+// 三处（apply / watch / format）必须用同一个解析器，否则数组模式下 watch 会把
+// 用户正在编辑的 [ ... ] 当成解析失败，然后回写成对象。
+function parseByShape(value: string) {
+  return props.shape === 'array' ? parseJsonArray(value, props.label) : parseJsonObject(value, props.label)
+}
+
 function apply(value: string): void {
   text.value = value
-  // externalProxy 之类是数组；形状由调用方声明，不能只认对象。
-  const parsed = props.shape === 'array'
-    ? parseJsonArray(value, props.label)
-    : parseJsonObject(value, props.label)
+  const parsed = parseByShape(value)
   if (!parsed.ok) {
     error.value = parsed.error
     emit('update:error', parsed.error)
@@ -36,7 +40,7 @@ function apply(value: string): void {
 watch(
   () => props.modelValue,
   (value) => {
-    const parsed = parseJsonObject(text.value, 'JSON')
+    const parsed = parseByShape(text.value)
     if (parsed.ok && jsonEqual(parsed.value, value)) return
     text.value = stringifyJson(value)
     error.value = ''
@@ -46,7 +50,7 @@ watch(
 )
 
 function formatText(): void {
-  const parsed = parseJsonObject(text.value, props.label)
+  const parsed = parseByShape(text.value)
   if (parsed.ok) {
     text.value = stringifyJson(parsed.value)
     emit('update:modelValue', parsed.value)

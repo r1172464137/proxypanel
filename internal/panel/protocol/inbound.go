@@ -39,7 +39,7 @@ func SanitizeInbound(sniffing, allocate domain.Object, externalProxy []any) (dom
 	}
 
 	if v, ok := outSniffing.Get("enabled"); ok {
-		if ok, _ := asBool(v); !ok {
+		if _, isBool := asBool(v); !isBool {
 			issues = append(issues, Issue{Field: "sniffing.enabled", Message: "must be a boolean"})
 		}
 	}
@@ -61,7 +61,7 @@ func SanitizeInbound(sniffing, allocate domain.Object, externalProxy []any) (dom
 	}
 	for _, key := range []string{"metadataOnly", "routeOnly"} {
 		if v, ok := outSniffing.Get(key); ok {
-			if ok, _ := asBool(v); !ok {
+			if _, isBool := asBool(v); !isBool {
 				issues = append(issues, Issue{Field: "sniffing." + key, Message: "must be a boolean"})
 			}
 		}
