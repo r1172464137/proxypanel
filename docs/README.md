@@ -39,6 +39,7 @@ proxypanel 的文档按**你要做什么**组织，不按时间堆。
 |---|---|
 | [HTTP API](reference/api.md) | 认证、错误码全表、完整路由表、两段式批量、curl 流程 |
 | [订阅格式](reference/subscription-formats.md) | 四种输出、形状差异、`external_port` 语义、已验收范围 |
+| [PPanel Mihomo 模板](reference/ppanel-mihomo-template.md) | PPanel 原生节点注入、Geo DAT 分流、直连/节点分离测速与公开模板 |
 
 ## 开发
 

@@ -1,0 +1,280 @@
+{{- /* PPanel 原生 Go Template；输出格式必须设为 yaml。 */ -}}
+{{- if not .Proxies }}{{ fail "当前订阅没有可用节点" }}{{ end -}}
+{{- $supported := dict "shadowsocks" true "shadowsocksr" true "vmess" true "vless" true "trojan" true "hysteria" true "hysteria2" true "tuic" true "anytls" true -}}
+{{- $names := dict "全球" true "自动切换" true "手动切换" true "直连" true "直连出口" true "🔮 AI" true "🎮 Steam" true "🪟 Microsoft@CN" true "🪟 Microsoft" true "📲 GoogleFCM" true "DIRECT" true "REJECT" true "GLOBAL" true -}}
+{{- $nodes := list -}}
+{{- $nodeNames := list -}}
+{{- range $p := .Proxies -}}
+  {{- if not (hasKey $supported $p.Type) }}{{ fail (printf "模板暂不支持节点协议：%s" $p.Type) }}{{ end -}}
+  {{- if hasKey $names $p.Name }}{{ fail (printf "节点名称重复或与策略组重名，请在面板修改：%s" $p.Name) }}{{ end -}}
+  {{- $_ := set $names $p.Name true -}}
+  {{- $kind := $p.Type -}}
+  {{- if eq $kind "shadowsocks" }}{{ $kind = "ss" }}{{ end -}}
+  {{- if eq $kind "shadowsocksr" }}{{ $kind = "ssr" }}{{ end -}}
+  {{- if eq $kind "hysteria" }}{{ $kind = "hysteria2" }}{{ end -}}
+  {{- $n := dict "name" $p.Name "type" $kind "server" $p.Server "port" $p.Port "udp" true -}}
+  {{- $password := $.UserInfo.Password -}}
+
+  {{- if eq $kind "ss" -}}
+    {{- $method := default "aes-128-gcm" $p.Method -}}
+    {{- if hasPrefix "2022-blake3-" $method -}}
+      {{- $keyLen := ternary 16 32 (hasSuffix "128-gcm" $method) -}}
+      {{- $password = printf "%s:%s" (b64enc $p.ServerKey) (b64enc (trunc $keyLen $password)) -}}
+    {{- end -}}
+    {{- $_ := set $n "cipher" $method -}}
+    {{- $_ := set $n "password" $password -}}
+    {{- if $p.Plugin -}}
+      {{- $_ := set $n "plugin" $p.Plugin -}}
+      {{- $_ := set $n "plugin-opts" $p.PluginOptions -}}
+    {{- else if $p.Obfs -}}
+      {{- $_ := set $n "plugin" "obfs" -}}
+      {{- $_ := set $n "plugin-opts" (dict "mode" $p.Obfs "host" $p.ObfsHost) -}}
+    {{- end -}}
+    {{- if $p.UoT -}}
+      {{- $_ := set $n "udp-over-tcp" true -}}
+      {{- if $p.UoTVersion }}{{ $_ := set $n "udp-over-tcp-version" $p.UoTVersion }}{{ end -}}
+    {{- end -}}
+  {{- else if eq $kind "ssr" -}}
+    {{- $_ := set $n "cipher" $p.Method -}}
+    {{- $_ := set $n "password" $password -}}
+    {{- $_ := set $n "protocol" $p.SSRProtocol -}}
+    {{- $_ := set $n "obfs" $p.Obfs -}}
+    {{- if $p.ProtocolParam }}{{ $_ := set $n "protocol-param" $p.ProtocolParam }}{{ end -}}
+    {{- if $p.ObfsParam }}{{ $_ := set $n "obfs-param" $p.ObfsParam }}{{ end -}}
+  {{- else if or (eq $kind "vmess") (eq $kind "vless") -}}
+    {{- $_ := set $n "uuid" $password -}}
+    {{- if eq $kind "vmess" -}}
+      {{- $_ := set $n "alterId" 0 -}}
+      {{- $_ := set $n "cipher" "auto" -}}
+    {{- else -}}
+      {{- $encryption := default "none" $p.Encryption -}}
+      {{- if ne $encryption "none" -}}
+        {{- $parts := list $encryption -}}
+        {{- range $v := list $p.EncryptionMode $p.EncryptionRtt $p.EncryptionClientPadding $p.EncryptionPassword -}}
+          {{- if $v }}{{ $parts = append $parts $v }}{{ end -}}
+        {{- end -}}
+        {{- $encryption = join "." $parts -}}
+      {{- end -}}
+      {{- $_ := set $n "encryption" $encryption -}}
+      {{- if $p.Flow }}{{ $_ := set $n "flow" $p.Flow }}{{ end -}}
+    {{- end -}}
+  {{- else if eq $kind "tuic" -}}
+    {{- $_ := set $n "uuid" $password -}}
+    {{- $_ := set $n "password" $password -}}
+    {{- if $p.DisableSNI }}{{ $_ := set $n "disable-sni" true }}{{ end -}}
+    {{- if $p.ReduceRtt }}{{ $_ := set $n "reduce-rtt" true }}{{ end -}}
+    {{- if $p.UDPRelayMode }}{{ $_ := set $n "udp-relay-mode" $p.UDPRelayMode }}{{ end -}}
+    {{- if $p.CongestionController }}{{ $_ := set $n "congestion-controller" $p.CongestionController }}{{ end -}}
+  {{- else -}}
+    {{- $_ := set $n "password" $password -}}
+    {{- if eq $kind "hysteria2" -}}
+      {{- if $p.ObfsPassword -}}
+        {{- $_ := set $n "obfs" "salamander" -}}
+        {{- $_ := set $n "obfs-password" $p.ObfsPassword -}}
+      {{- end -}}
+      {{- if $p.HopPorts }}{{ $_ := set $n "ports" $p.HopPorts }}{{ end -}}
+      {{- if gt (int $p.HopInterval) 0 }}{{ $_ := set $n "hop-interval" $p.HopInterval }}{{ end -}}
+      {{- if gt (int $p.UpMbps) 0 }}{{ $_ := set $n "up" (printf "%d Mbps" (int $p.UpMbps)) }}{{ end -}}
+      {{- if gt (int $p.DownMbps) 0 }}{{ $_ := set $n "down" (printf "%d Mbps" (int $p.DownMbps)) }}{{ end -}}
+    {{- end -}}
+  {{- end -}}
+
+  {{- if or (eq $kind "vmess") (eq $kind "vless") (eq $kind "trojan") -}}
+    {{- $transport := default "tcp" $p.Transport -}}
+    {{- if eq $transport "websocket" }}{{ $transport = "ws" }}{{ end -}}
+    {{- if ne $transport "tcp" -}}
+      {{- $_ := set $n "network" $transport -}}
+      {{- if eq $transport "ws" -}}
+        {{- $opts := dict "path" (default "/" $p.Path) -}}
+        {{- if $p.Host }}{{ $_ := set $opts "headers" (dict "Host" $p.Host) }}{{ end -}}
+        {{- $_ := set $n "ws-opts" $opts -}}
+      {{- else if eq $transport "grpc" -}}
+        {{- $_ := set $n "grpc-opts" (dict "grpc-service-name" $p.ServiceName) -}}
+      {{- else if eq $transport "http" -}}
+        {{- $opts := dict "method" "GET" "path" (list (default "/" $p.Path)) -}}
+        {{- if $p.Host }}{{ $_ := set $opts "headers" (dict "Host" (list $p.Host)) }}{{ end -}}
+        {{- $_ := set $n "http-opts" $opts -}}
+      {{- else if eq $transport "httpupgrade" -}}
+        {{- $opts := dict "path" (default "/" $p.Path) -}}
+        {{- if $p.Host }}{{ $_ := set $opts "headers" (dict "Host" $p.Host) }}{{ end -}}
+        {{- $_ := set $n "httpupgrade-opts" $opts -}}
+      {{- else if eq $transport "xhttp" -}}
+        {{- $opts := dict "path" (default "/" $p.Path) -}}
+        {{- if $p.Host }}{{ $_ := set $opts "host" $p.Host }}{{ end -}}
+        {{- if $p.XhttpMode }}{{ $_ := set $opts "mode" $p.XhttpMode }}{{ end -}}
+        {{- $_ := set $n "xhttp-opts" $opts -}}
+      {{- else -}}
+        {{- fail (printf "模板暂不支持传输方式：%s" $transport) -}}
+      {{- end -}}
+    {{- end -}}
+    {{- if and (ne $kind "trojan") (or (eq $p.Security "tls") (eq $p.Security "reality")) -}}
+      {{- $_ := set $n "tls" true -}}
+    {{- end -}}
+  {{- end -}}
+
+  {{- if or (eq $p.Security "tls") (eq $p.Security "reality") (eq $kind "trojan") (eq $kind "hysteria2") (eq $kind "tuic") (eq $kind "anytls") -}}
+    {{- $_ := set $n "skip-cert-verify" $p.AllowInsecure -}}
+    {{- if $p.SNI -}}
+      {{- $key := ternary "servername" "sni" (or (eq $kind "vmess") (eq $kind "vless")) -}}
+      {{- $_ := set $n $key $p.SNI -}}
+    {{- end -}}
+    {{- if or (eq $kind "vmess") (eq $kind "vless") (eq $kind "trojan") (eq $kind "anytls") }}{{ $_ := set $n "client-fingerprint" (default "chrome" $p.Fingerprint) }}{{ end -}}
+    {{- if $p.ALPN }}{{ $_ := set $n "alpn" $p.ALPN }}{{ end -}}
+    {{- if $p.CertPinSHA256 }}{{ $_ := set $n "fingerprint" $p.CertPinSHA256 }}{{ end -}}
+    {{- if eq $p.Security "reality" -}}
+      {{- if not $p.RealityPublicKey }}{{ fail "REALITY节点缺少公钥" }}{{ end -}}
+      {{- $_ := set $n "reality-opts" (dict "public-key" $p.RealityPublicKey "short-id" $p.RealityShortId) -}}
+    {{- end -}}
+    {{- if $p.EchEnable -}}
+      {{- $ech := dict "enable" true -}}
+      {{- if $p.EchServerName }}{{ $_ := set $ech "query-server-name" $p.EchServerName }}{{ end -}}
+      {{- $_ := set $n "ech-opts" $ech -}}
+    {{- end -}}
+  {{- end -}}
+  {{- $nodes = append $nodes $n -}}
+  {{- $nodeNames = append $nodeNames $p.Name -}}
+{{- end -}}
+{{- $allNodes := prepend $nodes (dict "name" "直连出口" "type" "direct" "udp" true "ip-version" "ipv4-prefer") -}}
+# {{ .SiteName | quote }} / {{ .SubscribeName | quote }}
+# 已用 {{ printf "%.2f" (divf (addf .UserInfo.Upload .UserInfo.Download) 1073741824) }} GiB / {{ if eq .UserInfo.Traffic 0 }}不限流量{{ else }}{{ printf "%.2f" (divf .UserInfo.Traffic 1073741824) }} GiB{{ end }}
+# 到期：{{ if eq (.UserInfo.ExpiredAt.Unix) 0 }}长期有效{{ else }}{{ .UserInfo.ExpiredAt | date "2006-01-02 15:04:05" }}{{ end }}
+
+mixed-port: 10801
+allow-lan: true
+bind-address: "*"
+mode: rule
+log-level: error
+ipv6: true
+tcp-concurrent: true
+
+external-controller: 127.0.0.1:9092
+external-ui: metacubexd
+external-ui-name: xd
+external-ui-url: "https://v6.gh-proxy.org/https://github.com/MetaCubeX/metacubexd/archive/refs/heads/gh-pages.zip"
+
+profile:
+  store-selected: true
+
+geodata-mode: true
+geodata-loader: standard
+geox-url:
+  geosite: https://v6.gh-proxy.org/https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat
+  geoip: https://v6.gh-proxy.org/https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.dat
+geo-auto-update: true
+geo-update-interval: 72
+
+sniffer:
+  enable: true
+  force-dns-mapping: false
+  parse-pure-ip: true
+  override-destination: false
+  sniff:
+    TLS:
+      ports: [443, 8443]
+    HTTP:
+      ports: [80, 8080-8880]
+    QUIC:
+      ports: [443, 8443]
+
+dns:
+  enable: true
+  listen: ":1053"
+  ipv6: true
+  enhanced-mode: redir-host
+  default-nameserver:
+    - 223.5.5.5
+    - 119.29.29.29
+  # 默认海外 DNS 按分流规则出站；节点域名使用独立的直连解析器，避免循环。
+  nameserver: &overseas_dns
+    - "https://dns.google/dns-query#RULES"
+    - "https://cloudflare-dns.com/dns-query#RULES"
+  proxy-server-nameserver:
+    - https://doh.pub/dns-query
+    - https://dns.alidns.com/dns-query
+  nameserver-policy:
+    # 保留原解析器组合并覆盖子域；列表内解析器为并发查询，不是主备。
+    "geosite:google-cn": *overseas_dns
+    "geosite:cn,private":
+      - https://doh.pub/dns-query
+      - https://dns.alidns.com/dns-query
+
+# 静态直连 + PPanel 当前用户的订阅节点；所有字符串由 JSON/YAML 序列化转义。
+proxies:
+{{ $allNodes | toPrettyJson | indent 2 }}
+
+proxy-groups:
+  # 辅助组只测速本地直连；既有规则和策略组仍引用“直连”。
+  - name: 直连
+    type: select
+    proxies: [直连出口]
+    url: https://connect.rom.miui.com/generate_204
+    expected-status: 204
+    interval: 300
+    lazy: false
+    hidden: true
+  - name: 全球
+    type: select
+    proxies: [自动切换, 手动切换, 直连]
+  - name: 自动切换
+    type: url-test
+    proxies: {{ $nodeNames | toJson }}
+    url: https://www.gstatic.com/generate_204
+    tolerance: 60
+    lazy: true
+    interval: 300
+  - name: 手动切换
+    type: select
+    proxies: {{ $nodeNames | toJson }}
+  - name: 🔮 AI
+    type: select
+    proxies: [手动切换, 直连]
+  - name: 🎮 Steam
+    type: select
+    proxies: [直连, 全球]
+  - name: 🪟 Microsoft@CN
+    type: select
+    proxies: [直连, 全球]
+  - name: 🪟 Microsoft
+    type: select
+    proxies: [全球, 直连]
+  - name: 📲 GoogleFCM
+    type: select
+    proxies: [直连, 全球]
+
+rules:
+  - IP-CIDR,10.0.0.0/8,直连,no-resolve
+  - IP-CIDR,100.64.0.0/10,直连,no-resolve
+  - IP-CIDR,127.0.0.0/8,直连,no-resolve
+  - IP-CIDR,169.254.0.0/16,直连,no-resolve
+  - IP-CIDR,172.16.0.0/12,直连,no-resolve
+  - IP-CIDR,192.168.0.0/16,直连,no-resolve
+  - IP-CIDR6,::1/128,直连,no-resolve
+  - IP-CIDR6,fc00::/7,直连,no-resolve
+  - IP-CIDR6,fe80::/10,直连,no-resolve
+  - GEOSITE,private,直连
+  - GEOIP,private,直连,no-resolve
+  - AND,((NETWORK,UDP),(DST-PORT,123)),直连
+  - GEOSITE,alibaba,直连
+  - GEOSITE,category-games@cn,直连
+  - GEOSITE,microsoft@cn,🪟 Microsoft@CN
+  - GEOSITE,microsoft,🪟 Microsoft
+  - GEOSITE,category-ai-!cn,🔮 AI
+  - GEOSITE,steam,🎮 Steam
+  - GEOSITE,googlefcm,📲 GoogleFCM
+  - GEOSITE,google-cn,自动切换
+  - GEOSITE,cn,直连
+  - GEOSITE,discord,全球
+  - GEOSITE,github,全球
+  - GEOSITE,twitter,全球
+  - GEOSITE,dlsite,全球
+  - GEOSITE,youtube,全球
+  - GEOSITE,google,全球
+  - GEOSITE,telegram,全球
+  - GEOSITE,bahamut,全球
+  - GEOSITE,spotify,全球
+  - GEOSITE,geolocation-!cn,全球
+  - GEOIP,google,全球
+  - GEOIP,telegram,全球
+  - GEOIP,twitter,全球
+  - GEOIP,cn,直连
+  - MATCH,全球
